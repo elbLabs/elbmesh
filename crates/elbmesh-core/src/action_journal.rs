@@ -8,6 +8,14 @@ use thiserror::Error;
 
 use crate::{ActionReceipt, MessageMetadata};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ActionFailureClassification {
+    EventStore,
+    Resource,
+    HandlerRuntime,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ActionJournalStream {
     pub action_id: String,
@@ -35,6 +43,11 @@ pub enum ActionJournalRecord {
         failure_code: String,
         failure_details: Value,
     },
+    ActionFailed {
+        metadata: MessageMetadata,
+        failure_classification: ActionFailureClassification,
+        failure_details: Value,
+    },
     ActionCompleted {
         metadata: MessageMetadata,
         receipt: ActionReceipt,
@@ -46,6 +59,7 @@ impl ActionJournalRecord {
         match self {
             Self::ActionCalled { metadata, .. }
             | Self::ActionRejected { metadata, .. }
+            | Self::ActionFailed { metadata, .. }
             | Self::ActionCompleted { metadata, .. } => &metadata.action_id,
         }
     }

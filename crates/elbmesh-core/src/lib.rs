@@ -10,8 +10,8 @@ mod testing;
 mod traits;
 
 pub use action_journal::{
-    ActionJournal, ActionJournalError, ActionJournalRecord, ActionJournalStream,
-    InMemoryActionJournal,
+    ActionFailureClassification, ActionJournal, ActionJournalError, ActionJournalRecord,
+    ActionJournalStream, InMemoryActionJournal,
 };
 
 pub use error::{
