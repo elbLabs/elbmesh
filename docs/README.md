@@ -6,8 +6,12 @@ This documentation captures the current design decisions from the domain-modelli
 
 1. [Goal](GOAL.md)
 2. [Glossary](GLOSSARY.md)
-3. [Implementation Plan](IMPLEMENTATION_PLAN.md)
-4. [Architecture Decision Records](adr/)
+3. [Development Workflow](DEVELOPMENT_WORKFLOW.md)
+4. [Agent Skills](AGENT_SKILLS.md)
+5. [Human Decision Loop](HUMAN_DECISION_LOOP.md)
+6. [Phased Delivery Plan](PHASED_DELIVERY_PLAN.md)
+7. [Implementation Plan](IMPLEMENTATION_PLAN.md)
+8. [Architecture Decision Records](adr/)
 
 ## ADR Index
 
@@ -20,6 +24,13 @@ This documentation captures the current design decisions from the domain-modelli
 7. [ADR 0007: Model Workflows as Event-Action Graphs](adr/0007-reactions-and-workflow-graphs.md)
 8. [ADR 0008: Views Are Materialized Read Models With Declared Queries](adr/0008-views-queries-and-nats-storage.md)
 9. [ADR 0009: Start With a Typed Core Based on the Existing Message Infrastructure](adr/0009-initial-core-implementation-from-message-infra.md)
+10. [ADR 0010: Use Typed Action Errors and Given/When/Then Scenarios](adr/0010-typed-action-errors-and-scenario-tests.md)
+11. [ADR 0011: Import Non-Event-Sourced Data as Provenanced Starting Facts](adr/0011-importing-non-event-sourced-data.md)
+12. [ADR 0012: Copy Eventually Concepts Without Taking a Dependency](adr/0012-copy-eventually-concepts-without-dependency.md)
+13. [ADR 0013: Agent Skills Are First-Class Repo Artifacts](adr/0013-agent-skills-are-first-class-repo-artifacts.md)
+14. [ADR 0014: Use Phased MR-Based Multi-Agent Delivery](adr/0014-phased-mr-based-multi-agent-delivery.md)
+15. [ADR 0015: Use GitHub Issues as the Operational Queue](adr/0015-use-github-issues-as-operational-queue.md)
+16. [ADR 0016: Use Human Decision Requests for Domain and Architecture Gates](adr/0016-use-human-decision-requests-for-domain-and-architecture-gates.md)
 
 ## Current V1 Thesis
 

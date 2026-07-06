@@ -1,0 +1,9 @@
+[workspace]
+resolver = "2"
+members = ["crates/elbmesh-core"]
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+license = "MIT OR Apache-2.0"
+repository = "https://example.invalid/elbmesh"
