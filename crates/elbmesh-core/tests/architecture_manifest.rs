@@ -19,6 +19,10 @@ fn architecture_manifest_describes_resource_action_and_event_schema_identity() {
     assert_eq!(manifest.actions[0].resource_type, "offer");
     assert_eq!(manifest.actions[0].schema_id, "action.create_offer.v1");
     assert_eq!(manifest.actions[0].schema_version, 1);
+    assert_eq!(
+        manifest.actions[0].emitted_event_types,
+        vec!["offer_created"]
+    );
     assert_eq!(manifest.events[0].event_type, "offer_created");
     assert_eq!(manifest.events[0].resource_type, "offer");
     assert_eq!(manifest.events[0].schema_id, "event.offer_created.v1");
@@ -40,11 +44,13 @@ fn manifest_definition_skeletons_carry_schema_identity_and_versions() {
     assert_eq!(manifest.resources[0].components[0].schema_version, 1);
     assert_eq!(
         manifest.reactions[0].reaction_type,
-        "offer_accepted_to_sales_order"
+        "offer_created_to_send_offer_email"
     );
+    assert_eq!(manifest.reactions[0].trigger_event_type, "offer_created");
+    assert_eq!(manifest.reactions[0].target_action_type, "send_offer_email");
     assert_eq!(
         manifest.reactions[0].schema_id,
-        "reaction.offer_accepted_to_sales_order.v1"
+        "reaction.offer_created_to_send_offer_email.v1"
     );
     assert_eq!(manifest.reactions[0].schema_version, 1);
     assert_eq!(manifest.views[0].view_type, "offer_summary");
@@ -89,6 +95,13 @@ fn architecture_manifest_round_trips_as_stable_json_shape() {
                 "resource_type": "offer",
                 "schema_id": "action.create_offer.v1",
                 "schema_version": 1,
+                "emitted_event_types": ["offer_created"],
+            }, {
+                "action_type": "send_offer_email",
+                "resource_type": "offer",
+                "schema_id": "action.send_offer_email.v1",
+                "schema_version": 1,
+                "emitted_event_types": [],
             }],
             "events": [{
                 "event_type": "offer_created",
@@ -97,8 +110,10 @@ fn architecture_manifest_round_trips_as_stable_json_shape() {
                 "schema_version": 1,
             }],
             "reactions": [{
-                "reaction_type": "offer_accepted_to_sales_order",
-                "schema_id": "reaction.offer_accepted_to_sales_order.v1",
+                "reaction_type": "offer_created_to_send_offer_email",
+                "trigger_event_type": "offer_created",
+                "target_action_type": "send_offer_email",
+                "schema_id": "reaction.offer_created_to_send_offer_email.v1",
                 "schema_version": 1,
             }],
             "views": [{
@@ -192,6 +207,93 @@ fn manifest_validation_rejects_duplicate_resource_type() {
     assert_eq!(err.code(), "manifest.duplicate_resource_type");
 }
 
+#[test]
+fn valid_manifest_reaction_graph_validation_succeeds() {
+    offer_manifest()
+        .validate()
+        .expect("valid acyclic reaction graph should pass validation");
+}
+
+#[test]
+fn manifest_validation_rejects_reaction_triggering_from_unknown_event() {
+    let mut manifest = offer_manifest();
+    manifest.reactions[0].trigger_event_type = "missing_event".to_string();
+
+    let err = manifest
+        .validate()
+        .expect_err("unknown reaction trigger event should fail validation");
+
+    assert_eq!(
+        err,
+        ManifestValidationError::UnknownReactionTriggerEvent {
+            reaction_type: "offer_created_to_send_offer_email".to_string(),
+            event_type: "missing_event".to_string(),
+        }
+    );
+    assert_eq!(err.code(), "manifest.reaction_unknown_trigger_event");
+}
+
+#[test]
+fn manifest_validation_rejects_action_emitting_unknown_event() {
+    let mut manifest = offer_manifest();
+    manifest.actions[0].emitted_event_types = vec!["missing_event".to_string()];
+
+    let err = manifest
+        .validate()
+        .expect_err("unknown action emitted event should fail validation");
+
+    assert_eq!(
+        err,
+        ManifestValidationError::UnknownActionEmittedEvent {
+            action_type: "create_offer".to_string(),
+            event_type: "missing_event".to_string(),
+        }
+    );
+    assert_eq!(err.code(), "manifest.action_unknown_emitted_event");
+}
+
+#[test]
+fn manifest_validation_rejects_reaction_targeting_unknown_action() {
+    let mut manifest = offer_manifest();
+    manifest.reactions[0].target_action_type = "missing_action".to_string();
+
+    let err = manifest
+        .validate()
+        .expect_err("unknown reaction target action should fail validation");
+
+    assert_eq!(
+        err,
+        ManifestValidationError::UnknownReactionTargetAction {
+            reaction_type: "offer_created_to_send_offer_email".to_string(),
+            action_type: "missing_action".to_string(),
+        }
+    );
+    assert_eq!(err.code(), "manifest.reaction_unknown_target_action");
+}
+
+#[test]
+fn manifest_validation_rejects_reaction_graph_cycle() {
+    let mut manifest = offer_manifest();
+    manifest.actions[0].emitted_event_types = vec!["offer_created".to_string()];
+    manifest.reactions[0].target_action_type = "create_offer".to_string();
+
+    let err = manifest
+        .validate()
+        .expect_err("reaction graph cycle should fail validation");
+
+    assert_eq!(
+        err,
+        ManifestValidationError::ReactionGraphCycle {
+            path: vec![
+                "event:offer_created".to_string(),
+                "action:create_offer".to_string(),
+                "event:offer_created".to_string(),
+            ],
+        }
+    );
+    assert_eq!(err.code(), "manifest.reaction_graph_cycle");
+}
+
 fn offer_manifest() -> ArchitectureManifest {
     ArchitectureManifest {
         manifest_schema_id: "manifest.elbmesh.v1".to_string(),
@@ -206,12 +308,22 @@ fn offer_manifest() -> ArchitectureManifest {
                 schema_version: 1,
             }],
         }],
-        actions: vec![ActionDefinition {
-            action_type: "create_offer".to_string(),
-            resource_type: "offer".to_string(),
-            schema_id: "action.create_offer.v1".to_string(),
-            schema_version: 1,
-        }],
+        actions: vec![
+            ActionDefinition {
+                action_type: "create_offer".to_string(),
+                resource_type: "offer".to_string(),
+                schema_id: "action.create_offer.v1".to_string(),
+                schema_version: 1,
+                emitted_event_types: vec!["offer_created".to_string()],
+            },
+            ActionDefinition {
+                action_type: "send_offer_email".to_string(),
+                resource_type: "offer".to_string(),
+                schema_id: "action.send_offer_email.v1".to_string(),
+                schema_version: 1,
+                emitted_event_types: Vec::new(),
+            },
+        ],
         events: vec![EventDefinition {
             event_type: "offer_created".to_string(),
             resource_type: "offer".to_string(),
@@ -219,8 +331,10 @@ fn offer_manifest() -> ArchitectureManifest {
             schema_version: 1,
         }],
         reactions: vec![ReactionDefinition {
-            reaction_type: "offer_accepted_to_sales_order".to_string(),
-            schema_id: "reaction.offer_accepted_to_sales_order.v1".to_string(),
+            reaction_type: "offer_created_to_send_offer_email".to_string(),
+            trigger_event_type: "offer_created".to_string(),
+            target_action_type: "send_offer_email".to_string(),
+            schema_id: "reaction.offer_created_to_send_offer_email.v1".to_string(),
             schema_version: 1,
         }],
         views: vec![ViewDefinition {

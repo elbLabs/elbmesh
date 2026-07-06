@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -46,7 +46,80 @@ impl ArchitectureManifest {
             }
         }
 
+        let action_types: HashSet<_> = self
+            .actions
+            .iter()
+            .map(|action| action.action_type.as_str())
+            .collect();
+        let event_types: HashSet<_> = self
+            .events
+            .iter()
+            .map(|event| event.event_type.as_str())
+            .collect();
+
+        for action in &self.actions {
+            for event_type in &action.emitted_event_types {
+                if !event_types.contains(event_type.as_str()) {
+                    return Err(ManifestValidationError::UnknownActionEmittedEvent {
+                        action_type: action.action_type.clone(),
+                        event_type: event_type.clone(),
+                    });
+                }
+            }
+        }
+
+        for reaction in &self.reactions {
+            if !event_types.contains(reaction.trigger_event_type.as_str()) {
+                return Err(ManifestValidationError::UnknownReactionTriggerEvent {
+                    reaction_type: reaction.reaction_type.clone(),
+                    event_type: reaction.trigger_event_type.clone(),
+                });
+            }
+
+            if !action_types.contains(reaction.target_action_type.as_str()) {
+                return Err(ManifestValidationError::UnknownReactionTargetAction {
+                    reaction_type: reaction.reaction_type.clone(),
+                    action_type: reaction.target_action_type.clone(),
+                });
+            }
+        }
+
+        if let Some(path) = self.reaction_graph_cycle() {
+            return Err(ManifestValidationError::ReactionGraphCycle { path });
+        }
+
         Ok(())
+    }
+
+    fn reaction_graph_cycle(&self) -> Option<Vec<String>> {
+        let mut graph: HashMap<String, Vec<String>> = HashMap::new();
+
+        for reaction in &self.reactions {
+            graph
+                .entry(event_node(&reaction.trigger_event_type))
+                .or_default()
+                .push(action_node(&reaction.target_action_type));
+        }
+
+        for action in &self.actions {
+            for event_type in &action.emitted_event_types {
+                graph
+                    .entry(action_node(&action.action_type))
+                    .or_default()
+                    .push(event_node(event_type));
+            }
+        }
+
+        for reaction in &self.reactions {
+            let start = event_node(&reaction.trigger_event_type);
+            let mut path = vec![start.clone()];
+
+            if let Some(cycle) = find_cycle_to_start(&graph, &start, &start, &mut path) {
+                return Some(cycle);
+            }
+        }
+
+        None
     }
 }
 
@@ -66,6 +139,27 @@ pub enum ManifestValidationError {
         event_type: String,
         resource_type: String,
     },
+
+    #[error("manifest action '{action_type}' emits undeclared event '{event_type}'")]
+    UnknownActionEmittedEvent {
+        action_type: String,
+        event_type: String,
+    },
+
+    #[error("manifest reaction '{reaction_type}' triggers from undeclared event '{event_type}'")]
+    UnknownReactionTriggerEvent {
+        reaction_type: String,
+        event_type: String,
+    },
+
+    #[error("manifest reaction '{reaction_type}' targets undeclared action '{action_type}'")]
+    UnknownReactionTargetAction {
+        reaction_type: String,
+        action_type: String,
+    },
+
+    #[error("manifest reaction graph contains a cycle: {path:?}")]
+    ReactionGraphCycle { path: Vec<String> },
 }
 
 impl ManifestValidationError {
@@ -74,8 +168,47 @@ impl ManifestValidationError {
             Self::DuplicateResourceType { .. } => "manifest.duplicate_resource_type",
             Self::UnknownActionResource { .. } => "manifest.action_unknown_resource",
             Self::UnknownEventResource { .. } => "manifest.event_unknown_resource",
+            Self::UnknownActionEmittedEvent { .. } => "manifest.action_unknown_emitted_event",
+            Self::UnknownReactionTriggerEvent { .. } => "manifest.reaction_unknown_trigger_event",
+            Self::UnknownReactionTargetAction { .. } => "manifest.reaction_unknown_target_action",
+            Self::ReactionGraphCycle { .. } => "manifest.reaction_graph_cycle",
         }
     }
+}
+
+fn find_cycle_to_start(
+    graph: &HashMap<String, Vec<String>>,
+    start: &str,
+    current: &str,
+    path: &mut Vec<String>,
+) -> Option<Vec<String>> {
+    for next in graph.get(current).into_iter().flatten() {
+        if next == start {
+            let mut cycle = path.clone();
+            cycle.push(next.clone());
+            return Some(cycle);
+        }
+
+        if path.iter().any(|entry| entry == next) {
+            continue;
+        }
+
+        path.push(next.clone());
+        if let Some(cycle) = find_cycle_to_start(graph, start, next, path) {
+            return Some(cycle);
+        }
+        path.pop();
+    }
+
+    None
+}
+
+fn event_node(event_type: &str) -> String {
+    format!("event:{event_type}")
+}
+
+fn action_node(action_type: &str) -> String {
+    format!("action:{action_type}")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -99,6 +232,7 @@ pub struct ActionDefinition {
     pub resource_type: String,
     pub schema_id: String,
     pub schema_version: u32,
+    pub emitted_event_types: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -112,6 +246,8 @@ pub struct EventDefinition {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReactionDefinition {
     pub reaction_type: String,
+    pub trigger_event_type: String,
+    pub target_action_type: String,
     pub schema_id: String,
     pub schema_version: u32,
 }
