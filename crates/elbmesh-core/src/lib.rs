@@ -1,11 +1,18 @@
 //! Core traits and in-memory runtime for the elbmesh event-sourcing framework.
 
+mod action_journal;
+
 mod error;
 mod message;
 mod runtime;
 mod store;
 mod testing;
 mod traits;
+
+pub use action_journal::{
+    ActionJournal, ActionJournalError, ActionJournalRecord, ActionJournalStream,
+    InMemoryActionJournal,
+};
 
 pub use error::{
     ActionError, ActionFailure, EventStoreError, ExecutionError, HandlerError, ResourceError,
