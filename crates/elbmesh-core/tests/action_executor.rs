@@ -1,11 +1,15 @@
 use async_trait::async_trait;
 use elbmesh_core::{
     apply_recorded_event, Action, ActionContext, ActionDecision, ActionExecutor, ActionFailure,
-    ActionMetadata, ActionScenario, Apply, Event, EventStore, ExpectedVersion, Handle,
-    HandlerError, InMemoryEventStore, Resource, ResourceError, ResourceStream,
+    ActionMetadata, ActionScenario, AppendResult, Apply, Event, EventStore, EventStoreError,
+    ExpectedVersion, Handle, HandlerError, InMemoryEventStore, MessageMetadata, NewEvent,
+    RecordedEvent, Resource, ResourceError, ResourceStream,
 };
 use serde::{Deserialize, Serialize};
-use std::fmt;
+use std::{
+    fmt,
+    sync::{Arc, Mutex},
+};
 
 #[derive(Debug, Default, Clone)]
 struct Offer {
@@ -17,12 +21,14 @@ struct Offer {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum OfferError {
     AlreadyExists,
+    MissingReplayState,
 }
 
 impl fmt::Display for OfferError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::AlreadyExists => write!(f, "offer already exists"),
+            Self::MissingReplayState => write!(f, "offer replay state is incomplete"),
         }
     }
 }
@@ -31,6 +37,7 @@ impl ActionFailure for OfferError {
     fn code(&self) -> &'static str {
         match self {
             Self::AlreadyExists => "offer.already_exists",
+            Self::MissingReplayState => "offer.missing_replay_state",
         }
     }
 }
@@ -46,6 +53,14 @@ impl Resource for Offer {
         }
 
         if apply_recorded_event::<Self, OfferTitleMeasuredV1>(self, event)? {
+            return Ok(());
+        }
+
+        if apply_recorded_event::<Self, OfferTitleUpdatedV1>(self, event)? {
+            return Ok(());
+        }
+
+        if apply_recorded_event::<Self, OfferReplayStateCapturedV1>(self, event)? {
             return Ok(());
         }
 
@@ -94,6 +109,23 @@ impl Action for CreateOfferAndMeasureTitleV1 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+struct CaptureOfferReplayStateV1 {
+    offer_id: String,
+}
+
+impl Action for CaptureOfferReplayStateV1 {
+    type Resource = Offer;
+
+    const ACTION_TYPE: &'static str = "capture_offer_replay_state";
+    const SCHEMA_ID: &'static str = "action.capture_offer_replay_state.v1";
+    const SCHEMA_VERSION: u32 = 1;
+
+    fn resource_id(&self) -> <Self::Resource as Resource>::Id {
+        self.offer_id.clone()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct OfferCreatedV1 {
     offer_id: String,
     title: String,
@@ -129,6 +161,43 @@ impl Event for OfferTitleMeasuredV1 {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct OfferTitleUpdatedV1 {
+    offer_id: String,
+    title: String,
+}
+
+impl Event for OfferTitleUpdatedV1 {
+    type Resource = Offer;
+
+    const EVENT_TYPE: &'static str = "offer_title_updated";
+    const SCHEMA_ID: &'static str = "event.offer_title_updated.v1";
+    const SCHEMA_VERSION: u32 = 1;
+
+    fn resource_id(&self) -> <Self::Resource as Resource>::Id {
+        self.offer_id.clone()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct OfferReplayStateCapturedV1 {
+    offer_id: String,
+    observed_title: String,
+    observed_version: u64,
+}
+
+impl Event for OfferReplayStateCapturedV1 {
+    type Resource = Offer;
+
+    const EVENT_TYPE: &'static str = "offer_replay_state_captured";
+    const SCHEMA_ID: &'static str = "event.offer_replay_state_captured.v1";
+    const SCHEMA_VERSION: u32 = 1;
+
+    fn resource_id(&self) -> <Self::Resource as Resource>::Id {
+        self.offer_id.clone()
+    }
+}
+
 impl Apply<OfferCreatedV1> for Offer {
     fn apply(&mut self, event: OfferCreatedV1) -> Result<(), ResourceError> {
         self.id = Some(event.offer_id);
@@ -140,6 +209,19 @@ impl Apply<OfferCreatedV1> for Offer {
 impl Apply<OfferTitleMeasuredV1> for Offer {
     fn apply(&mut self, event: OfferTitleMeasuredV1) -> Result<(), ResourceError> {
         self.measured_title_lengths.push(event.title_length);
+        Ok(())
+    }
+}
+
+impl Apply<OfferTitleUpdatedV1> for Offer {
+    fn apply(&mut self, event: OfferTitleUpdatedV1) -> Result<(), ResourceError> {
+        self.title = Some(event.title);
+        Ok(())
+    }
+}
+
+impl Apply<OfferReplayStateCapturedV1> for Offer {
+    fn apply(&mut self, _event: OfferReplayStateCapturedV1) -> Result<(), ResourceError> {
         Ok(())
     }
 }
@@ -201,6 +283,164 @@ impl Handle<CreateOfferAndMeasureTitleV1> for Offer {
         )?;
 
         Ok(ActionDecision::with_message("offer created and measured"))
+    }
+}
+
+#[async_trait]
+impl Handle<CaptureOfferReplayStateV1> for Offer {
+    type Error = OfferError;
+
+    async fn handle(
+        &mut self,
+        action: CaptureOfferReplayStateV1,
+        ctx: &mut ActionContext<Self>,
+    ) -> Result<ActionDecision, HandlerError<Self::Error>> {
+        if self.id.as_deref() != Some(action.offer_id.as_str()) || self.title.is_none() {
+            return Err(HandlerError::domain(OfferError::MissingReplayState));
+        }
+
+        ctx.record(OfferReplayStateCapturedV1 {
+            offer_id: action.offer_id,
+            observed_title: self.title.clone().expect("title checked above"),
+            observed_version: ctx.current_version(),
+        })?;
+
+        Ok(ActionDecision::with_message("offer replay state captured"))
+    }
+}
+
+#[derive(Clone)]
+struct OutOfOrderLoadEventStore {
+    stream: ResourceStream,
+    history: Vec<RecordedEvent>,
+    appends: Arc<Mutex<Vec<AppendCall>>>,
+}
+
+#[derive(Debug, Clone)]
+struct AppendCall {
+    expected_version: ExpectedVersion,
+    events: Vec<RecordedEvent>,
+}
+
+impl OutOfOrderLoadEventStore {
+    fn new(stream: ResourceStream, history: Vec<RecordedEvent>) -> Self {
+        Self {
+            stream,
+            history,
+            appends: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    fn append_calls(&self) -> Vec<AppendCall> {
+        self.appends
+            .lock()
+            .expect("append call storage should not be poisoned")
+            .clone()
+    }
+}
+
+#[async_trait]
+impl EventStore for OutOfOrderLoadEventStore {
+    async fn load(&self, stream: &ResourceStream) -> Result<Vec<RecordedEvent>, EventStoreError> {
+        assert_eq!(stream, &self.stream);
+        Ok(self.history.clone())
+    }
+
+    async fn append(
+        &self,
+        stream: &ResourceStream,
+        expected_version: ExpectedVersion,
+        events: Vec<NewEvent>,
+    ) -> Result<AppendResult, EventStoreError> {
+        assert_eq!(stream, &self.stream);
+        let latest_sequence = self
+            .history
+            .iter()
+            .map(|event| event.sequence)
+            .max()
+            .unwrap_or_default();
+
+        match expected_version {
+            ExpectedVersion::Any => {}
+            ExpectedVersion::NoStream if latest_sequence != 0 => {
+                return Err(EventStoreError::ConcurrencyConflict {
+                    stream: stream.key(),
+                    expected: 0,
+                    actual: latest_sequence,
+                });
+            }
+            ExpectedVersion::Exact(expected) if latest_sequence != expected => {
+                return Err(EventStoreError::ConcurrencyConflict {
+                    stream: stream.key(),
+                    expected,
+                    actual: latest_sequence,
+                });
+            }
+            ExpectedVersion::NoStream | ExpectedVersion::Exact(_) => {}
+        }
+
+        let recorded: Vec<_> = events
+            .into_iter()
+            .enumerate()
+            .map(|(index, event)| RecordedEvent {
+                stream: stream.clone(),
+                sequence: latest_sequence + index as u64 + 1,
+                metadata: event.metadata,
+                payload: event.payload,
+            })
+            .collect();
+
+        self.appends
+            .lock()
+            .expect("append call storage should not be poisoned")
+            .push(AppendCall {
+                expected_version,
+                events: recorded.clone(),
+            });
+
+        Ok(AppendResult {
+            previous_version: latest_sequence,
+            new_version: latest_sequence + recorded.len() as u64,
+            events: recorded,
+        })
+    }
+}
+
+fn event_to_new_event<E>(event: E) -> NewEvent
+where
+    E: Event,
+{
+    let resource_id = event.resource_id().to_string();
+    NewEvent {
+        metadata: MessageMetadata::resource_event(
+            E::EVENT_TYPE,
+            E::SCHEMA_ID,
+            E::SCHEMA_VERSION,
+            E::Resource::RESOURCE_TYPE,
+            resource_id,
+            &ActionMetadata::with_ids(
+                "history-action",
+                "history-correlation",
+                "history-cause",
+                "history",
+            ),
+        ),
+        payload: serde_json::to_value(event).expect("event should serialize"),
+    }
+}
+
+fn recorded_event<E>(event: E, sequence: u64) -> RecordedEvent
+where
+    E: Event,
+{
+    let stream = ResourceStream::new(E::Resource::RESOURCE_TYPE, event.resource_id().to_string());
+    let event = event_to_new_event(event);
+
+    RecordedEvent {
+        stream,
+        sequence,
+        metadata: event.metadata,
+        payload: event.payload,
     }
 }
 
@@ -288,6 +528,129 @@ async fn record_applied_multi_event_action_observes_updated_resource_state() {
         "offer_title_measured"
     );
     assert_eq!(receipt.emitted_events[1].sequence, 2);
+}
+
+#[tokio::test]
+async fn replays_multiple_historical_events_before_handling_and_appends_next_sequence() {
+    let store = InMemoryEventStore::new();
+    let stream = ResourceStream::new("offer", "offer-1");
+
+    store
+        .append(
+            &stream,
+            ExpectedVersion::Any,
+            vec![event_to_new_event(OfferCreatedV1 {
+                offer_id: "offer-1".to_string(),
+                title: "draft title".to_string(),
+            })],
+        )
+        .await
+        .expect("first historical event should append");
+    store
+        .append(
+            &stream,
+            ExpectedVersion::Any,
+            vec![event_to_new_event(OfferTitleUpdatedV1 {
+                offer_id: "offer-1".to_string(),
+                title: "final title".to_string(),
+            })],
+        )
+        .await
+        .expect("second historical event should append");
+
+    let executor = ActionExecutor::new(store.clone());
+    let receipt = executor
+        .execute::<Offer, _>(
+            CaptureOfferReplayStateV1 {
+                offer_id: "offer-1".to_string(),
+            },
+            ActionMetadata::for_actor("agent-1"),
+        )
+        .await
+        .expect("action should complete after replay");
+
+    assert_eq!(receipt.previous_version, 2);
+    assert_eq!(receipt.new_version, 3);
+    assert_eq!(receipt.emitted_events.len(), 1);
+    assert_eq!(
+        receipt.emitted_events[0].message_type,
+        "offer_replay_state_captured"
+    );
+    assert_eq!(receipt.emitted_events[0].sequence, 3);
+
+    let history = store.load(&stream).await.expect("history should load");
+    assert_eq!(history.len(), 3);
+    assert_eq!(history[2].sequence, 3);
+    assert_eq!(
+        history[2]
+            .payload
+            .get("offer_id")
+            .and_then(|value| value.as_str()),
+        Some("offer-1")
+    );
+    assert_eq!(
+        history[2]
+            .payload
+            .get("observed_title")
+            .and_then(|value| value.as_str()),
+        Some("final title")
+    );
+    assert_eq!(
+        history[2]
+            .payload
+            .get("observed_version")
+            .and_then(|value| value.as_u64()),
+        Some(2)
+    );
+}
+
+#[tokio::test]
+async fn replays_historical_events_in_stream_sequence_order_before_handling() {
+    let stream = ResourceStream::new("offer", "offer-1");
+    let created = recorded_event(
+        OfferCreatedV1 {
+            offer_id: "offer-1".to_string(),
+            title: "draft title".to_string(),
+        },
+        1,
+    );
+    let updated = recorded_event(
+        OfferTitleUpdatedV1 {
+            offer_id: "offer-1".to_string(),
+            title: "final title".to_string(),
+        },
+        2,
+    );
+    let store = OutOfOrderLoadEventStore::new(stream, vec![updated, created]);
+    let executor = ActionExecutor::new(store.clone());
+
+    let receipt = executor
+        .execute::<Offer, _>(
+            CaptureOfferReplayStateV1 {
+                offer_id: "offer-1".to_string(),
+            },
+            ActionMetadata::for_actor("agent-1"),
+        )
+        .await
+        .expect("action should complete after replay");
+
+    assert_eq!(receipt.previous_version, 2);
+    assert_eq!(receipt.new_version, 3);
+    assert_eq!(receipt.emitted_events.len(), 1);
+    assert_eq!(receipt.emitted_events[0].sequence, 3);
+
+    let append_calls = store.append_calls();
+    assert_eq!(append_calls.len(), 1);
+    assert_eq!(append_calls[0].expected_version, ExpectedVersion::Exact(2));
+    assert_eq!(append_calls[0].events.len(), 1);
+    assert_eq!(append_calls[0].events[0].sequence, 3);
+    assert_eq!(
+        append_calls[0].events[0]
+            .payload
+            .get("observed_title")
+            .and_then(|value| value.as_str()),
+        Some("final title")
+    );
 }
 
 #[tokio::test]

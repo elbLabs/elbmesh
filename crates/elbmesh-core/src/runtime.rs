@@ -128,8 +128,9 @@ where
     {
         let resource_id = action.resource_id().to_string();
         let stream = ResourceStream::new(R::RESOURCE_TYPE, resource_id.clone());
-        let history = self.event_store.load(&stream).await?;
-        let previous_version = history.len() as u64;
+        let mut history = self.event_store.load(&stream).await?;
+        history.sort_by_key(|event| event.sequence);
+        let previous_version = history.last().map_or(0, |event| event.sequence);
 
         let mut resource = R::default();
         for event in &history {
