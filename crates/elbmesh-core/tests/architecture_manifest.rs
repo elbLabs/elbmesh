@@ -1,7 +1,7 @@
 use elbmesh_core::{
     ActionDefinition, ArchitectureManifest, ComponentDefinition, EventDefinition,
-    ExternalOperationDefinition, QueryDefinition, ReactionDefinition, ResourceDefinition,
-    ViewDefinition,
+    ExternalOperationDefinition, ManifestValidationError, QueryDefinition, ReactionDefinition,
+    ResourceDefinition, ViewDefinition,
 };
 
 use serde_json::json;
@@ -122,6 +122,74 @@ fn architecture_manifest_round_trips_as_stable_json_shape() {
     let decoded: ArchitectureManifest =
         serde_json::from_value(encoded).expect("deserialize architecture manifest");
     assert_eq!(decoded, manifest);
+}
+
+#[test]
+fn valid_manifest_resource_ownership_validation_succeeds() {
+    offer_manifest()
+        .validate()
+        .expect("valid manifest should pass resource ownership validation");
+}
+
+#[test]
+fn manifest_validation_rejects_action_targeting_unknown_resource() {
+    let mut manifest = offer_manifest();
+    manifest.actions[0].resource_type = "missing-offer".to_string();
+
+    let err = manifest
+        .validate()
+        .expect_err("unknown action target resource should fail validation");
+
+    assert_eq!(
+        err,
+        ManifestValidationError::UnknownActionResource {
+            action_type: "create_offer".to_string(),
+            resource_type: "missing-offer".to_string(),
+        }
+    );
+    assert_eq!(err.code(), "manifest.action_unknown_resource");
+}
+
+#[test]
+fn manifest_validation_rejects_event_owned_by_unknown_resource() {
+    let mut manifest = offer_manifest();
+    manifest.events[0].resource_type = "missing-offer".to_string();
+
+    let err = manifest
+        .validate()
+        .expect_err("unknown event owner resource should fail validation");
+
+    assert_eq!(
+        err,
+        ManifestValidationError::UnknownEventResource {
+            event_type: "offer_created".to_string(),
+            resource_type: "missing-offer".to_string(),
+        }
+    );
+    assert_eq!(err.code(), "manifest.event_unknown_resource");
+}
+
+#[test]
+fn manifest_validation_rejects_duplicate_resource_type() {
+    let mut manifest = offer_manifest();
+    manifest.resources.push(ResourceDefinition {
+        resource_type: "offer".to_string(),
+        schema_id: "resource.offer.v2".to_string(),
+        schema_version: 2,
+        components: Vec::new(),
+    });
+
+    let err = manifest
+        .validate()
+        .expect_err("duplicate resource type should fail validation");
+
+    assert_eq!(
+        err,
+        ManifestValidationError::DuplicateResourceType {
+            resource_type: "offer".to_string(),
+        }
+    );
+    assert_eq!(err.code(), "manifest.duplicate_resource_type");
 }
 
 fn offer_manifest() -> ArchitectureManifest {

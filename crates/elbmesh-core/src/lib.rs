@@ -20,8 +20,8 @@ pub use error::{
 };
 pub use manifest::{
     ActionDefinition, ArchitectureManifest, ComponentDefinition, EventDefinition,
-    ExternalOperationDefinition, QueryDefinition, ReactionDefinition, ResourceDefinition,
-    ViewDefinition,
+    ExternalOperationDefinition, ManifestValidationError, QueryDefinition, ReactionDefinition,
+    ResourceDefinition, ViewDefinition,
 };
 pub use message::{
     ActionDecision, ActionMetadata, ActionReceipt, ActionStatus, EmittedEvent, MessageMetadata,
