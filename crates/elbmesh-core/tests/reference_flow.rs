@@ -1,9 +1,10 @@
 use elbmesh_core::ActionScenario;
 
 use reference_flow::{
-    AcceptOfferV1, CreateOfferV1, CreateOrderConfirmationV1, CreateSalesOrderV1, Offer,
-    OfferAcceptedV1, OfferCreatedV1, OfferError, OrderConfirmation, OrderConfirmationCreatedV1,
-    OrderConfirmationError, SalesOrder, SalesOrderCreatedV1, SalesOrderError,
+    AcceptOfferV1, CreateInvoiceV1, CreateOfferV1, CreateOrderConfirmationV1, CreateSalesOrderV1,
+    Invoice, InvoiceCreatedV1, InvoiceError, Offer, OfferAcceptedV1, OfferCreatedV1, OfferError,
+    OrderConfirmation, OrderConfirmationCreatedV1, OrderConfirmationError, SalesOrder,
+    SalesOrderCreatedV1, SalesOrderError,
 };
 
 mod reference_flow {
@@ -476,6 +477,132 @@ mod reference_flow {
             Ok(ActionDecision::with_message("order confirmation created"))
         }
     }
+
+    #[derive(Debug, Default, Clone)]
+    pub struct Invoice {
+        id: Option<String>,
+        order_confirmation_id: Option<String>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub enum InvoiceError {
+        AlreadyExists,
+    }
+
+    impl fmt::Display for InvoiceError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                Self::AlreadyExists => write!(f, "invoice already exists"),
+            }
+        }
+    }
+
+    impl ActionFailure for InvoiceError {
+        fn code(&self) -> &'static str {
+            match self {
+                Self::AlreadyExists => "invoice.already_exists",
+            }
+        }
+
+        fn details(&self) -> serde_json::Value {
+            json!({
+                "error_type": "InvoiceError",
+                "error_variant": match self {
+                    Self::AlreadyExists => "AlreadyExists",
+                },
+            })
+        }
+    }
+
+    impl Resource for Invoice {
+        type Id = String;
+
+        const RESOURCE_TYPE: &'static str = "invoice";
+
+        fn apply_recorded(
+            &mut self,
+            event: &elbmesh_core::RecordedEvent,
+        ) -> Result<(), ResourceError> {
+            if apply_recorded_event::<Self, InvoiceCreatedV1>(self, event)? {
+                return Ok(());
+            }
+
+            Err(ResourceError::UnsupportedEvent {
+                resource_type: Self::RESOURCE_TYPE.to_string(),
+                message_type: event.metadata.message_type.clone(),
+                schema_version: event.metadata.schema_version,
+            })
+        }
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct CreateInvoiceV1 {
+        pub invoice_id: String,
+        pub order_confirmation_id: String,
+    }
+
+    impl Action for CreateInvoiceV1 {
+        type Resource = Invoice;
+
+        const ACTION_TYPE: &'static str = "create_invoice";
+        const SCHEMA_ID: &'static str = "action.create_invoice.v1";
+        const SCHEMA_VERSION: u32 = 1;
+
+        fn resource_id(&self) -> <Self::Resource as Resource>::Id {
+            self.invoice_id.clone()
+        }
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct InvoiceCreatedV1 {
+        pub invoice_id: String,
+        pub order_confirmation_id: String,
+    }
+
+    impl Event for InvoiceCreatedV1 {
+        type Resource = Invoice;
+
+        const EVENT_TYPE: &'static str = "invoice_created";
+        const SCHEMA_ID: &'static str = "event.invoice_created.v1";
+        const SCHEMA_VERSION: u32 = 1;
+
+        fn resource_id(&self) -> <Self::Resource as Resource>::Id {
+            self.invoice_id.clone()
+        }
+    }
+
+    impl Apply<InvoiceCreatedV1> for Invoice {
+        fn apply(&mut self, event: InvoiceCreatedV1) -> Result<(), ResourceError> {
+            self.id = Some(event.invoice_id);
+            self.order_confirmation_id = Some(event.order_confirmation_id);
+            Ok(())
+        }
+    }
+
+    #[async_trait]
+    impl Handle<CreateInvoiceV1> for Invoice {
+        type Error = InvoiceError;
+
+        async fn handle(
+            &mut self,
+            action: CreateInvoiceV1,
+            ctx: &mut ActionContext<Self>,
+        ) -> Result<ActionDecision, HandlerError<Self::Error>> {
+            if self.id.is_some() {
+                return Err(HandlerError::domain(InvoiceError::AlreadyExists));
+            }
+
+            ctx.record_applied(
+                self,
+                InvoiceCreatedV1 {
+                    invoice_id: action.invoice_id,
+                    order_confirmation_id: action.order_confirmation_id,
+                },
+            )?;
+
+            Ok(ActionDecision::with_message("invoice created"))
+        }
+    }
 }
 
 #[tokio::test]
@@ -613,6 +740,37 @@ async fn create_order_confirmation_twice_returns_typed_already_exists_error() {
             sales_order_id: "sales-order-1".to_string(),
         })
         .then_error(OrderConfirmationError::AlreadyExists)
+        .assert()
+        .await;
+}
+
+#[tokio::test]
+async fn create_invoice_emits_invoice_created() {
+    ActionScenario::<Invoice>::new()
+        .when(CreateInvoiceV1 {
+            invoice_id: "invoice-1".to_string(),
+            order_confirmation_id: "order-confirmation-1".to_string(),
+        })
+        .then(vec![InvoiceCreatedV1 {
+            invoice_id: "invoice-1".to_string(),
+            order_confirmation_id: "order-confirmation-1".to_string(),
+        }])
+        .assert()
+        .await;
+}
+
+#[tokio::test]
+async fn create_invoice_twice_returns_typed_already_exists_error() {
+    ActionScenario::<Invoice>::new()
+        .given(vec![InvoiceCreatedV1 {
+            invoice_id: "invoice-1".to_string(),
+            order_confirmation_id: "order-confirmation-1".to_string(),
+        }])
+        .when(CreateInvoiceV1 {
+            invoice_id: "invoice-1".to_string(),
+            order_confirmation_id: "order-confirmation-1".to_string(),
+        })
+        .then_error(InvoiceError::AlreadyExists)
         .assert()
         .await;
 }
