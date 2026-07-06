@@ -1,11 +1,11 @@
 use async_trait::async_trait;
 use elbmesh_core::{
     apply_recorded_event, Action, ActionContext, ActionDecision, ActionError, ActionExecutor,
-    ActionFailure, ActionJournal, ActionJournalError, ActionJournalRecord, ActionJournalStream,
-    ActionMetadata, ActionReceipt, ActionScenario, ActionStatus, AppendResult, Apply, Event,
-    EventStore, EventStoreError, ExecutionError, ExpectedVersion, Handle, HandlerError,
-    InMemoryActionJournal, InMemoryEventStore, MessageMetadata, NewEvent, RecordedEvent, Resource,
-    ResourceError, ResourceStream, StreamType,
+    ActionFailure, ActionFailureClassification, ActionJournal, ActionJournalError,
+    ActionJournalRecord, ActionJournalStream, ActionMetadata, ActionReceipt, ActionScenario,
+    ActionStatus, AppendResult, Apply, Event, EventStore, EventStoreError, ExecutionError,
+    ExpectedVersion, Handle, HandlerError, InMemoryActionJournal, InMemoryEventStore,
+    MessageMetadata, NewEvent, RecordedEvent, Resource, ResourceError, ResourceStream, StreamType,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -133,11 +133,39 @@ struct CreateOfferAfterObservingCalledJournalV1 {
     title: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+struct SerializationFailingActionV1 {
+    offer_id: String,
+}
+
+impl Serialize for SerializationFailingActionV1 {
+    fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        Err(serde::ser::Error::custom("action payload unavailable"))
+    }
+}
+
 impl Action for CreateOfferAfterObservingCalledJournalV1 {
     type Resource = Offer;
 
     const ACTION_TYPE: &'static str = "create_offer_after_observing_called_journal";
     const SCHEMA_ID: &'static str = "action.create_offer_after_observing_called_journal.v1";
+    const SCHEMA_VERSION: u32 = 1;
+
+    fn resource_id(&self) -> <Self::Resource as Resource>::Id {
+        self.offer_id.clone()
+    }
+}
+
+impl Action for SerializationFailingActionV1 {
+    type Resource = Offer;
+
+    const ACTION_TYPE: &'static str = "serialization_failing_action";
+
+    const SCHEMA_ID: &'static str = "action.serialization_failing_action.v1";
+
     const SCHEMA_VERSION: u32 = 1;
 
     fn resource_id(&self) -> <Self::Resource as Resource>::Id {
@@ -402,6 +430,19 @@ impl Handle<CreateOfferAfterObservingCalledJournalV1> for Offer {
 }
 
 #[async_trait]
+impl Handle<SerializationFailingActionV1> for Offer {
+    type Error = OfferError;
+
+    async fn handle(
+        &mut self,
+        _action: SerializationFailingActionV1,
+        _ctx: &mut ActionContext<Self>,
+    ) -> Result<ActionDecision, HandlerError<Self::Error>> {
+        panic!("serialization failure should happen before the handler runs")
+    }
+}
+
+#[async_trait]
 impl Handle<RecordWrongOfferEventV1> for Offer {
     type Error = OfferError;
 
@@ -561,6 +602,82 @@ impl EventStore for OutOfOrderLoadEventStore {
 }
 
 #[derive(Clone)]
+struct LoadFailingEventStore {
+    reason: String,
+}
+
+impl LoadFailingEventStore {
+    fn new(reason: impl Into<String>) -> Self {
+        Self {
+            reason: reason.into(),
+        }
+    }
+}
+
+#[async_trait]
+impl EventStore for LoadFailingEventStore {
+    async fn load(&self, _stream: &ResourceStream) -> Result<Vec<RecordedEvent>, EventStoreError> {
+        Err(EventStoreError::Other(self.reason.clone()))
+    }
+
+    async fn append(
+        &self,
+        _stream: &ResourceStream,
+        _expected_version: ExpectedVersion,
+        _events: Vec<NewEvent>,
+    ) -> Result<AppendResult, EventStoreError> {
+        panic!("append should not run after load failure")
+    }
+}
+
+#[derive(Clone)]
+struct AppendFailingEventStore {
+    stream: ResourceStream,
+    reason: String,
+    append_batches: Arc<Mutex<Vec<Vec<NewEvent>>>>,
+}
+
+impl AppendFailingEventStore {
+    fn new(stream: ResourceStream, reason: impl Into<String>) -> Self {
+        Self {
+            stream,
+            reason: reason.into(),
+            append_batches: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    fn append_batches(&self) -> Vec<Vec<NewEvent>> {
+        self.append_batches
+            .lock()
+            .expect("append batch storage should not be poisoned")
+            .clone()
+    }
+}
+
+#[async_trait]
+impl EventStore for AppendFailingEventStore {
+    async fn load(&self, stream: &ResourceStream) -> Result<Vec<RecordedEvent>, EventStoreError> {
+        assert_eq!(stream, &self.stream);
+        Ok(Vec::new())
+    }
+
+    async fn append(
+        &self,
+        stream: &ResourceStream,
+        _expected_version: ExpectedVersion,
+        events: Vec<NewEvent>,
+    ) -> Result<AppendResult, EventStoreError> {
+        assert_eq!(stream, &self.stream);
+        self.append_batches
+            .lock()
+            .expect("append batch storage should not be poisoned")
+            .push(events);
+
+        Err(EventStoreError::Other(self.reason.clone()))
+    }
+}
+
+#[derive(Clone)]
 struct EventStoreObservingActionJournal {
     inner: InMemoryActionJournal,
     event_store: InMemoryEventStore,
@@ -607,6 +724,39 @@ impl ActionJournal for EventStoreObservingActionJournal {
                 .lock()
                 .expect("completion observations poisoned")
                 .push(receipt.clone());
+        }
+
+        self.inner.append(stream, record).await
+    }
+
+    async fn load(
+        &self,
+        stream: &ActionJournalStream,
+    ) -> Result<Vec<ActionJournalRecord>, ActionJournalError> {
+        self.inner.load(stream).await
+    }
+}
+
+#[derive(Clone)]
+struct ActionFailedFailingActionJournal {
+    inner: InMemoryActionJournal,
+}
+
+impl ActionFailedFailingActionJournal {
+    fn new(inner: InMemoryActionJournal) -> Self {
+        Self { inner }
+    }
+}
+
+#[async_trait]
+impl ActionJournal for ActionFailedFailingActionJournal {
+    async fn append(
+        &self,
+        stream: &ActionJournalStream,
+        record: ActionJournalRecord,
+    ) -> Result<(), ActionJournalError> {
+        if matches!(&record, ActionJournalRecord::ActionFailed { .. }) {
+            return Err(ActionJournalError::StoragePoisoned);
         }
 
         self.inner.append(stream, record).await
@@ -690,6 +840,59 @@ fn assert_wrong_resource_action_error(error: ActionError, expected: &str, actual
     }
 }
 
+fn assert_event_store_other_execution_error<E>(err: ExecutionError<E>, expected_reason: &str)
+where
+    E: ActionFailure,
+{
+    let ExecutionError::EventStore(EventStoreError::Other(reason)) = err else {
+        panic!("expected typed event-store execution error");
+    };
+
+    assert_eq!(reason, expected_reason);
+}
+
+fn assert_offer_created_deserialization_execution_error<E>(err: ExecutionError<E>)
+where
+    E: ActionFailure,
+{
+    let ExecutionError::Resource(ResourceError::Deserialization {
+        message_type,
+        schema_version,
+        ..
+    }) = err
+    else {
+        panic!("expected typed resource deserialization execution error");
+    };
+
+    assert_eq!(message_type, OfferCreatedV1::EVENT_TYPE);
+    assert_eq!(schema_version, OfferCreatedV1::SCHEMA_VERSION);
+}
+
+fn assert_action_serialization_execution_error<E>(err: ExecutionError<E>, expected_reason: &str)
+where
+    E: ActionFailure,
+{
+    let ExecutionError::Handler(HandlerError::Runtime(ActionError::Serialization(reason))) = err
+    else {
+        panic!("expected typed action serialization execution error");
+    };
+
+    assert_eq!(reason, expected_reason);
+}
+
+fn action_journal_record_metadata(record: &ActionJournalRecord) -> &MessageMetadata {
+    match record {
+        ActionJournalRecord::ActionCalled { metadata, .. }
+        | ActionJournalRecord::ActionCompleted { metadata, .. }
+        | ActionJournalRecord::ActionRejected { metadata, .. }
+        | ActionJournalRecord::ActionFailed { metadata, .. } => metadata,
+    }
+}
+
+fn action_journal_message_type(record: &ActionJournalRecord) -> &str {
+    action_journal_record_metadata(record).message_type.as_str()
+}
+
 fn assert_action_journal_metadata(
     metadata: &MessageMetadata,
     message_type: &str,
@@ -742,7 +945,8 @@ fn assert_action_called_journal_record(
             assert_eq!(payload, &expected_payload);
         }
         ActionJournalRecord::ActionCompleted { .. }
-        | ActionJournalRecord::ActionRejected { .. } => panic!("expected ActionCalled record"),
+        | ActionJournalRecord::ActionRejected { .. }
+        | ActionJournalRecord::ActionFailed { .. } => panic!("expected ActionCalled record"),
     }
 }
 
@@ -767,7 +971,9 @@ fn assert_action_completed_journal_record(
             assert_eq!(journal_receipt.action_id, action.action_id);
             assert_eq!(journal_receipt.status, ActionStatus::Completed);
         }
-        ActionJournalRecord::ActionCalled { .. } | ActionJournalRecord::ActionRejected { .. } => {
+        ActionJournalRecord::ActionCalled { .. }
+        | ActionJournalRecord::ActionRejected { .. }
+        | ActionJournalRecord::ActionFailed { .. } => {
             panic!("expected ActionCompleted record")
         }
     }
@@ -796,9 +1002,38 @@ fn assert_action_rejected_journal_record(
             assert_eq!(failure_code, expected_failure_code);
             assert_eq!(failure_details, &expected_failure_details);
         }
-        ActionJournalRecord::ActionCalled { .. } | ActionJournalRecord::ActionCompleted { .. } => {
+        ActionJournalRecord::ActionCalled { .. }
+        | ActionJournalRecord::ActionCompleted { .. }
+        | ActionJournalRecord::ActionFailed { .. } => {
             panic!("expected ActionRejected record")
         }
+    }
+}
+
+fn assert_action_failed_journal_record(
+    record: &ActionJournalRecord,
+    action: &ActionMetadata,
+    offer_id: &str,
+    expected_classification: ActionFailureClassification,
+) {
+    match record {
+        ActionJournalRecord::ActionFailed {
+            metadata,
+            failure_classification,
+            ..
+        } => {
+            assert_action_journal_metadata(
+                metadata,
+                "action_failed",
+                "journal.action_failed.v1",
+                action,
+                offer_id,
+            );
+            assert_eq!(failure_classification, &expected_classification);
+        }
+        ActionJournalRecord::ActionCalled { .. }
+        | ActionJournalRecord::ActionCompleted { .. }
+        | ActionJournalRecord::ActionRejected { .. } => panic!("expected ActionFailed record"),
     }
 }
 
@@ -817,6 +1052,26 @@ fn assert_resource_stream_contains_only_events(
         assert_ne!(event.metadata.message_type, "action_called");
         assert_ne!(event.metadata.message_type, "action_completed");
         assert_ne!(event.metadata.message_type, "action_rejected");
+        assert_ne!(event.metadata.message_type, "action_failed");
+    }
+}
+
+fn assert_new_events_contain_only_resource_events(
+    events: &[NewEvent],
+    expected_message_types: &[&str],
+) {
+    let message_types: Vec<_> = events
+        .iter()
+        .map(|event| event.metadata.message_type.as_str())
+        .collect();
+
+    assert_eq!(message_types, expected_message_types);
+    for event in events {
+        assert_eq!(event.metadata.stream_type, StreamType::Resource);
+        assert_ne!(event.metadata.message_type, "action_called");
+        assert_ne!(event.metadata.message_type, "action_completed");
+        assert_ne!(event.metadata.message_type, "action_rejected");
+        assert_ne!(event.metadata.message_type, "action_failed");
     }
 }
 
@@ -856,6 +1111,62 @@ async fn execute_rejected_create_offer_with_journal(
         .expect_err("duplicate create should be rejected");
 
     (err, store, journal, metadata, action)
+}
+
+async fn execute_wrong_resource_runtime_failure_with_journal(
+    offer_id: &str,
+    event_offer_id: &str,
+    action_id: &str,
+) -> (
+    ExecutionError<OfferError>,
+    InMemoryEventStore,
+    InMemoryActionJournal,
+    ActionMetadata,
+    RecordWrongOfferEventV1,
+) {
+    let store = InMemoryEventStore::new();
+    let journal = InMemoryActionJournal::new();
+    let executor = ActionExecutor::new(store.clone()).with_action_journal(journal.clone());
+    let action = RecordWrongOfferEventV1 {
+        offer_id: offer_id.to_string(),
+        event_offer_id: event_offer_id.to_string(),
+        title: "Cross-resource title".to_string(),
+    };
+    let metadata = test_action_metadata(action_id);
+    let err = executor
+        .execute::<Offer, _>(action.clone(), metadata.clone())
+        .await
+        .expect_err("wrong-resource runtime error should fail action execution");
+
+    (err, store, journal, metadata, action)
+}
+
+async fn load_action_journal_records(
+    journal: &InMemoryActionJournal,
+    action: &ActionMetadata,
+) -> Vec<ActionJournalRecord> {
+    let journal_stream = ActionJournalStream::for_action(action.action_id.clone());
+    journal
+        .load(&journal_stream)
+        .await
+        .expect("action journal records should load")
+}
+
+fn malformed_offer_created_recorded_event(offer_id: &str) -> RecordedEvent {
+    let mut event = event_to_new_event(OfferCreatedV1 {
+        offer_id: offer_id.to_string(),
+        title: "Malformed historical title".to_string(),
+    });
+    event.payload = json!({
+        "title": "missing required offer_id",
+    });
+
+    RecordedEvent {
+        stream: ResourceStream::new(Offer::RESOURCE_TYPE, offer_id),
+        sequence: 1,
+        metadata: event.metadata,
+        payload: event.payload,
+    }
 }
 
 fn test_action_metadata(action_id: &str) -> ActionMetadata {
@@ -1132,14 +1443,7 @@ async fn successful_action_with_journal_records_called_before_handler_and_comple
         .expect("action journal records should load");
 
     assert_eq!(records.len(), 2);
-    let journal_message_types: Vec<_> = records
-        .iter()
-        .map(|record| match record {
-            ActionJournalRecord::ActionCalled { metadata, .. } => metadata.message_type.as_str(),
-            ActionJournalRecord::ActionCompleted { metadata, .. } => metadata.message_type.as_str(),
-            ActionJournalRecord::ActionRejected { metadata, .. } => metadata.message_type.as_str(),
-        })
-        .collect();
+    let journal_message_types: Vec<_> = records.iter().map(action_journal_message_type).collect();
     assert_eq!(
         journal_message_types,
         vec!["action_called", "action_completed"]
@@ -1208,16 +1512,11 @@ async fn action_executor_journal_keeps_resource_event_stream_clean() {
         .expect("action journal records should load");
     assert_eq!(records.len(), 2);
     for record in records {
-        match record {
-            ActionJournalRecord::ActionCalled { metadata, .. }
-            | ActionJournalRecord::ActionCompleted { metadata, .. }
-            | ActionJournalRecord::ActionRejected { metadata, .. } => {
-                assert_eq!(metadata.stream_type, StreamType::Action);
-                assert_eq!(metadata.resource_type, Offer::RESOURCE_TYPE);
-                assert_eq!(metadata.resource_id, "offer-journal-stream-clean");
-                assert_eq!(metadata.action_id, "action-journal-stream-clean");
-            }
-        }
+        let metadata = action_journal_record_metadata(&record);
+        assert_eq!(metadata.stream_type, StreamType::Action);
+        assert_eq!(metadata.resource_type, Offer::RESOURCE_TYPE);
+        assert_eq!(metadata.resource_id, "offer-journal-stream-clean");
+        assert_eq!(metadata.action_id, "action-journal-stream-clean");
     }
 }
 
@@ -1284,14 +1583,7 @@ async fn rejected_action_with_journal_records_called_and_rejected_in_order() {
         .expect("action journal records should load");
 
     assert_eq!(records.len(), 2);
-    let journal_message_types: Vec<_> = records
-        .iter()
-        .map(|record| match record {
-            ActionJournalRecord::ActionCalled { metadata, .. } => metadata.message_type.as_str(),
-            ActionJournalRecord::ActionCompleted { metadata, .. } => metadata.message_type.as_str(),
-            ActionJournalRecord::ActionRejected { metadata, .. } => metadata.message_type.as_str(),
-        })
-        .collect();
+    let journal_message_types: Vec<_> = records.iter().map(action_journal_message_type).collect();
     assert_eq!(
         journal_message_types,
         vec!["action_called", "action_rejected"]
@@ -1373,6 +1665,311 @@ async fn rejected_action_with_journal_returns_typed_domain_error_to_caller() {
             error: OfferError::AlreadyExists
         })
     ));
+}
+
+#[tokio::test]
+async fn append_failure_with_journal_records_failed_event_store_classification() {
+    let store = AppendFailingEventStore::new(
+        ResourceStream::new(Offer::RESOURCE_TYPE, "offer-append-failure"),
+        "append unavailable",
+    );
+    let journal = InMemoryActionJournal::new();
+    let executor = ActionExecutor::new(store.clone()).with_action_journal(journal.clone());
+    let action = CreateOfferV1 {
+        offer_id: "offer-append-failure".to_string(),
+        title: "Append failure".to_string(),
+    };
+    let metadata = test_action_metadata("action-append-failure");
+
+    let err = executor
+        .execute::<Offer, _>(action.clone(), metadata.clone())
+        .await
+        .expect_err("resource event append failure should fail action execution");
+
+    assert_event_store_other_execution_error(err, "append unavailable");
+
+    let records = load_action_journal_records(&journal, &metadata).await;
+    assert_eq!(records.len(), 2);
+    let journal_message_types: Vec<_> = records.iter().map(action_journal_message_type).collect();
+    assert_eq!(
+        journal_message_types,
+        vec!["action_called", "action_failed"]
+    );
+    assert_action_called_journal_record(
+        &records[0],
+        &metadata,
+        "offer-append-failure",
+        CreateOfferV1::ACTION_TYPE,
+        CreateOfferV1::SCHEMA_ID,
+        CreateOfferV1::SCHEMA_VERSION,
+        json!({
+            "offer_id": action.offer_id,
+            "title": action.title,
+        }),
+    );
+    assert_action_failed_journal_record(
+        &records[1],
+        &metadata,
+        "offer-append-failure",
+        ActionFailureClassification::EventStore,
+    );
+
+    let append_batches = store.append_batches();
+    assert_eq!(append_batches.len(), 1);
+    assert_new_events_contain_only_resource_events(
+        &append_batches[0],
+        &[OfferCreatedV1::EVENT_TYPE],
+    );
+}
+
+#[tokio::test]
+async fn load_failure_with_journal_records_failed_event_store_classification() {
+    let store = LoadFailingEventStore::new("load unavailable");
+    let journal = InMemoryActionJournal::new();
+    let executor = ActionExecutor::new(store).with_action_journal(journal.clone());
+    let action = CreateOfferV1 {
+        offer_id: "offer-load-failure".to_string(),
+        title: "Load failure".to_string(),
+    };
+    let metadata = test_action_metadata("action-load-failure");
+
+    let err = executor
+        .execute::<Offer, _>(action.clone(), metadata.clone())
+        .await
+        .expect_err("resource event load failure should fail action execution");
+
+    assert_event_store_other_execution_error(err, "load unavailable");
+
+    let records = load_action_journal_records(&journal, &metadata).await;
+    assert_eq!(records.len(), 2);
+    let journal_message_types: Vec<_> = records.iter().map(action_journal_message_type).collect();
+    assert_eq!(
+        journal_message_types,
+        vec!["action_called", "action_failed"]
+    );
+    assert_action_called_journal_record(
+        &records[0],
+        &metadata,
+        "offer-load-failure",
+        CreateOfferV1::ACTION_TYPE,
+        CreateOfferV1::SCHEMA_ID,
+        CreateOfferV1::SCHEMA_VERSION,
+        json!({
+            "offer_id": action.offer_id,
+            "title": action.title,
+        }),
+    );
+    assert_action_failed_journal_record(
+        &records[1],
+        &metadata,
+        "offer-load-failure",
+        ActionFailureClassification::EventStore,
+    );
+}
+
+#[tokio::test]
+async fn replay_failure_with_journal_records_failed_resource_classification() {
+    let offer_id = "offer-replay-failure";
+    let resource_stream = ResourceStream::new(Offer::RESOURCE_TYPE, offer_id);
+    let store = OutOfOrderLoadEventStore::new(
+        resource_stream,
+        vec![malformed_offer_created_recorded_event(offer_id)],
+    );
+    let journal = InMemoryActionJournal::new();
+    let executor = ActionExecutor::new(store.clone()).with_action_journal(journal.clone());
+    let action = CreateOfferV1 {
+        offer_id: offer_id.to_string(),
+        title: "Replay failure".to_string(),
+    };
+    let metadata = test_action_metadata("action-replay-failure");
+
+    let err = executor
+        .execute::<Offer, _>(action.clone(), metadata.clone())
+        .await
+        .expect_err("resource replay failure should fail action execution");
+
+    assert_offer_created_deserialization_execution_error(err);
+
+    let records = load_action_journal_records(&journal, &metadata).await;
+    assert_eq!(records.len(), 2);
+    let journal_message_types: Vec<_> = records.iter().map(action_journal_message_type).collect();
+    assert_eq!(
+        journal_message_types,
+        vec!["action_called", "action_failed"]
+    );
+    assert_action_called_journal_record(
+        &records[0],
+        &metadata,
+        offer_id,
+        CreateOfferV1::ACTION_TYPE,
+        CreateOfferV1::SCHEMA_ID,
+        CreateOfferV1::SCHEMA_VERSION,
+        json!({
+            "offer_id": action.offer_id,
+            "title": action.title,
+        }),
+    );
+    assert_action_failed_journal_record(
+        &records[1],
+        &metadata,
+        offer_id,
+        ActionFailureClassification::Resource,
+    );
+    assert!(store.append_calls().is_empty());
+}
+
+#[tokio::test]
+async fn handler_runtime_failure_with_journal_keeps_resource_stream_clean() {
+    let (err, store, journal, metadata, action) =
+        execute_wrong_resource_runtime_failure_with_journal(
+            "offer-runtime-clean",
+            "offer-runtime-clean-other",
+            "action-runtime-clean",
+        )
+        .await;
+
+    assert_wrong_resource_execution_error(err, "offer-runtime-clean", "offer-runtime-clean-other");
+
+    let resource_stream = ResourceStream::new(Offer::RESOURCE_TYPE, "offer-runtime-clean");
+    let history = store
+        .load(&resource_stream)
+        .await
+        .expect("resource events should load");
+    assert_resource_stream_contains_only_events(&history, &[]);
+    assert!(store.all_events().is_empty());
+
+    let records = load_action_journal_records(&journal, &metadata).await;
+    assert_eq!(records.len(), 2);
+    let journal_message_types: Vec<_> = records.iter().map(action_journal_message_type).collect();
+    assert_eq!(
+        journal_message_types,
+        vec!["action_called", "action_failed"]
+    );
+    assert_action_called_journal_record(
+        &records[0],
+        &metadata,
+        "offer-runtime-clean",
+        RecordWrongOfferEventV1::ACTION_TYPE,
+        RecordWrongOfferEventV1::SCHEMA_ID,
+        RecordWrongOfferEventV1::SCHEMA_VERSION,
+        json!({
+            "event_offer_id": action.event_offer_id,
+            "offer_id": action.offer_id,
+            "title": action.title,
+        }),
+    );
+    assert_action_failed_journal_record(
+        &records[1],
+        &metadata,
+        "offer-runtime-clean",
+        ActionFailureClassification::HandlerRuntime,
+    );
+}
+
+#[tokio::test]
+async fn action_called_serialization_failure_with_journal_records_failed_handler_runtime_classification(
+) {
+    let store = InMemoryEventStore::new();
+    let journal = InMemoryActionJournal::new();
+    let executor = ActionExecutor::new(store.clone()).with_action_journal(journal.clone());
+    let action = SerializationFailingActionV1 {
+        offer_id: "offer-action-called-serialization-failure".to_string(),
+    };
+    let metadata = test_action_metadata("action-called-serialization-failure");
+
+    let err = executor
+        .execute::<Offer, _>(action, metadata.clone())
+        .await
+        .expect_err("action payload serialization failure should fail action execution");
+
+    assert_action_serialization_execution_error(err, "action payload unavailable");
+
+    let records = load_action_journal_records(&journal, &metadata).await;
+    assert_eq!(records.len(), 1);
+    let journal_message_types: Vec<_> = records.iter().map(action_journal_message_type).collect();
+    assert_eq!(journal_message_types, vec!["action_failed"]);
+    assert_action_failed_journal_record(
+        &records[0],
+        &metadata,
+        "offer-action-called-serialization-failure",
+        ActionFailureClassification::HandlerRuntime,
+    );
+
+    let resource_stream = ResourceStream::new(
+        Offer::RESOURCE_TYPE,
+        "offer-action-called-serialization-failure",
+    );
+    let history = store
+        .load(&resource_stream)
+        .await
+        .expect("resource events should load");
+    assert_resource_stream_contains_only_events(&history, &[]);
+}
+
+#[tokio::test]
+async fn failed_runtime_action_with_journal_returns_typed_execution_error_to_caller() {
+    let (err, _store, _journal, _metadata, _action) =
+        execute_wrong_resource_runtime_failure_with_journal(
+            "offer-runtime-typed-error",
+            "offer-runtime-typed-error-other",
+            "action-runtime-typed-error",
+        )
+        .await;
+
+    assert_wrong_resource_execution_error(
+        err,
+        "offer-runtime-typed-error",
+        "offer-runtime-typed-error-other",
+    );
+}
+
+#[tokio::test]
+async fn failed_runtime_action_returns_typed_error_when_action_failed_journal_append_fails() {
+    let store = InMemoryEventStore::new();
+    let inner_journal = InMemoryActionJournal::new();
+    let journal = ActionFailedFailingActionJournal::new(inner_journal);
+    let executor = ActionExecutor::new(store.clone()).with_action_journal(journal.clone());
+    let action = RecordWrongOfferEventV1 {
+        offer_id: "offer-runtime-journal-failure".to_string(),
+        event_offer_id: "offer-runtime-journal-failure-other".to_string(),
+        title: "Runtime journal failure".to_string(),
+    };
+    let metadata = test_action_metadata("action-runtime-journal-failure");
+
+    let err = executor
+        .execute::<Offer, _>(action.clone(), metadata.clone())
+        .await
+        .expect_err("runtime failure should fail action execution");
+
+    assert_wrong_resource_execution_error(
+        err,
+        "offer-runtime-journal-failure",
+        "offer-runtime-journal-failure-other",
+    );
+
+    let journal_stream = ActionJournalStream::for_action(metadata.action_id.clone());
+    let records = journal
+        .load(&journal_stream)
+        .await
+        .expect("action journal records should load");
+    assert_eq!(records.len(), 1);
+    let journal_message_types: Vec<_> = records.iter().map(action_journal_message_type).collect();
+    assert_eq!(journal_message_types, vec!["action_called"]);
+    assert_action_called_journal_record(
+        &records[0],
+        &metadata,
+        "offer-runtime-journal-failure",
+        RecordWrongOfferEventV1::ACTION_TYPE,
+        RecordWrongOfferEventV1::SCHEMA_ID,
+        RecordWrongOfferEventV1::SCHEMA_VERSION,
+        json!({
+            "event_offer_id": action.event_offer_id,
+            "offer_id": action.offer_id,
+            "title": action.title,
+        }),
+    );
+
+    assert!(store.all_events().is_empty());
 }
 
 #[tokio::test]

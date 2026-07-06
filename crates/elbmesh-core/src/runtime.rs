@@ -5,10 +5,10 @@ use chrono::Utc;
 use uuid::Uuid;
 
 use crate::{
-    Action, ActionDecision, ActionError, ActionFailure, ActionJournal, ActionJournalRecord,
-    ActionJournalStream, ActionMetadata, ActionReceipt, ActionStatus, Apply, EmittedEvent, Event,
-    EventStore, ExecutionError, ExpectedVersion, Handle, HandlerError, MessageMetadata, NewEvent,
-    Resource, ResourceStream, StreamType,
+    Action, ActionDecision, ActionError, ActionFailure, ActionFailureClassification, ActionJournal,
+    ActionJournalRecord, ActionJournalStream, ActionMetadata, ActionReceipt, ActionStatus, Apply,
+    EmittedEvent, Event, EventStore, ExecutionError, ExpectedVersion, Handle, HandlerError,
+    MessageMetadata, NewEvent, Resource, ResourceStream, StreamType,
 };
 
 pub struct ActionContext<R: Resource> {
@@ -144,26 +144,62 @@ where
         A: Action<Resource = R>,
     {
         let resource_id = action.resource_id().to_string();
+        let action_metadata = metadata.clone();
+        let action_id = action_metadata.action_id.clone();
+        let journal_stream = ActionJournalStream::for_action(action_id.clone());
+        if let Some(action_journal) = &self.action_journal {
+            let action_called =
+                match action_called_record::<R, A>(&action_metadata, &resource_id, &action) {
+                    Ok(record) => record,
+                    Err(error) => {
+                        append_action_failed::<R>(
+                            Some(action_journal),
+                            &journal_stream,
+                            &action_metadata,
+                            &resource_id,
+                            ActionFailureClassification::HandlerRuntime,
+                        )
+                        .await;
+                        return Err(error);
+                    }
+                };
+
+            action_journal
+                .append(&journal_stream, action_called)
+                .await?;
+        }
+
         let stream = ResourceStream::new(R::RESOURCE_TYPE, resource_id.clone());
-        let mut history = self.event_store.load(&stream).await?;
+        let mut history = match self.event_store.load(&stream).await {
+            Ok(history) => history,
+            Err(error) => {
+                append_action_failed::<R>(
+                    self.action_journal.as_ref(),
+                    &journal_stream,
+                    &action_metadata,
+                    &resource_id,
+                    ActionFailureClassification::EventStore,
+                )
+                .await;
+                return Err(error.into());
+            }
+        };
         history.sort_by_key(|event| event.sequence);
         let previous_version = history.last().map_or(0, |event| event.sequence);
 
         let mut resource = R::default();
         for event in &history {
-            resource.apply_recorded(event)?;
-        }
-
-        let action_metadata = metadata.clone();
-        let action_id = action_metadata.action_id.clone();
-        let journal_stream = ActionJournalStream::for_action(action_id.clone());
-        if let Some(action_journal) = &self.action_journal {
-            action_journal
-                .append(
+            if let Err(error) = resource.apply_recorded(event) {
+                append_action_failed::<R>(
+                    self.action_journal.as_ref(),
                     &journal_stream,
-                    action_called_record::<R, A>(&action_metadata, &resource_id, &action)?,
+                    &action_metadata,
+                    &resource_id,
+                    ActionFailureClassification::Resource,
                 )
-                .await?;
+                .await;
+                return Err(error.into());
+            }
         }
 
         let mut ctx = ActionContext::<R>::new(
@@ -187,7 +223,17 @@ where
 
                 return Err(HandlerError::Domain { error }.into());
             }
-            Err(error) => return Err(error.into()),
+            Err(HandlerError::Runtime(error)) => {
+                append_action_failed::<R>(
+                    self.action_journal.as_ref(),
+                    &journal_stream,
+                    &action_metadata,
+                    &resource_id,
+                    ActionFailureClassification::HandlerRuntime,
+                )
+                .await;
+                return Err(HandlerError::Runtime(error).into());
+            }
         };
         let pending_events = ctx.into_events();
 
@@ -198,13 +244,28 @@ where
                 events: Vec::new(),
             }
         } else {
-            self.event_store
+            match self
+                .event_store
                 .append(
                     &stream,
                     ExpectedVersion::Exact(previous_version),
                     pending_events,
                 )
-                .await?
+                .await
+            {
+                Ok(append_result) => append_result,
+                Err(error) => {
+                    append_action_failed::<R>(
+                        self.action_journal.as_ref(),
+                        &journal_stream,
+                        &action_metadata,
+                        &resource_id,
+                        ActionFailureClassification::EventStore,
+                    )
+                    .await;
+                    return Err(error.into());
+                }
+            }
         };
 
         let receipt = receipt(
@@ -234,6 +295,26 @@ where
         }
 
         Ok(receipt)
+    }
+}
+
+async fn append_action_failed<R>(
+    action_journal: Option<&Arc<dyn ActionJournal>>,
+    journal_stream: &ActionJournalStream,
+    action_metadata: &ActionMetadata,
+    resource_id: &str,
+    failure_classification: ActionFailureClassification,
+) where
+    R: Resource,
+{
+    if let Some(action_journal) = action_journal {
+        // Preserve the caller-facing runtime error if failure journaling also fails.
+        let _ = action_journal
+            .append(
+                journal_stream,
+                action_failed_record::<R>(action_metadata, resource_id, failure_classification),
+            )
+            .await;
     }
 }
 
@@ -284,6 +365,27 @@ where
         ),
         failure_code: error.code().to_string(),
         failure_details: error.details(),
+    }
+}
+
+fn action_failed_record<R>(
+    action_metadata: &ActionMetadata,
+    resource_id: &str,
+    failure_classification: ActionFailureClassification,
+) -> ActionJournalRecord
+where
+    R: Resource,
+{
+    ActionJournalRecord::ActionFailed {
+        metadata: action_journal_metadata(
+            "action_failed",
+            "journal.action_failed.v1",
+            R::RESOURCE_TYPE,
+            resource_id,
+            action_metadata,
+        ),
+        failure_classification,
+        failure_details: serde_json::json!({}),
     }
 }
 

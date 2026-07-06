@@ -122,6 +122,7 @@ where
             ActionJournalRecord::ActionCalled { metadata, .. } => metadata.message_type.as_str(),
             ActionJournalRecord::ActionCompleted { metadata, .. } => metadata.message_type.as_str(),
             ActionJournalRecord::ActionRejected { metadata, .. } => metadata.message_type.as_str(),
+            ActionJournalRecord::ActionFailed { metadata, .. } => metadata.message_type.as_str(),
         })
         .collect();
 
@@ -249,7 +250,8 @@ fn assert_action_called_record(
             );
         }
         ActionJournalRecord::ActionCompleted { .. }
-        | ActionJournalRecord::ActionRejected { .. } => panic!("expected ActionCalled record"),
+        | ActionJournalRecord::ActionRejected { .. }
+        | ActionJournalRecord::ActionFailed { .. } => panic!("expected ActionCalled record"),
     }
 }
 
@@ -270,7 +272,9 @@ fn assert_action_completed_record(
             assert!(receipt.emitted_events.is_empty());
             assert_eq!(receipt.message.as_deref(), Some("offer created"));
         }
-        ActionJournalRecord::ActionCalled { .. } | ActionJournalRecord::ActionRejected { .. } => {
+        ActionJournalRecord::ActionCalled { .. }
+        | ActionJournalRecord::ActionRejected { .. }
+        | ActionJournalRecord::ActionFailed { .. } => {
             panic!("expected ActionCompleted record")
         }
     }
