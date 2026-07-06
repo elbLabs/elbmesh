@@ -1,8 +1,9 @@
 use elbmesh_core::ActionScenario;
 
 use reference_flow::{
-    AcceptOfferV1, CreateOfferV1, CreateSalesOrderV1, Offer, OfferAcceptedV1, OfferCreatedV1,
-    OfferError, SalesOrder, SalesOrderCreatedV1, SalesOrderError,
+    AcceptOfferV1, CreateOfferV1, CreateOrderConfirmationV1, CreateSalesOrderV1, Offer,
+    OfferAcceptedV1, OfferCreatedV1, OfferError, OrderConfirmation, OrderConfirmationCreatedV1,
+    OrderConfirmationError, SalesOrder, SalesOrderCreatedV1, SalesOrderError,
 };
 
 mod reference_flow {
@@ -349,6 +350,132 @@ mod reference_flow {
             Ok(ActionDecision::with_message("sales order created"))
         }
     }
+
+    #[derive(Debug, Default, Clone)]
+    pub struct OrderConfirmation {
+        id: Option<String>,
+        sales_order_id: Option<String>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub enum OrderConfirmationError {
+        AlreadyExists,
+    }
+
+    impl fmt::Display for OrderConfirmationError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                Self::AlreadyExists => write!(f, "order confirmation already exists"),
+            }
+        }
+    }
+
+    impl ActionFailure for OrderConfirmationError {
+        fn code(&self) -> &'static str {
+            match self {
+                Self::AlreadyExists => "order_confirmation.already_exists",
+            }
+        }
+
+        fn details(&self) -> serde_json::Value {
+            json!({
+                "error_type": "OrderConfirmationError",
+                "error_variant": match self {
+                    Self::AlreadyExists => "AlreadyExists",
+                },
+            })
+        }
+    }
+
+    impl Resource for OrderConfirmation {
+        type Id = String;
+
+        const RESOURCE_TYPE: &'static str = "order_confirmation";
+
+        fn apply_recorded(
+            &mut self,
+            event: &elbmesh_core::RecordedEvent,
+        ) -> Result<(), ResourceError> {
+            if apply_recorded_event::<Self, OrderConfirmationCreatedV1>(self, event)? {
+                return Ok(());
+            }
+
+            Err(ResourceError::UnsupportedEvent {
+                resource_type: Self::RESOURCE_TYPE.to_string(),
+                message_type: event.metadata.message_type.clone(),
+                schema_version: event.metadata.schema_version,
+            })
+        }
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct CreateOrderConfirmationV1 {
+        pub order_confirmation_id: String,
+        pub sales_order_id: String,
+    }
+
+    impl Action for CreateOrderConfirmationV1 {
+        type Resource = OrderConfirmation;
+
+        const ACTION_TYPE: &'static str = "create_order_confirmation";
+        const SCHEMA_ID: &'static str = "action.create_order_confirmation.v1";
+        const SCHEMA_VERSION: u32 = 1;
+
+        fn resource_id(&self) -> <Self::Resource as Resource>::Id {
+            self.order_confirmation_id.clone()
+        }
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct OrderConfirmationCreatedV1 {
+        pub order_confirmation_id: String,
+        pub sales_order_id: String,
+    }
+
+    impl Event for OrderConfirmationCreatedV1 {
+        type Resource = OrderConfirmation;
+
+        const EVENT_TYPE: &'static str = "order_confirmation_created";
+        const SCHEMA_ID: &'static str = "event.order_confirmation_created.v1";
+        const SCHEMA_VERSION: u32 = 1;
+
+        fn resource_id(&self) -> <Self::Resource as Resource>::Id {
+            self.order_confirmation_id.clone()
+        }
+    }
+
+    impl Apply<OrderConfirmationCreatedV1> for OrderConfirmation {
+        fn apply(&mut self, event: OrderConfirmationCreatedV1) -> Result<(), ResourceError> {
+            self.id = Some(event.order_confirmation_id);
+            self.sales_order_id = Some(event.sales_order_id);
+            Ok(())
+        }
+    }
+
+    #[async_trait]
+    impl Handle<CreateOrderConfirmationV1> for OrderConfirmation {
+        type Error = OrderConfirmationError;
+
+        async fn handle(
+            &mut self,
+            action: CreateOrderConfirmationV1,
+            ctx: &mut ActionContext<Self>,
+        ) -> Result<ActionDecision, HandlerError<Self::Error>> {
+            if self.id.is_some() {
+                return Err(HandlerError::domain(OrderConfirmationError::AlreadyExists));
+            }
+
+            ctx.record_applied(
+                self,
+                OrderConfirmationCreatedV1 {
+                    order_confirmation_id: action.order_confirmation_id,
+                    sales_order_id: action.sales_order_id,
+                },
+            )?;
+
+            Ok(ActionDecision::with_message("order confirmation created"))
+        }
+    }
 }
 
 #[tokio::test]
@@ -455,6 +582,37 @@ async fn create_sales_order_twice_returns_typed_already_exists_error() {
             offer_id: "offer-1".to_string(),
         })
         .then_error(SalesOrderError::AlreadyExists)
+        .assert()
+        .await;
+}
+
+#[tokio::test]
+async fn create_order_confirmation_emits_order_confirmation_created() {
+    ActionScenario::<OrderConfirmation>::new()
+        .when(CreateOrderConfirmationV1 {
+            order_confirmation_id: "order-confirmation-1".to_string(),
+            sales_order_id: "sales-order-1".to_string(),
+        })
+        .then(vec![OrderConfirmationCreatedV1 {
+            order_confirmation_id: "order-confirmation-1".to_string(),
+            sales_order_id: "sales-order-1".to_string(),
+        }])
+        .assert()
+        .await;
+}
+
+#[tokio::test]
+async fn create_order_confirmation_twice_returns_typed_already_exists_error() {
+    ActionScenario::<OrderConfirmation>::new()
+        .given(vec![OrderConfirmationCreatedV1 {
+            order_confirmation_id: "order-confirmation-1".to_string(),
+            sales_order_id: "sales-order-1".to_string(),
+        }])
+        .when(CreateOrderConfirmationV1 {
+            order_confirmation_id: "order-confirmation-1".to_string(),
+            sales_order_id: "sales-order-1".to_string(),
+        })
+        .then_error(OrderConfirmationError::AlreadyExists)
         .assert()
         .await;
 }
