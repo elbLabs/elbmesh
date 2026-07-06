@@ -42,6 +42,7 @@ Use phase labels:
 phase:0-rails
 phase:1-core
 phase:2-journals
+phase:2.5-visibility
 phase:3-manifest
 phase:4-reference-flow
 phase:5-reactions

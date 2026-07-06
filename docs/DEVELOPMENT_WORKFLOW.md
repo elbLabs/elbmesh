@@ -167,6 +167,33 @@ Follow this loop:
 8. MR Reviewer/Merger merges only when all gates pass.
 9. Orchestrator updates phase status, open questions, and next task dependencies.
 
+## Phase Checkpoint Loop
+
+After every two implementation phases, the Orchestrator must schedule a review/test/visualization checkpoint before starting the next pair of phases.
+
+The checkpoint must answer:
+
+```text
+Can a human understand the runtime or architecture flow?
+Can the current behavior be demonstrated without reading source code?
+Do tests cover the key success, rejection, failure, and recovery paths?
+What technical debt or ambiguity should be resolved before the next phases?
+Which future adapter/tool observations must match the current logical model?
+```
+
+Checkpoint artifacts should include:
+
+```text
+flow diagram or timeline
+failure mode matrix
+test coverage matrix
+technical debt register
+human-readable demo or visualization run plan
+next-phase decision list
+```
+
+The first checkpoint is Phase 2.5, covering the typed core and execution journals before manifest/reference-flow work continues.
+
 ## MR Requirements
 
 Every MR must include:

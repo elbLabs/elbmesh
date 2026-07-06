@@ -38,6 +38,32 @@ cargo test --all
 
 Until Clippy is configured cleanly, the MR must state the current limitation and still run `cargo test --all`.
 
+## Review, Test, And Visualization Cadence
+
+After every two implementation phases, run a review and demonstrability checkpoint before continuing into the next pair of phases.
+
+Checkpoint cadence:
+
+```text
+After Phase 2: review typed core + execution journals through Phase 2.5.
+After Phase 4: review manifest skeleton + reference flow fixture.
+After Phase 6: review reactions + views.
+After Phase 8: review NATS + Restate/external operations.
+After Phase 10: review generation + CLI/agentic tooling.
+```
+
+Each checkpoint must produce or update:
+
+```text
+technical debt register
+runtime or architecture flow diagrams
+test coverage matrix
+visual/demo run that a human can inspect
+decision list for ambiguities before the next phases
+```
+
+The checkpoint is not a substitute for per-MR review. It is a higher-level review that asks whether the system is understandable, recoverable, testable, and demonstrable before adding more surface area.
+
 ## GitHub Issue Labels
 
 Phase labels:
@@ -46,6 +72,7 @@ Phase labels:
 phase:0-rails
 phase:1-core
 phase:2-journals
+phase:2.5-visibility
 phase:3-manifest
 phase:4-reference-flow
 phase:5-reactions
@@ -183,6 +210,41 @@ Exit criteria:
 Resource event streams remain clean.
 Action execution is auditable through journals.
 Journals have named record types and typed errors.
+```
+
+## Phase 2.5: Runtime Visibility, Debt Review, And Demonstrability
+
+Goal: make the typed core and execution journal runtime explainable before adding manifests, reference flows, infrastructure adapters, or durable external operations.
+
+Scope:
+
+```text
+current runtime flow model
+technical debt register
+failure mode matrix
+logical ExecutionTrace model
+visualization/test strategy
+review checkpoint for Phases 1 and 2
+GitHub Issue sequencing for later phases
+```
+
+MR candidates:
+
+```text
+MR 2.5.1: document runtime visibility model and two-phase review cadence
+MR 2.5.2: document technical debt register and failure mode matrix
+MR 2.5.3: trace-model test plan for logical visibility before implementation
+MR 2.5.4: demonstrability plan for Offer-based examples and human review runs
+```
+
+Exit criteria:
+
+```text
+The current runtime can be explained as success, rejection, and failure timelines.
+Known debt is visible before NATS, Restate, or generation work begins.
+The plan distinguishes logical framework visibility from later NATS/Restate overlays.
+Every subsequent pair of phases has a review/test/visualization checkpoint.
+No NATS, Restate, code generation, or CLI implementation is introduced in this phase.
 ```
 
 ## Phase 3: Manifest Skeleton And Architecture Checks
