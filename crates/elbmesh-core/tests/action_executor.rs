@@ -1007,6 +1007,10 @@ async fn scenario_asserts_emitted_events() {
 
 #[tokio::test]
 async fn scenario_asserts_typed_error() {
+    let expected = OfferError::AlreadyExists;
+
+    assert_eq!(expected.code(), "offer.already_exists");
+
     ActionScenario::<Offer>::new()
         .given(vec![OfferCreatedV1 {
             offer_id: "offer-1".to_string(),
@@ -1016,7 +1020,7 @@ async fn scenario_asserts_typed_error() {
             offer_id: "offer-1".to_string(),
             title: "Duplicate".to_string(),
         })
-        .then_error(OfferError::AlreadyExists)
+        .then_error(expected)
         .assert()
         .await;
 }
@@ -1031,8 +1035,16 @@ async fn event_store_enforces_expected_version() {
         .await
         .expect_err("wrong expected version should fail");
 
-    assert!(matches!(
-        err,
-        elbmesh_core::EventStoreError::ConcurrencyConflict { .. }
-    ));
+    match err {
+        EventStoreError::ConcurrencyConflict {
+            stream,
+            expected,
+            actual,
+        } => {
+            assert_eq!(stream, "resources.offer.offer-1");
+            assert_eq!(expected, 1);
+            assert_eq!(actual, 0);
+        }
+        other => panic!("expected concurrency conflict, got {other:?}"),
+    }
 }
