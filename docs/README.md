@@ -11,8 +11,9 @@ This documentation captures the current design decisions from the domain-modelli
 5. [Human Decision Loop](HUMAN_DECISION_LOOP.md)
 6. [Phased Delivery Plan](PHASED_DELIVERY_PLAN.md)
 7. [Runtime Debt And Failure Modes](RUNTIME_DEBT_AND_FAILURE_MODES.md)
-8. [Implementation Plan](IMPLEMENTATION_PLAN.md)
-9. [Architecture Decision Records](adr/)
+8. [Execution Trace Model](EXECUTION_TRACE_MODEL.md)
+9. [Implementation Plan](IMPLEMENTATION_PLAN.md)
+10. [Architecture Decision Records](adr/)
 
 ## ADR Index
 
