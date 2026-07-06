@@ -1,9 +1,9 @@
 use async_trait::async_trait;
 use elbmesh_core::{
-    apply_recorded_event, Action, ActionContext, ActionDecision, ActionExecutor, ActionFailure,
-    ActionMetadata, ActionScenario, AppendResult, Apply, Event, EventStore, EventStoreError,
-    ExpectedVersion, Handle, HandlerError, InMemoryEventStore, MessageMetadata, NewEvent,
-    RecordedEvent, Resource, ResourceError, ResourceStream,
+    apply_recorded_event, Action, ActionContext, ActionDecision, ActionError, ActionExecutor,
+    ActionFailure, ActionMetadata, ActionScenario, AppendResult, Apply, Event, EventStore,
+    EventStoreError, ExecutionError, ExpectedVersion, Handle, HandlerError, InMemoryEventStore,
+    MessageMetadata, NewEvent, RecordedEvent, Resource, ResourceError, ResourceStream,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -101,6 +101,44 @@ impl Action for CreateOfferAndMeasureTitleV1 {
 
     const ACTION_TYPE: &'static str = "create_offer_and_measure_title";
     const SCHEMA_ID: &'static str = "action.create_offer_and_measure_title.v1";
+    const SCHEMA_VERSION: u32 = 1;
+
+    fn resource_id(&self) -> <Self::Resource as Resource>::Id {
+        self.offer_id.clone()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RecordWrongOfferEventV1 {
+    offer_id: String,
+    event_offer_id: String,
+    title: String,
+}
+
+impl Action for RecordWrongOfferEventV1 {
+    type Resource = Offer;
+
+    const ACTION_TYPE: &'static str = "record_wrong_offer_event";
+    const SCHEMA_ID: &'static str = "action.record_wrong_offer_event.v1";
+    const SCHEMA_VERSION: u32 = 1;
+
+    fn resource_id(&self) -> <Self::Resource as Resource>::Id {
+        self.offer_id.clone()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RecordAppliedWrongOfferEventV1 {
+    offer_id: String,
+    event_offer_id: String,
+    title: String,
+}
+
+impl Action for RecordAppliedWrongOfferEventV1 {
+    type Resource = Offer;
+
+    const ACTION_TYPE: &'static str = "record_applied_wrong_offer_event";
+    const SCHEMA_ID: &'static str = "action.record_applied_wrong_offer_event.v1";
     const SCHEMA_VERSION: u32 = 1;
 
     fn resource_id(&self) -> <Self::Resource as Resource>::Id {
@@ -287,6 +325,45 @@ impl Handle<CreateOfferAndMeasureTitleV1> for Offer {
 }
 
 #[async_trait]
+impl Handle<RecordWrongOfferEventV1> for Offer {
+    type Error = OfferError;
+
+    async fn handle(
+        &mut self,
+        action: RecordWrongOfferEventV1,
+        ctx: &mut ActionContext<Self>,
+    ) -> Result<ActionDecision, HandlerError<Self::Error>> {
+        ctx.record(OfferTitleUpdatedV1 {
+            offer_id: action.event_offer_id,
+            title: action.title,
+        })?;
+
+        Ok(ActionDecision::completed())
+    }
+}
+
+#[async_trait]
+impl Handle<RecordAppliedWrongOfferEventV1> for Offer {
+    type Error = OfferError;
+
+    async fn handle(
+        &mut self,
+        action: RecordAppliedWrongOfferEventV1,
+        ctx: &mut ActionContext<Self>,
+    ) -> Result<ActionDecision, HandlerError<Self::Error>> {
+        ctx.record_applied(
+            self,
+            OfferCreatedV1 {
+                offer_id: action.event_offer_id,
+                title: action.title,
+            },
+        )?;
+
+        Ok(ActionDecision::completed())
+    }
+}
+
+#[async_trait]
 impl Handle<CaptureOfferReplayStateV1> for Offer {
     type Error = OfferError;
 
@@ -444,6 +521,32 @@ where
     }
 }
 
+fn assert_wrong_resource_execution_error<E>(err: ExecutionError<E>, expected: &str, actual: &str)
+where
+    E: ActionFailure,
+{
+    let ExecutionError::Handler(HandlerError::Runtime(error)) = err else {
+        panic!("expected wrong-resource runtime error");
+    };
+
+    assert_wrong_resource_action_error(error, expected, actual);
+}
+
+fn assert_wrong_resource_action_error(error: ActionError, expected: &str, actual: &str) {
+    assert_eq!(error.code(), "action.wrong_resource");
+
+    match error {
+        ActionError::WrongResource {
+            expected: observed_expected,
+            actual: observed_actual,
+        } => {
+            assert_eq!(observed_expected, expected);
+            assert_eq!(observed_actual, actual);
+        }
+        other => panic!("expected wrong-resource error, got {other:?}"),
+    }
+}
+
 #[tokio::test]
 async fn executes_action_and_records_event() {
     let store = InMemoryEventStore::new();
@@ -528,6 +631,75 @@ async fn record_applied_multi_event_action_observes_updated_resource_state() {
         "offer_title_measured"
     );
     assert_eq!(receipt.emitted_events[1].sequence, 2);
+}
+
+#[tokio::test]
+async fn wrong_resource_id_during_record_rejects_and_appends_no_event() {
+    let store = InMemoryEventStore::new();
+    let executor = ActionExecutor::new(store.clone());
+
+    let err = executor
+        .execute::<Offer, _>(
+            RecordWrongOfferEventV1 {
+                offer_id: "offer-1".to_string(),
+                event_offer_id: "offer-2".to_string(),
+                title: "Cross-resource title".to_string(),
+            },
+            ActionMetadata::for_actor("agent-1"),
+        )
+        .await
+        .expect_err("wrong-resource event should be rejected");
+
+    assert_wrong_resource_execution_error(err, "offer-1", "offer-2");
+    assert!(store.all_events().is_empty());
+}
+
+#[tokio::test]
+async fn wrong_resource_id_during_record_applied_rejects_and_appends_no_event() {
+    let store = InMemoryEventStore::new();
+    let executor = ActionExecutor::new(store.clone());
+
+    let err = executor
+        .execute::<Offer, _>(
+            RecordAppliedWrongOfferEventV1 {
+                offer_id: "offer-1".to_string(),
+                event_offer_id: "offer-2".to_string(),
+                title: "Cross-resource title".to_string(),
+            },
+            ActionMetadata::for_actor("agent-1"),
+        )
+        .await
+        .expect_err("wrong-resource applied event should be rejected");
+
+    assert_wrong_resource_execution_error(err, "offer-1", "offer-2");
+    assert!(store.all_events().is_empty());
+}
+
+#[test]
+fn record_applied_wrong_resource_id_leaves_resource_state_unchanged() {
+    let mut ctx = ActionContext::<Offer>::new(
+        ActionMetadata::with_ids("action-1", "correlation-1", "causation-1", "agent-1"),
+        Offer::RESOURCE_TYPE,
+        "offer-1",
+        0,
+    );
+    let mut resource = Offer::default();
+
+    let err = ctx
+        .record_applied(
+            &mut resource,
+            OfferCreatedV1 {
+                offer_id: "offer-2".to_string(),
+                title: "Cross-resource title".to_string(),
+            },
+        )
+        .expect_err("wrong-resource applied event should be rejected");
+
+    assert_wrong_resource_action_error(err, "offer-1", "offer-2");
+    assert_eq!(resource.id.as_deref(), None);
+    assert_eq!(resource.title.as_deref(), None);
+    assert!(resource.measured_title_lengths.is_empty());
+    assert!(ctx.pending_events().is_empty());
 }
 
 #[tokio::test]
