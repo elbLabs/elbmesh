@@ -4,6 +4,10 @@ use crate::action_journal::ActionJournalError;
 
 pub trait ActionFailure: std::fmt::Debug + std::fmt::Display + Send + Sync + 'static {
     fn code(&self) -> &'static str;
+
+    fn details(&self) -> serde_json::Value {
+        serde_json::json!({ "code": self.code() })
+    }
 }
 
 #[derive(Debug, Error)]

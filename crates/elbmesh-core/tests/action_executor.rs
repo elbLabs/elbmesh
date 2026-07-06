@@ -48,6 +48,17 @@ impl ActionFailure for OfferError {
             Self::ActionCalledJournalMissing => "offer.action_called_journal_missing",
         }
     }
+
+    fn details(&self) -> serde_json::Value {
+        json!({
+            "error_type": "OfferError",
+            "error_variant": match self {
+                Self::AlreadyExists => "AlreadyExists",
+                Self::MissingReplayState => "MissingReplayState",
+                Self::ActionCalledJournalMissing => "ActionCalledJournalMissing",
+            },
+        })
+    }
 }
 
 impl Resource for Offer {
@@ -730,7 +741,8 @@ fn assert_action_called_journal_record(
             assert_eq!(*actual_action_schema_version, action_schema_version);
             assert_eq!(payload, &expected_payload);
         }
-        ActionJournalRecord::ActionCompleted { .. } => panic!("expected ActionCalled record"),
+        ActionJournalRecord::ActionCompleted { .. }
+        | ActionJournalRecord::ActionRejected { .. } => panic!("expected ActionCalled record"),
     }
 }
 
@@ -755,7 +767,38 @@ fn assert_action_completed_journal_record(
             assert_eq!(journal_receipt.action_id, action.action_id);
             assert_eq!(journal_receipt.status, ActionStatus::Completed);
         }
-        ActionJournalRecord::ActionCalled { .. } => panic!("expected ActionCompleted record"),
+        ActionJournalRecord::ActionCalled { .. } | ActionJournalRecord::ActionRejected { .. } => {
+            panic!("expected ActionCompleted record")
+        }
+    }
+}
+
+fn assert_action_rejected_journal_record(
+    record: &ActionJournalRecord,
+    action: &ActionMetadata,
+    offer_id: &str,
+    expected_failure_code: &str,
+    expected_failure_details: serde_json::Value,
+) {
+    match record {
+        ActionJournalRecord::ActionRejected {
+            metadata,
+            failure_code,
+            failure_details,
+        } => {
+            assert_action_journal_metadata(
+                metadata,
+                "action_rejected",
+                "journal.action_rejected.v1",
+                action,
+                offer_id,
+            );
+            assert_eq!(failure_code, expected_failure_code);
+            assert_eq!(failure_details, &expected_failure_details);
+        }
+        ActionJournalRecord::ActionCalled { .. } | ActionJournalRecord::ActionCompleted { .. } => {
+            panic!("expected ActionRejected record")
+        }
     }
 }
 
@@ -773,7 +816,62 @@ fn assert_resource_stream_contains_only_events(
         assert_eq!(event.metadata.stream_type, StreamType::Resource);
         assert_ne!(event.metadata.message_type, "action_called");
         assert_ne!(event.metadata.message_type, "action_completed");
+        assert_ne!(event.metadata.message_type, "action_rejected");
     }
+}
+
+async fn execute_rejected_create_offer_with_journal(
+    offer_id: &str,
+    rejected_action_id: &str,
+) -> (
+    ExecutionError<OfferError>,
+    InMemoryEventStore,
+    InMemoryActionJournal,
+    ActionMetadata,
+    CreateOfferV1,
+) {
+    let store = InMemoryEventStore::new();
+    let journal = InMemoryActionJournal::new();
+    let executor = ActionExecutor::new(store.clone()).with_action_journal(journal.clone());
+
+    executor
+        .execute::<Offer, _>(
+            CreateOfferV1 {
+                offer_id: offer_id.to_string(),
+                title: "Original offer".to_string(),
+            },
+            test_action_metadata(&format!("{rejected_action_id}-seed")),
+        )
+        .await
+        .expect("seed action should complete");
+
+    let action = CreateOfferV1 {
+        offer_id: offer_id.to_string(),
+        title: "Duplicate offer".to_string(),
+    };
+    let metadata = test_action_metadata(rejected_action_id);
+    let err = executor
+        .execute::<Offer, _>(action.clone(), metadata.clone())
+        .await
+        .expect_err("duplicate create should be rejected");
+
+    (err, store, journal, metadata, action)
+}
+
+fn test_action_metadata(action_id: &str) -> ActionMetadata {
+    ActionMetadata::with_ids(
+        action_id,
+        format!("correlation-{action_id}"),
+        format!("causation-{action_id}"),
+        format!("actor-{action_id}"),
+    )
+}
+
+fn rejected_offer_failure_details() -> serde_json::Value {
+    json!({
+        "error_type": "OfferError",
+        "error_variant": "AlreadyExists",
+    })
 }
 
 fn assert_receipt_summarizes_resource_events(receipt: &ActionReceipt, history: &[RecordedEvent]) {
@@ -1039,6 +1137,7 @@ async fn successful_action_with_journal_records_called_before_handler_and_comple
         .map(|record| match record {
             ActionJournalRecord::ActionCalled { metadata, .. } => metadata.message_type.as_str(),
             ActionJournalRecord::ActionCompleted { metadata, .. } => metadata.message_type.as_str(),
+            ActionJournalRecord::ActionRejected { metadata, .. } => metadata.message_type.as_str(),
         })
         .collect();
     assert_eq!(
@@ -1111,7 +1210,8 @@ async fn action_executor_journal_keeps_resource_event_stream_clean() {
     for record in records {
         match record {
             ActionJournalRecord::ActionCalled { metadata, .. }
-            | ActionJournalRecord::ActionCompleted { metadata, .. } => {
+            | ActionJournalRecord::ActionCompleted { metadata, .. }
+            | ActionJournalRecord::ActionRejected { metadata, .. } => {
                 assert_eq!(metadata.stream_type, StreamType::Action);
                 assert_eq!(metadata.resource_type, Offer::RESOURCE_TYPE);
                 assert_eq!(metadata.resource_id, "offer-journal-stream-clean");
@@ -1167,6 +1267,112 @@ async fn action_completed_journal_record_contains_final_receipt_without_becoming
         &history,
         &[OfferCreatedV1::EVENT_TYPE, OfferTitleMeasuredV1::EVENT_TYPE],
     );
+}
+
+#[tokio::test]
+async fn rejected_action_with_journal_records_called_and_rejected_in_order() {
+    let (_err, _store, journal, metadata, action) = execute_rejected_create_offer_with_journal(
+        "offer-rejected-journal-order",
+        "action-rejected-journal-order",
+    )
+    .await;
+
+    let journal_stream = ActionJournalStream::for_action(metadata.action_id.clone());
+    let records = journal
+        .load(&journal_stream)
+        .await
+        .expect("action journal records should load");
+
+    assert_eq!(records.len(), 2);
+    let journal_message_types: Vec<_> = records
+        .iter()
+        .map(|record| match record {
+            ActionJournalRecord::ActionCalled { metadata, .. } => metadata.message_type.as_str(),
+            ActionJournalRecord::ActionCompleted { metadata, .. } => metadata.message_type.as_str(),
+            ActionJournalRecord::ActionRejected { metadata, .. } => metadata.message_type.as_str(),
+        })
+        .collect();
+    assert_eq!(
+        journal_message_types,
+        vec!["action_called", "action_rejected"]
+    );
+
+    assert_action_called_journal_record(
+        &records[0],
+        &metadata,
+        "offer-rejected-journal-order",
+        CreateOfferV1::ACTION_TYPE,
+        CreateOfferV1::SCHEMA_ID,
+        CreateOfferV1::SCHEMA_VERSION,
+        json!({
+            "offer_id": action.offer_id,
+            "title": action.title,
+        }),
+    );
+    assert_action_rejected_journal_record(
+        &records[1],
+        &metadata,
+        "offer-rejected-journal-order",
+        OfferError::AlreadyExists.code(),
+        rejected_offer_failure_details(),
+    );
+}
+
+#[tokio::test]
+async fn rejected_action_with_journal_appends_no_resource_events() {
+    let (_err, store, _journal, _metadata, _action) = execute_rejected_create_offer_with_journal(
+        "offer-rejected-no-events",
+        "action-rejected-no-events",
+    )
+    .await;
+
+    let resource_stream = ResourceStream::new(Offer::RESOURCE_TYPE, "offer-rejected-no-events");
+    let history = store
+        .load(&resource_stream)
+        .await
+        .expect("resource events should load");
+
+    assert_resource_stream_contains_only_events(&history, &[OfferCreatedV1::EVENT_TYPE]);
+    assert_eq!(store.all_events().len(), 1);
+}
+
+#[tokio::test]
+async fn action_rejected_journal_record_carries_stable_action_failure_code_and_details() {
+    let (_err, _store, journal, metadata, _action) = execute_rejected_create_offer_with_journal(
+        "offer-rejected-failure-code",
+        "action-rejected-failure-code",
+    )
+    .await;
+
+    let journal_stream = ActionJournalStream::for_action(metadata.action_id.clone());
+    let records = journal
+        .load(&journal_stream)
+        .await
+        .expect("action journal records should load");
+
+    assert_action_rejected_journal_record(
+        &records[1],
+        &metadata,
+        "offer-rejected-failure-code",
+        OfferError::AlreadyExists.code(),
+        rejected_offer_failure_details(),
+    );
+}
+
+#[tokio::test]
+async fn rejected_action_with_journal_returns_typed_domain_error_to_caller() {
+    let (err, _store, _journal, _metadata, _action) = execute_rejected_create_offer_with_journal(
+        "offer-rejected-typed-error",
+        "action-rejected-typed-error",
+    )
+    .await;
+
+    assert!(matches!(
+        err,
+        ExecutionError::Handler(HandlerError::Domain {
+            error: OfferError::AlreadyExists
+        })
+    ));
 }
 
 #[tokio::test]
