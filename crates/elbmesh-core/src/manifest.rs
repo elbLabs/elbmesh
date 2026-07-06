@@ -17,6 +17,26 @@ pub struct ArchitectureManifest {
 }
 
 impl ArchitectureManifest {
+    pub fn check_architecture(&self) -> ArchitectureCheckReport {
+        match self.validate() {
+            Ok(()) => ArchitectureCheckReport {
+                manifest_schema_id: self.manifest_schema_id.clone(),
+                manifest_schema_version: self.manifest_schema_version,
+                status: ArchitectureCheckStatus::Passed,
+                findings: Vec::new(),
+            },
+            Err(error) => ArchitectureCheckReport {
+                manifest_schema_id: self.manifest_schema_id.clone(),
+                manifest_schema_version: self.manifest_schema_version,
+                status: ArchitectureCheckStatus::Failed,
+                findings: vec![ArchitectureCheckFinding {
+                    code: error.code().to_string(),
+                    message: error.to_string(),
+                }],
+            },
+        }
+    }
+
     pub fn validate(&self) -> Result<(), ManifestValidationError> {
         let mut resource_types = HashSet::new();
 
@@ -140,6 +160,27 @@ impl ArchitectureManifest {
 
         None
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ArchitectureCheckReport {
+    pub manifest_schema_id: String,
+    pub manifest_schema_version: u32,
+    pub status: ArchitectureCheckStatus,
+    pub findings: Vec<ArchitectureCheckFinding>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ArchitectureCheckStatus {
+    Passed,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ArchitectureCheckFinding {
+    pub code: String,
+    pub message: String,
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
