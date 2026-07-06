@@ -19,9 +19,10 @@ pub use error::{
     ActionError, ActionFailure, EventStoreError, ExecutionError, HandlerError, ResourceError,
 };
 pub use manifest::{
-    ActionDefinition, ArchitectureManifest, ComponentDefinition, EventDefinition,
-    ExternalOperationDefinition, ManifestValidationError, QueryDefinition, ReactionDefinition,
-    ResourceDefinition, ViewDefinition,
+    ActionDefinition, ArchitectureCheckFinding, ArchitectureCheckReport, ArchitectureCheckStatus,
+    ArchitectureManifest, ComponentDefinition, EventDefinition, ExternalOperationDefinition,
+    ManifestValidationError, QueryDefinition, ReactionDefinition, ResourceDefinition,
+    ViewDefinition,
 };
 pub use message::{
     ActionDecision, ActionMetadata, ActionReceipt, ActionStatus, EmittedEvent, MessageMetadata,

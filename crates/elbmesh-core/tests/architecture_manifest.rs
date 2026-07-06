@@ -1,7 +1,7 @@
 use elbmesh_core::{
-    ActionDefinition, ArchitectureManifest, ComponentDefinition, EventDefinition,
-    ExternalOperationDefinition, ManifestValidationError, QueryDefinition, ReactionDefinition,
-    ResourceDefinition, ViewDefinition,
+    ActionDefinition, ArchitectureCheckStatus, ArchitectureManifest, ComponentDefinition,
+    EventDefinition, ExternalOperationDefinition, ManifestValidationError, QueryDefinition,
+    ReactionDefinition, ResourceDefinition, ViewDefinition,
 };
 
 use serde_json::json;
@@ -345,6 +345,62 @@ fn manifest_validation_rejects_duplicate_external_operation_type() {
         }
     );
     assert_eq!(err.code(), "manifest.duplicate_external_operation_type");
+}
+
+#[test]
+fn valid_manifest_architecture_check_report_passes_with_stable_json_shape() {
+    let report = offer_manifest().check_architecture();
+
+    assert_eq!(report.manifest_schema_id, "manifest.elbmesh.v1");
+    assert_eq!(report.manifest_schema_version, 1);
+    assert_eq!(report.status, ArchitectureCheckStatus::Passed);
+    assert!(report.findings.is_empty());
+
+    let encoded = serde_json::to_value(&report).expect("serialize architecture check report");
+    assert_eq!(
+        encoded,
+        json!({
+            "manifest_schema_id": "manifest.elbmesh.v1",
+            "manifest_schema_version": 1,
+            "status": "passed",
+            "findings": [],
+        })
+    );
+}
+
+#[test]
+fn invalid_manifest_architecture_check_report_contains_named_finding() {
+    let mut manifest = offer_manifest();
+    manifest.resources.push(ResourceDefinition {
+        resource_type: "offer".to_string(),
+        schema_id: "resource.offer.v2".to_string(),
+        schema_version: 2,
+        components: Vec::new(),
+    });
+
+    let report = manifest.check_architecture();
+
+    assert_eq!(report.status, ArchitectureCheckStatus::Failed);
+    assert_eq!(report.findings.len(), 1);
+    assert_eq!(report.findings[0].code, "manifest.duplicate_resource_type");
+    assert_eq!(
+        report.findings[0].message,
+        "manifest declares resource type 'offer' more than once"
+    );
+
+    let encoded = serde_json::to_value(&report).expect("serialize architecture check report");
+    assert_eq!(
+        encoded,
+        json!({
+            "manifest_schema_id": "manifest.elbmesh.v1",
+            "manifest_schema_version": 1,
+            "status": "failed",
+            "findings": [{
+                "code": "manifest.duplicate_resource_type",
+                "message": "manifest declares resource type 'offer' more than once",
+            }],
+        })
+    );
 }
 
 fn offer_manifest() -> ArchitectureManifest {
