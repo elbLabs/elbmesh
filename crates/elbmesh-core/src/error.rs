@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+use crate::action_journal::ActionJournalError;
+
 pub trait ActionFailure: std::fmt::Debug + std::fmt::Display + Send + Sync + 'static {
     fn code(&self) -> &'static str;
 }
@@ -131,4 +133,7 @@ where
 
     #[error(transparent)]
     EventStore(#[from] EventStoreError),
+
+    #[error(transparent)]
+    ActionJournal(#[from] ActionJournalError),
 }

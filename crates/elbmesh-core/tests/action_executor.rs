@@ -1,14 +1,17 @@
 use async_trait::async_trait;
 use elbmesh_core::{
     apply_recorded_event, Action, ActionContext, ActionDecision, ActionError, ActionExecutor,
-    ActionFailure, ActionMetadata, ActionScenario, AppendResult, Apply, Event, EventStore,
-    EventStoreError, ExecutionError, ExpectedVersion, Handle, HandlerError, InMemoryEventStore,
-    MessageMetadata, NewEvent, RecordedEvent, Resource, ResourceError, ResourceStream,
+    ActionFailure, ActionJournal, ActionJournalError, ActionJournalRecord, ActionJournalStream,
+    ActionMetadata, ActionReceipt, ActionScenario, ActionStatus, AppendResult, Apply, Event,
+    EventStore, EventStoreError, ExecutionError, ExpectedVersion, Handle, HandlerError,
+    InMemoryActionJournal, InMemoryEventStore, MessageMetadata, NewEvent, RecordedEvent, Resource,
+    ResourceError, ResourceStream, StreamType,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::{
     fmt,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, OnceLock},
 };
 
 #[derive(Debug, Default, Clone)]
@@ -22,6 +25,7 @@ struct Offer {
 enum OfferError {
     AlreadyExists,
     MissingReplayState,
+    ActionCalledJournalMissing,
 }
 
 impl fmt::Display for OfferError {
@@ -29,6 +33,9 @@ impl fmt::Display for OfferError {
         match self {
             Self::AlreadyExists => write!(f, "offer already exists"),
             Self::MissingReplayState => write!(f, "offer replay state is incomplete"),
+            Self::ActionCalledJournalMissing => {
+                write!(f, "action called journal record is missing")
+            }
         }
     }
 }
@@ -38,6 +45,7 @@ impl ActionFailure for OfferError {
         match self {
             Self::AlreadyExists => "offer.already_exists",
             Self::MissingReplayState => "offer.missing_replay_state",
+            Self::ActionCalledJournalMissing => "offer.action_called_journal_missing",
         }
     }
 }
@@ -101,6 +109,24 @@ impl Action for CreateOfferAndMeasureTitleV1 {
 
     const ACTION_TYPE: &'static str = "create_offer_and_measure_title";
     const SCHEMA_ID: &'static str = "action.create_offer_and_measure_title.v1";
+    const SCHEMA_VERSION: u32 = 1;
+
+    fn resource_id(&self) -> <Self::Resource as Resource>::Id {
+        self.offer_id.clone()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CreateOfferAfterObservingCalledJournalV1 {
+    offer_id: String,
+    title: String,
+}
+
+impl Action for CreateOfferAfterObservingCalledJournalV1 {
+    type Resource = Offer;
+
+    const ACTION_TYPE: &'static str = "create_offer_after_observing_called_journal";
+    const SCHEMA_ID: &'static str = "action.create_offer_after_observing_called_journal.v1";
     const SCHEMA_VERSION: u32 = 1;
 
     fn resource_id(&self) -> <Self::Resource as Resource>::Id {
@@ -325,6 +351,46 @@ impl Handle<CreateOfferAndMeasureTitleV1> for Offer {
 }
 
 #[async_trait]
+impl Handle<CreateOfferAfterObservingCalledJournalV1> for Offer {
+    type Error = OfferError;
+
+    async fn handle(
+        &mut self,
+        action: CreateOfferAfterObservingCalledJournalV1,
+        ctx: &mut ActionContext<Self>,
+    ) -> Result<ActionDecision, HandlerError<Self::Error>> {
+        let stream = ActionJournalStream::for_action(ctx.metadata().action_id.clone());
+        let records = handler_visible_action_journal()
+            .load(&stream)
+            .await
+            .expect("handler-visible action journal should load");
+
+        let saw_called_before_handler_side_effects = matches!(
+            records.as_slice(),
+            [ActionJournalRecord::ActionCalled { metadata, .. }]
+                if metadata.action_id == ctx.metadata().action_id
+                    && metadata.resource_id == action.offer_id
+                    && metadata.stream_type == StreamType::Action
+        );
+        if !saw_called_before_handler_side_effects {
+            return Err(HandlerError::domain(OfferError::ActionCalledJournalMissing));
+        }
+
+        ctx.record_applied(
+            self,
+            OfferCreatedV1 {
+                offer_id: action.offer_id,
+                title: action.title,
+            },
+        )?;
+
+        Ok(ActionDecision::with_message(
+            "offer created after observing action called journal record",
+        ))
+    }
+}
+
+#[async_trait]
 impl Handle<RecordWrongOfferEventV1> for Offer {
     type Error = OfferError;
 
@@ -483,6 +549,72 @@ impl EventStore for OutOfOrderLoadEventStore {
     }
 }
 
+#[derive(Clone)]
+struct EventStoreObservingActionJournal {
+    inner: InMemoryActionJournal,
+    event_store: InMemoryEventStore,
+    completed_receipts_seen_after_append: Arc<Mutex<Vec<ActionReceipt>>>,
+}
+
+impl EventStoreObservingActionJournal {
+    fn new(inner: InMemoryActionJournal, event_store: InMemoryEventStore) -> Self {
+        Self {
+            inner,
+            event_store,
+            completed_receipts_seen_after_append: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    fn completed_receipts_seen_after_append(&self) -> Vec<ActionReceipt> {
+        self.completed_receipts_seen_after_append
+            .lock()
+            .expect("completion observations poisoned")
+            .clone()
+    }
+}
+
+#[async_trait]
+impl ActionJournal for EventStoreObservingActionJournal {
+    async fn append(
+        &self,
+        stream: &ActionJournalStream,
+        record: ActionJournalRecord,
+    ) -> Result<(), ActionJournalError> {
+        if let ActionJournalRecord::ActionCompleted { receipt, .. } = &record {
+            let resource_stream =
+                ResourceStream::new(receipt.resource_type.clone(), receipt.resource_id.clone());
+            let history = self
+                .event_store
+                .load(&resource_stream)
+                .await
+                .expect("resource events should load before ActionCompleted is journaled");
+
+            assert_eq!(history.len() as u64, receipt.new_version);
+            assert_receipt_summarizes_resource_events(receipt, &history);
+
+            self.completed_receipts_seen_after_append
+                .lock()
+                .expect("completion observations poisoned")
+                .push(receipt.clone());
+        }
+
+        self.inner.append(stream, record).await
+    }
+
+    async fn load(
+        &self,
+        stream: &ActionJournalStream,
+    ) -> Result<Vec<ActionJournalRecord>, ActionJournalError> {
+        self.inner.load(stream).await
+    }
+}
+
+fn handler_visible_action_journal() -> InMemoryActionJournal {
+    static JOURNAL: OnceLock<InMemoryActionJournal> = OnceLock::new();
+
+    JOURNAL.get_or_init(InMemoryActionJournal::new).clone()
+}
+
 fn event_to_new_event<E>(event: E) -> NewEvent
 where
     E: Event,
@@ -544,6 +676,118 @@ fn assert_wrong_resource_action_error(error: ActionError, expected: &str, actual
             assert_eq!(observed_actual, actual);
         }
         other => panic!("expected wrong-resource error, got {other:?}"),
+    }
+}
+
+fn assert_action_journal_metadata(
+    metadata: &MessageMetadata,
+    message_type: &str,
+    schema_id: &str,
+    action: &ActionMetadata,
+    offer_id: &str,
+) {
+    assert!(!metadata.message_id.is_empty());
+    assert_eq!(metadata.message_type, message_type);
+    assert_eq!(metadata.message_version, 1);
+    assert_eq!(metadata.resource_type, Offer::RESOURCE_TYPE);
+    assert_eq!(metadata.resource_id, offer_id);
+    assert_eq!(metadata.stream_type, StreamType::Action);
+    assert_eq!(metadata.correlation_id, action.correlation_id);
+    assert_eq!(metadata.causation_id, action.causation_id);
+    assert_eq!(metadata.action_id, action.action_id);
+    assert_eq!(metadata.actor_id, action.actor_id);
+    assert!(!metadata.occurred_at.is_empty());
+    assert_eq!(metadata.schema_id, schema_id);
+    assert_eq!(metadata.schema_version, 1);
+}
+
+fn assert_action_called_journal_record(
+    record: &ActionJournalRecord,
+    action: &ActionMetadata,
+    offer_id: &str,
+    action_type: &str,
+    action_schema_id: &str,
+    action_schema_version: u32,
+    expected_payload: serde_json::Value,
+) {
+    match record {
+        ActionJournalRecord::ActionCalled {
+            metadata,
+            action_type: actual_action_type,
+            action_schema_id: actual_action_schema_id,
+            action_schema_version: actual_action_schema_version,
+            payload,
+        } => {
+            assert_action_journal_metadata(
+                metadata,
+                "action_called",
+                "journal.action_called.v1",
+                action,
+                offer_id,
+            );
+            assert_eq!(actual_action_type, action_type);
+            assert_eq!(actual_action_schema_id, action_schema_id);
+            assert_eq!(*actual_action_schema_version, action_schema_version);
+            assert_eq!(payload, &expected_payload);
+        }
+        ActionJournalRecord::ActionCompleted { .. } => panic!("expected ActionCalled record"),
+    }
+}
+
+fn assert_action_completed_journal_record(
+    record: &ActionJournalRecord,
+    action: &ActionMetadata,
+    receipt: &ActionReceipt,
+) {
+    match record {
+        ActionJournalRecord::ActionCompleted {
+            metadata,
+            receipt: journal_receipt,
+        } => {
+            assert_action_journal_metadata(
+                metadata,
+                "action_completed",
+                "journal.action_completed.v1",
+                action,
+                &receipt.resource_id,
+            );
+            assert_eq!(journal_receipt, receipt);
+            assert_eq!(journal_receipt.action_id, action.action_id);
+            assert_eq!(journal_receipt.status, ActionStatus::Completed);
+        }
+        ActionJournalRecord::ActionCalled { .. } => panic!("expected ActionCompleted record"),
+    }
+}
+
+fn assert_resource_stream_contains_only_events(
+    history: &[RecordedEvent],
+    expected_message_types: &[&str],
+) {
+    let message_types: Vec<_> = history
+        .iter()
+        .map(|event| event.metadata.message_type.as_str())
+        .collect();
+
+    assert_eq!(message_types, expected_message_types);
+    for event in history {
+        assert_eq!(event.metadata.stream_type, StreamType::Resource);
+        assert_ne!(event.metadata.message_type, "action_called");
+        assert_ne!(event.metadata.message_type, "action_completed");
+    }
+}
+
+fn assert_receipt_summarizes_resource_events(receipt: &ActionReceipt, history: &[RecordedEvent]) {
+    let previous_version = receipt.previous_version as usize;
+    let new_version = receipt.new_version as usize;
+    let appended_events = &history[previous_version..new_version];
+
+    assert_eq!(receipt.emitted_events.len(), appended_events.len());
+    for (summary, recorded) in receipt.emitted_events.iter().zip(appended_events.iter()) {
+        assert_eq!(summary.message_id, recorded.metadata.message_id);
+        assert_eq!(summary.message_type, recorded.metadata.message_type);
+        assert_eq!(summary.schema_id, recorded.metadata.schema_id);
+        assert_eq!(summary.schema_version, recorded.metadata.schema_version);
+        assert_eq!(summary.sequence, recorded.sequence);
     }
 }
 
@@ -760,6 +1004,169 @@ async fn receipt_emitted_event_summary_preserves_recorded_metadata() {
     assert_eq!(emitted.schema_id, recorded.metadata.schema_id);
     assert_eq!(emitted.schema_version, recorded.metadata.schema_version);
     assert_eq!(emitted.sequence, recorded.sequence);
+}
+
+#[tokio::test]
+async fn successful_action_with_journal_records_called_before_handler_and_completed_in_order() {
+    let store = InMemoryEventStore::new();
+    let journal = handler_visible_action_journal();
+    let executor = ActionExecutor::new(store.clone()).with_action_journal(journal.clone());
+    let action = CreateOfferAfterObservingCalledJournalV1 {
+        offer_id: "offer-journal-order".to_string(),
+        title: "Journal order".to_string(),
+    };
+    let metadata = ActionMetadata::with_ids(
+        "action-journal-order",
+        "correlation-journal-order",
+        "causation-journal-order",
+        "actor-journal-order",
+    );
+
+    let receipt = executor
+        .execute::<Offer, _>(action.clone(), metadata.clone())
+        .await
+        .expect("action should complete after observing ActionCalled in the journal");
+
+    let stream = ActionJournalStream::for_action(metadata.action_id.clone());
+    let records = journal
+        .load(&stream)
+        .await
+        .expect("action journal records should load");
+
+    assert_eq!(records.len(), 2);
+    let journal_message_types: Vec<_> = records
+        .iter()
+        .map(|record| match record {
+            ActionJournalRecord::ActionCalled { metadata, .. } => metadata.message_type.as_str(),
+            ActionJournalRecord::ActionCompleted { metadata, .. } => metadata.message_type.as_str(),
+        })
+        .collect();
+    assert_eq!(
+        journal_message_types,
+        vec!["action_called", "action_completed"]
+    );
+
+    assert_action_called_journal_record(
+        &records[0],
+        &metadata,
+        "offer-journal-order",
+        CreateOfferAfterObservingCalledJournalV1::ACTION_TYPE,
+        CreateOfferAfterObservingCalledJournalV1::SCHEMA_ID,
+        CreateOfferAfterObservingCalledJournalV1::SCHEMA_VERSION,
+        json!({
+            "offer_id": action.offer_id,
+            "title": action.title,
+        }),
+    );
+    assert_action_completed_journal_record(&records[1], &metadata, &receipt);
+
+    let resource_stream = ResourceStream::new(Offer::RESOURCE_TYPE, "offer-journal-order");
+    let history = store
+        .load(&resource_stream)
+        .await
+        .expect("resource events should load");
+    assert_resource_stream_contains_only_events(&history, &[OfferCreatedV1::EVENT_TYPE]);
+}
+
+#[tokio::test]
+async fn action_executor_journal_keeps_resource_event_stream_clean() {
+    let store = InMemoryEventStore::new();
+    let journal = InMemoryActionJournal::new();
+    let executor = ActionExecutor::new(store.clone()).with_action_journal(journal.clone());
+    let metadata = ActionMetadata::with_ids(
+        "action-journal-stream-clean",
+        "correlation-journal-stream-clean",
+        "causation-journal-stream-clean",
+        "actor-journal-stream-clean",
+    );
+
+    executor
+        .execute::<Offer, _>(
+            CreateOfferAndMeasureTitleV1 {
+                offer_id: "offer-journal-stream-clean".to_string(),
+                title: "mesh".to_string(),
+            },
+            metadata.clone(),
+        )
+        .await
+        .expect("action should complete");
+
+    let resource_stream = ResourceStream::new(Offer::RESOURCE_TYPE, "offer-journal-stream-clean");
+    let history = store
+        .load(&resource_stream)
+        .await
+        .expect("resource events should load");
+    assert_resource_stream_contains_only_events(
+        &history,
+        &[OfferCreatedV1::EVENT_TYPE, OfferTitleMeasuredV1::EVENT_TYPE],
+    );
+    assert_eq!(store.all_events().len(), 2);
+
+    let journal_stream = ActionJournalStream::for_action(metadata.action_id.clone());
+    let records = journal
+        .load(&journal_stream)
+        .await
+        .expect("action journal records should load");
+    assert_eq!(records.len(), 2);
+    for record in records {
+        match record {
+            ActionJournalRecord::ActionCalled { metadata, .. }
+            | ActionJournalRecord::ActionCompleted { metadata, .. } => {
+                assert_eq!(metadata.stream_type, StreamType::Action);
+                assert_eq!(metadata.resource_type, Offer::RESOURCE_TYPE);
+                assert_eq!(metadata.resource_id, "offer-journal-stream-clean");
+                assert_eq!(metadata.action_id, "action-journal-stream-clean");
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn action_completed_journal_record_contains_final_receipt_without_becoming_resource_event() {
+    let store = InMemoryEventStore::new();
+    let inner_journal = InMemoryActionJournal::new();
+    let journal = EventStoreObservingActionJournal::new(inner_journal, store.clone());
+    let executor = ActionExecutor::new(store.clone()).with_action_journal(journal.clone());
+    let metadata = ActionMetadata::with_ids(
+        "action-journal-completion-receipt",
+        "correlation-journal-completion-receipt",
+        "causation-journal-completion-receipt",
+        "actor-journal-completion-receipt",
+    );
+
+    let receipt = executor
+        .execute::<Offer, _>(
+            CreateOfferAndMeasureTitleV1 {
+                offer_id: "offer-journal-completion-receipt".to_string(),
+                title: "mesh".to_string(),
+            },
+            metadata.clone(),
+        )
+        .await
+        .expect("action should complete");
+
+    let observations = journal.completed_receipts_seen_after_append();
+    assert_eq!(observations, vec![receipt.clone()]);
+
+    let journal_stream = ActionJournalStream::for_action(metadata.action_id.clone());
+    let records = journal
+        .load(&journal_stream)
+        .await
+        .expect("action journal records should load");
+    assert_eq!(records.len(), 2);
+    assert_action_completed_journal_record(&records[1], &metadata, &receipt);
+
+    let resource_stream =
+        ResourceStream::new(Offer::RESOURCE_TYPE, "offer-journal-completion-receipt");
+    let history = store
+        .load(&resource_stream)
+        .await
+        .expect("resource events should load");
+    assert_receipt_summarizes_resource_events(&receipt, &history);
+    assert_resource_stream_contains_only_events(
+        &history,
+        &[OfferCreatedV1::EVENT_TYPE, OfferTitleMeasuredV1::EVENT_TYPE],
+    );
 }
 
 #[tokio::test]
