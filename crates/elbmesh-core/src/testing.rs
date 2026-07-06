@@ -35,6 +35,14 @@ where
         self
     }
 
+    pub fn given_event<E>(mut self, event: E) -> Self
+    where
+        E: Event<Resource = R>,
+    {
+        self.given.push(new_event(event));
+        self
+    }
+
     pub fn when<A>(self, action: A) -> ScenarioWhen<R, A>
     where
         A: Action<Resource = R>,
@@ -164,6 +172,12 @@ where
 {
     pub async fn assert(self) {
         let store = store_with_given(self.given).await;
+        let stream = ResourceStream::new(R::RESOURCE_TYPE, self.action.resource_id().to_string());
+        let previous_version = store
+            .load(&stream)
+            .await
+            .expect("scenario events should load")
+            .len();
         let executor = crate::ActionExecutor::new(store);
         let actual = executor
             .execute::<R, A>(self.action, scenario_metadata())
@@ -176,6 +190,17 @@ where
             }
             other => panic!("expected domain error, got {other:?}"),
         }
+
+        let history = executor
+            .event_store()
+            .load(&stream)
+            .await
+            .expect("scenario events should load after failed action");
+        assert_eq!(
+            previous_version,
+            history.len(),
+            "scenario action should append no resource events on domain error"
+        );
     }
 }
 
