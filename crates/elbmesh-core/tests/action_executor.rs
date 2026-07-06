@@ -634,6 +634,135 @@ async fn record_applied_multi_event_action_observes_updated_resource_state() {
 }
 
 #[tokio::test]
+async fn receipt_includes_one_emitted_event_summary_and_resource_versions() {
+    let store = InMemoryEventStore::new();
+    let executor = ActionExecutor::new(store.clone());
+
+    let receipt = executor
+        .execute::<Offer, _>(
+            CreateOfferV1 {
+                offer_id: "offer-receipt-one".to_string(),
+                title: "Migration project".to_string(),
+            },
+            ActionMetadata::with_ids(
+                "action-receipt-one",
+                "correlation-receipt-one",
+                "causation-receipt-one",
+                "agent-1",
+            ),
+        )
+        .await
+        .expect("action should complete");
+
+    assert_eq!(receipt.action_id, "action-receipt-one");
+    assert_eq!(receipt.status, elbmesh_core::ActionStatus::Completed);
+    assert_eq!(receipt.resource_type, "offer");
+    assert_eq!(receipt.resource_id, "offer-receipt-one");
+    assert_eq!(receipt.previous_version, 0);
+    assert_eq!(receipt.new_version, 1);
+
+    assert_eq!(receipt.emitted_events.len(), 1);
+    let emitted = &receipt.emitted_events[0];
+    assert!(!emitted.message_id.is_empty());
+    assert_eq!(emitted.message_type, OfferCreatedV1::EVENT_TYPE);
+    assert_eq!(emitted.schema_id, OfferCreatedV1::SCHEMA_ID);
+    assert_eq!(emitted.schema_version, OfferCreatedV1::SCHEMA_VERSION);
+    assert_eq!(emitted.sequence, 1);
+}
+
+#[tokio::test]
+async fn receipt_includes_multiple_emitted_event_summaries_in_append_order() {
+    let store = InMemoryEventStore::new();
+    let executor = ActionExecutor::new(store.clone());
+
+    let receipt = executor
+        .execute::<Offer, _>(
+            CreateOfferAndMeasureTitleV1 {
+                offer_id: "offer-receipt-many".to_string(),
+                title: "mesh".to_string(),
+            },
+            ActionMetadata::with_ids(
+                "action-receipt-many",
+                "correlation-receipt-many",
+                "causation-receipt-many",
+                "agent-1",
+            ),
+        )
+        .await
+        .expect("action should complete");
+
+    assert_eq!(receipt.action_id, "action-receipt-many");
+    assert_eq!(receipt.resource_type, "offer");
+    assert_eq!(receipt.resource_id, "offer-receipt-many");
+    assert_eq!(receipt.previous_version, 0);
+    assert_eq!(receipt.new_version, 2);
+
+    let stream = ResourceStream::new("offer", "offer-receipt-many");
+    let history = store.load(&stream).await.expect("history should load");
+    assert_eq!(history.len(), 2);
+    assert_eq!(history[0].metadata.message_type, OfferCreatedV1::EVENT_TYPE);
+    assert_eq!(
+        history[1].metadata.message_type,
+        OfferTitleMeasuredV1::EVENT_TYPE
+    );
+
+    assert_eq!(receipt.emitted_events.len(), history.len());
+    for (emitted, recorded) in receipt.emitted_events.iter().zip(history.iter()) {
+        assert_eq!(emitted.message_id, recorded.metadata.message_id);
+        assert_eq!(emitted.message_type, recorded.metadata.message_type);
+        assert_eq!(emitted.schema_id, recorded.metadata.schema_id);
+        assert_eq!(emitted.schema_version, recorded.metadata.schema_version);
+        assert_eq!(emitted.sequence, recorded.sequence);
+    }
+}
+
+#[tokio::test]
+async fn receipt_emitted_event_summary_preserves_recorded_metadata() {
+    let store = InMemoryEventStore::new();
+    let executor = ActionExecutor::new(store.clone());
+
+    let receipt = executor
+        .execute::<Offer, _>(
+            CreateOfferV1 {
+                offer_id: "offer-receipt-metadata".to_string(),
+                title: "Metadata project".to_string(),
+            },
+            ActionMetadata::with_ids(
+                "action-receipt-metadata",
+                "correlation-receipt-metadata",
+                "causation-receipt-metadata",
+                "agent-1",
+            ),
+        )
+        .await
+        .expect("action should complete");
+
+    let stream = ResourceStream::new("offer", "offer-receipt-metadata");
+    let history = store.load(&stream).await.expect("history should load");
+    assert_eq!(history.len(), 1);
+
+    let recorded = &history[0];
+    assert_eq!(recorded.metadata.action_id, "action-receipt-metadata");
+    assert_eq!(recorded.metadata.resource_type, "offer");
+    assert_eq!(recorded.metadata.resource_id, "offer-receipt-metadata");
+    assert_eq!(recorded.metadata.message_type, OfferCreatedV1::EVENT_TYPE);
+    assert_eq!(recorded.metadata.schema_id, OfferCreatedV1::SCHEMA_ID);
+    assert_eq!(
+        recorded.metadata.schema_version,
+        OfferCreatedV1::SCHEMA_VERSION
+    );
+    assert_eq!(recorded.sequence, 1);
+
+    assert_eq!(receipt.emitted_events.len(), 1);
+    let emitted = &receipt.emitted_events[0];
+    assert_eq!(emitted.message_id, recorded.metadata.message_id);
+    assert_eq!(emitted.message_type, recorded.metadata.message_type);
+    assert_eq!(emitted.schema_id, recorded.metadata.schema_id);
+    assert_eq!(emitted.schema_version, recorded.metadata.schema_version);
+    assert_eq!(emitted.sequence, recorded.sequence);
+}
+
+#[tokio::test]
 async fn wrong_resource_id_during_record_rejects_and_appends_no_event() {
     let store = InMemoryEventStore::new();
     let executor = ActionExecutor::new(store.clone());
