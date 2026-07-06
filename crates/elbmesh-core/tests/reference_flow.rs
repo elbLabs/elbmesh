@@ -1,4 +1,6 @@
-use elbmesh_core::ActionScenario;
+use elbmesh_core::{ActionScenario, ArchitectureCheckStatus};
+
+use serde_json::Value;
 
 use reference_flow::{
     AcceptOfferV1, CreateInvoiceV1, CreateOfferV1, CreateOrderConfirmationV1, CreateSalesOrderV1,
@@ -12,11 +14,123 @@ mod reference_flow {
 
     use async_trait::async_trait;
     use elbmesh_core::{
-        apply_recorded_event, Action, ActionContext, ActionDecision, ActionFailure, Apply, Event,
-        Handle, HandlerError, Resource, ResourceError,
+        apply_recorded_event, Action, ActionContext, ActionDecision, ActionDefinition,
+        ActionFailure, Apply, ArchitectureManifest, Event, EventDefinition, Handle, HandlerError,
+        Resource, ResourceDefinition, ResourceError,
     };
     use serde::{Deserialize, Serialize};
     use serde_json::json;
+
+    pub fn architecture_manifest() -> ArchitectureManifest {
+        ArchitectureManifest {
+            manifest_schema_id: "elbmesh.reference_flow.architecture_manifest".to_string(),
+            manifest_schema_version: 1,
+            resources: vec![
+                ResourceDefinition {
+                    resource_type: Offer::RESOURCE_TYPE.to_string(),
+                    schema_id: "resource.offer.v1".to_string(),
+                    schema_version: 1,
+                    components: Vec::new(),
+                },
+                ResourceDefinition {
+                    resource_type: SalesOrder::RESOURCE_TYPE.to_string(),
+                    schema_id: "resource.sales_order.v1".to_string(),
+                    schema_version: 1,
+                    components: Vec::new(),
+                },
+                ResourceDefinition {
+                    resource_type: OrderConfirmation::RESOURCE_TYPE.to_string(),
+                    schema_id: "resource.order_confirmation.v1".to_string(),
+                    schema_version: 1,
+                    components: Vec::new(),
+                },
+                ResourceDefinition {
+                    resource_type: Invoice::RESOURCE_TYPE.to_string(),
+                    schema_id: "resource.invoice.v1".to_string(),
+                    schema_version: 1,
+                    components: Vec::new(),
+                },
+            ],
+            actions: vec![
+                ActionDefinition {
+                    action_type: CreateOfferV1::ACTION_TYPE.to_string(),
+                    resource_type: Offer::RESOURCE_TYPE.to_string(),
+                    schema_id: CreateOfferV1::SCHEMA_ID.to_string(),
+                    schema_version: CreateOfferV1::SCHEMA_VERSION,
+                    emitted_event_types: vec![OfferCreatedV1::EVENT_TYPE.to_string()],
+                    external_operation_types: Vec::new(),
+                },
+                ActionDefinition {
+                    action_type: AcceptOfferV1::ACTION_TYPE.to_string(),
+                    resource_type: Offer::RESOURCE_TYPE.to_string(),
+                    schema_id: AcceptOfferV1::SCHEMA_ID.to_string(),
+                    schema_version: AcceptOfferV1::SCHEMA_VERSION,
+                    emitted_event_types: vec![OfferAcceptedV1::EVENT_TYPE.to_string()],
+                    external_operation_types: Vec::new(),
+                },
+                ActionDefinition {
+                    action_type: CreateSalesOrderV1::ACTION_TYPE.to_string(),
+                    resource_type: SalesOrder::RESOURCE_TYPE.to_string(),
+                    schema_id: CreateSalesOrderV1::SCHEMA_ID.to_string(),
+                    schema_version: CreateSalesOrderV1::SCHEMA_VERSION,
+                    emitted_event_types: vec![SalesOrderCreatedV1::EVENT_TYPE.to_string()],
+                    external_operation_types: Vec::new(),
+                },
+                ActionDefinition {
+                    action_type: CreateOrderConfirmationV1::ACTION_TYPE.to_string(),
+                    resource_type: OrderConfirmation::RESOURCE_TYPE.to_string(),
+                    schema_id: CreateOrderConfirmationV1::SCHEMA_ID.to_string(),
+                    schema_version: CreateOrderConfirmationV1::SCHEMA_VERSION,
+                    emitted_event_types: vec![OrderConfirmationCreatedV1::EVENT_TYPE.to_string()],
+                    external_operation_types: Vec::new(),
+                },
+                ActionDefinition {
+                    action_type: CreateInvoiceV1::ACTION_TYPE.to_string(),
+                    resource_type: Invoice::RESOURCE_TYPE.to_string(),
+                    schema_id: CreateInvoiceV1::SCHEMA_ID.to_string(),
+                    schema_version: CreateInvoiceV1::SCHEMA_VERSION,
+                    emitted_event_types: vec![InvoiceCreatedV1::EVENT_TYPE.to_string()],
+                    external_operation_types: Vec::new(),
+                },
+            ],
+            events: vec![
+                EventDefinition {
+                    event_type: OfferCreatedV1::EVENT_TYPE.to_string(),
+                    resource_type: Offer::RESOURCE_TYPE.to_string(),
+                    schema_id: OfferCreatedV1::SCHEMA_ID.to_string(),
+                    schema_version: OfferCreatedV1::SCHEMA_VERSION,
+                },
+                EventDefinition {
+                    event_type: OfferAcceptedV1::EVENT_TYPE.to_string(),
+                    resource_type: Offer::RESOURCE_TYPE.to_string(),
+                    schema_id: OfferAcceptedV1::SCHEMA_ID.to_string(),
+                    schema_version: OfferAcceptedV1::SCHEMA_VERSION,
+                },
+                EventDefinition {
+                    event_type: SalesOrderCreatedV1::EVENT_TYPE.to_string(),
+                    resource_type: SalesOrder::RESOURCE_TYPE.to_string(),
+                    schema_id: SalesOrderCreatedV1::SCHEMA_ID.to_string(),
+                    schema_version: SalesOrderCreatedV1::SCHEMA_VERSION,
+                },
+                EventDefinition {
+                    event_type: OrderConfirmationCreatedV1::EVENT_TYPE.to_string(),
+                    resource_type: OrderConfirmation::RESOURCE_TYPE.to_string(),
+                    schema_id: OrderConfirmationCreatedV1::SCHEMA_ID.to_string(),
+                    schema_version: OrderConfirmationCreatedV1::SCHEMA_VERSION,
+                },
+                EventDefinition {
+                    event_type: InvoiceCreatedV1::EVENT_TYPE.to_string(),
+                    resource_type: Invoice::RESOURCE_TYPE.to_string(),
+                    schema_id: InvoiceCreatedV1::SCHEMA_ID.to_string(),
+                    schema_version: InvoiceCreatedV1::SCHEMA_VERSION,
+                },
+            ],
+            reactions: Vec::new(),
+            views: Vec::new(),
+            queries: Vec::new(),
+            external_operations: Vec::new(),
+        }
+    }
 
     #[derive(Debug, Default, Clone)]
     pub struct Offer {
@@ -773,4 +887,71 @@ async fn create_invoice_twice_returns_typed_already_exists_error() {
         .then_error(InvoiceError::AlreadyExists)
         .assert()
         .await;
+}
+
+#[test]
+fn reference_flow_manifest_validates_successfully() {
+    reference_flow::architecture_manifest()
+        .validate()
+        .expect("reference flow manifest should validate");
+}
+
+#[test]
+fn reference_flow_architecture_check_report_passes() {
+    let report = reference_flow::architecture_manifest().check_architecture();
+
+    assert_eq!(ArchitectureCheckStatus::Passed, report.status);
+    assert!(report.findings.is_empty());
+}
+
+#[test]
+fn reference_flow_manifest_json_names_resources_actions_and_events() {
+    let manifest_json = serde_json::to_value(reference_flow::architecture_manifest())
+        .expect("reference flow manifest should serialize");
+
+    assert_eq!(
+        "elbmesh.reference_flow.architecture_manifest",
+        manifest_json["manifest_schema_id"]
+            .as_str()
+            .expect("manifest schema id should be a string")
+    );
+    assert_eq!(1, manifest_json["manifest_schema_version"]);
+    assert_eq!(
+        vec!["offer", "sales_order", "order_confirmation", "invoice"],
+        json_field_values(&manifest_json, "resources", "resource_type")
+    );
+    assert_eq!(
+        vec![
+            "create_offer",
+            "accept_offer",
+            "create_sales_order",
+            "create_order_confirmation",
+            "create_invoice",
+        ],
+        json_field_values(&manifest_json, "actions", "action_type")
+    );
+    assert_eq!(
+        vec![
+            "offer_created",
+            "offer_accepted",
+            "sales_order_created",
+            "order_confirmation_created",
+            "invoice_created",
+        ],
+        json_field_values(&manifest_json, "events", "event_type")
+    );
+}
+
+fn json_field_values(manifest_json: &Value, array_key: &str, field_key: &str) -> Vec<String> {
+    manifest_json[array_key]
+        .as_array()
+        .expect("manifest field should be an array")
+        .iter()
+        .map(|entry| {
+            entry[field_key]
+                .as_str()
+                .expect("manifest entry field should be a string")
+                .to_string()
+        })
+        .collect()
 }
