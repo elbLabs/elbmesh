@@ -1,7 +1,8 @@
 use elbmesh_core::ActionScenario;
 
 use reference_flow::{
-    AcceptOfferV1, CreateOfferV1, Offer, OfferAcceptedV1, OfferCreatedV1, OfferError,
+    AcceptOfferV1, CreateOfferV1, CreateSalesOrderV1, Offer, OfferAcceptedV1, OfferCreatedV1,
+    OfferError, SalesOrder, SalesOrderCreatedV1, SalesOrderError,
 };
 
 mod reference_flow {
@@ -222,6 +223,132 @@ mod reference_flow {
             Ok(ActionDecision::with_message("offer accepted"))
         }
     }
+
+    #[derive(Debug, Default, Clone)]
+    pub struct SalesOrder {
+        id: Option<String>,
+        offer_id: Option<String>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub enum SalesOrderError {
+        AlreadyExists,
+    }
+
+    impl fmt::Display for SalesOrderError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                Self::AlreadyExists => write!(f, "sales order already exists"),
+            }
+        }
+    }
+
+    impl ActionFailure for SalesOrderError {
+        fn code(&self) -> &'static str {
+            match self {
+                Self::AlreadyExists => "sales_order.already_exists",
+            }
+        }
+
+        fn details(&self) -> serde_json::Value {
+            json!({
+                "error_type": "SalesOrderError",
+                "error_variant": match self {
+                    Self::AlreadyExists => "AlreadyExists",
+                },
+            })
+        }
+    }
+
+    impl Resource for SalesOrder {
+        type Id = String;
+
+        const RESOURCE_TYPE: &'static str = "sales_order";
+
+        fn apply_recorded(
+            &mut self,
+            event: &elbmesh_core::RecordedEvent,
+        ) -> Result<(), ResourceError> {
+            if apply_recorded_event::<Self, SalesOrderCreatedV1>(self, event)? {
+                return Ok(());
+            }
+
+            Err(ResourceError::UnsupportedEvent {
+                resource_type: Self::RESOURCE_TYPE.to_string(),
+                message_type: event.metadata.message_type.clone(),
+                schema_version: event.metadata.schema_version,
+            })
+        }
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct CreateSalesOrderV1 {
+        pub sales_order_id: String,
+        pub offer_id: String,
+    }
+
+    impl Action for CreateSalesOrderV1 {
+        type Resource = SalesOrder;
+
+        const ACTION_TYPE: &'static str = "create_sales_order";
+        const SCHEMA_ID: &'static str = "action.create_sales_order.v1";
+        const SCHEMA_VERSION: u32 = 1;
+
+        fn resource_id(&self) -> <Self::Resource as Resource>::Id {
+            self.sales_order_id.clone()
+        }
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct SalesOrderCreatedV1 {
+        pub sales_order_id: String,
+        pub offer_id: String,
+    }
+
+    impl Event for SalesOrderCreatedV1 {
+        type Resource = SalesOrder;
+
+        const EVENT_TYPE: &'static str = "sales_order_created";
+        const SCHEMA_ID: &'static str = "event.sales_order_created.v1";
+        const SCHEMA_VERSION: u32 = 1;
+
+        fn resource_id(&self) -> <Self::Resource as Resource>::Id {
+            self.sales_order_id.clone()
+        }
+    }
+
+    impl Apply<SalesOrderCreatedV1> for SalesOrder {
+        fn apply(&mut self, event: SalesOrderCreatedV1) -> Result<(), ResourceError> {
+            self.id = Some(event.sales_order_id);
+            self.offer_id = Some(event.offer_id);
+            Ok(())
+        }
+    }
+
+    #[async_trait]
+    impl Handle<CreateSalesOrderV1> for SalesOrder {
+        type Error = SalesOrderError;
+
+        async fn handle(
+            &mut self,
+            action: CreateSalesOrderV1,
+            ctx: &mut ActionContext<Self>,
+        ) -> Result<ActionDecision, HandlerError<Self::Error>> {
+            if self.id.is_some() {
+                return Err(HandlerError::domain(SalesOrderError::AlreadyExists));
+            }
+
+            ctx.record_applied(
+                self,
+                SalesOrderCreatedV1 {
+                    sales_order_id: action.sales_order_id,
+                    offer_id: action.offer_id,
+                },
+            )?;
+
+            Ok(ActionDecision::with_message("sales order created"))
+        }
+    }
 }
 
 #[tokio::test]
@@ -297,6 +424,37 @@ async fn accept_offer_twice_returns_typed_already_accepted_error() {
             offer_id: "offer-1".to_string(),
         })
         .then_error(OfferError::AlreadyAccepted)
+        .assert()
+        .await;
+}
+
+#[tokio::test]
+async fn create_sales_order_emits_sales_order_created() {
+    ActionScenario::<SalesOrder>::new()
+        .when(CreateSalesOrderV1 {
+            sales_order_id: "sales-order-1".to_string(),
+            offer_id: "offer-1".to_string(),
+        })
+        .then(vec![SalesOrderCreatedV1 {
+            sales_order_id: "sales-order-1".to_string(),
+            offer_id: "offer-1".to_string(),
+        }])
+        .assert()
+        .await;
+}
+
+#[tokio::test]
+async fn create_sales_order_twice_returns_typed_already_exists_error() {
+    ActionScenario::<SalesOrder>::new()
+        .given(vec![SalesOrderCreatedV1 {
+            sales_order_id: "sales-order-1".to_string(),
+            offer_id: "offer-1".to_string(),
+        }])
+        .when(CreateSalesOrderV1 {
+            sales_order_id: "sales-order-1".to_string(),
+            offer_id: "offer-1".to_string(),
+        })
+        .then_error(SalesOrderError::AlreadyExists)
         .assert()
         .await;
 }
