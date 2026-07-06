@@ -1,9 +1,14 @@
 use std::marker::PhantomData;
+use std::sync::Arc;
+
+use chrono::Utc;
+use uuid::Uuid;
 
 use crate::{
-    Action, ActionDecision, ActionError, ActionMetadata, ActionReceipt, ActionStatus, Apply,
-    EmittedEvent, Event, EventStore, ExecutionError, ExpectedVersion, Handle, MessageMetadata,
-    NewEvent, Resource, ResourceStream,
+    Action, ActionDecision, ActionError, ActionJournal, ActionJournalRecord, ActionJournalStream,
+    ActionMetadata, ActionReceipt, ActionStatus, Apply, EmittedEvent, Event, EventStore,
+    ExecutionError, ExpectedVersion, Handle, MessageMetadata, NewEvent, Resource, ResourceStream,
+    StreamType,
 };
 
 pub struct ActionContext<R: Resource> {
@@ -103,6 +108,7 @@ impl<R: Resource> ActionContext<R> {
 
 pub struct ActionExecutor<S> {
     event_store: S,
+    action_journal: Option<Arc<dyn ActionJournal>>,
 }
 
 impl<S> ActionExecutor<S>
@@ -110,11 +116,22 @@ where
     S: EventStore,
 {
     pub fn new(event_store: S) -> Self {
-        Self { event_store }
+        Self {
+            event_store,
+            action_journal: None,
+        }
     }
 
     pub fn event_store(&self) -> &S {
         &self.event_store
+    }
+
+    pub fn with_action_journal<J>(mut self, action_journal: J) -> Self
+    where
+        J: ActionJournal,
+    {
+        self.action_journal = Some(Arc::new(action_journal));
+        self
     }
 
     pub async fn execute<R, A>(
@@ -137,7 +154,18 @@ where
             resource.apply_recorded(event)?;
         }
 
-        let action_id = metadata.action_id.clone();
+        let action_metadata = metadata.clone();
+        let action_id = action_metadata.action_id.clone();
+        let journal_stream = ActionJournalStream::for_action(action_id.clone());
+        if let Some(action_journal) = &self.action_journal {
+            action_journal
+                .append(
+                    &journal_stream,
+                    action_called_record::<R, A>(&action_metadata, &resource_id, &action)?,
+                )
+                .await?;
+        }
+
         let mut ctx = ActionContext::<R>::new(
             metadata,
             R::RESOURCE_TYPE,
@@ -164,13 +192,85 @@ where
                 .await?
         };
 
-        Ok(receipt(
+        let receipt = receipt(
             action_id,
             R::RESOURCE_TYPE,
             resource_id,
             decision,
             append_result,
-        ))
+        );
+
+        if let Some(action_journal) = &self.action_journal {
+            action_journal
+                .append(
+                    &journal_stream,
+                    ActionJournalRecord::ActionCompleted {
+                        metadata: action_journal_metadata(
+                            "action_completed",
+                            "journal.action_completed.v1",
+                            &receipt.resource_type,
+                            &receipt.resource_id,
+                            &action_metadata,
+                        ),
+                        receipt: receipt.clone(),
+                    },
+                )
+                .await?;
+        }
+
+        Ok(receipt)
+    }
+}
+
+fn action_called_record<R, A>(
+    action_metadata: &ActionMetadata,
+    resource_id: &str,
+    action: &A,
+) -> Result<ActionJournalRecord, ExecutionError<<R as Handle<A>>::Error>>
+where
+    R: Resource + Handle<A>,
+    A: Action<Resource = R>,
+{
+    let payload = serde_json::to_value(action)
+        .map_err(|err| ActionError::Serialization(err.to_string()))
+        .map_err(crate::HandlerError::from)?;
+
+    Ok(ActionJournalRecord::ActionCalled {
+        metadata: action_journal_metadata(
+            "action_called",
+            "journal.action_called.v1",
+            R::RESOURCE_TYPE,
+            resource_id,
+            action_metadata,
+        ),
+        action_type: A::ACTION_TYPE.to_string(),
+        action_schema_id: A::SCHEMA_ID.to_string(),
+        action_schema_version: A::SCHEMA_VERSION,
+        payload,
+    })
+}
+
+fn action_journal_metadata(
+    message_type: impl Into<String>,
+    schema_id: impl Into<String>,
+    resource_type: impl Into<String>,
+    resource_id: impl Into<String>,
+    action: &ActionMetadata,
+) -> MessageMetadata {
+    MessageMetadata {
+        message_id: Uuid::new_v4().to_string(),
+        message_type: message_type.into(),
+        message_version: 1,
+        resource_type: resource_type.into(),
+        resource_id: resource_id.into(),
+        stream_type: StreamType::Action,
+        correlation_id: action.correlation_id.clone(),
+        causation_id: action.causation_id.clone(),
+        action_id: action.action_id.clone(),
+        actor_id: action.actor_id.clone(),
+        occurred_at: Utc::now().to_rfc3339(),
+        schema_id: schema_id.into(),
+        schema_version: 1,
     }
 }
 
