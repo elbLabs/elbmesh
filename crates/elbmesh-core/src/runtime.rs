@@ -5,10 +5,10 @@ use chrono::Utc;
 use uuid::Uuid;
 
 use crate::{
-    Action, ActionDecision, ActionError, ActionJournal, ActionJournalRecord, ActionJournalStream,
-    ActionMetadata, ActionReceipt, ActionStatus, Apply, EmittedEvent, Event, EventStore,
-    ExecutionError, ExpectedVersion, Handle, MessageMetadata, NewEvent, Resource, ResourceStream,
-    StreamType,
+    Action, ActionDecision, ActionError, ActionFailure, ActionJournal, ActionJournalRecord,
+    ActionJournalStream, ActionMetadata, ActionReceipt, ActionStatus, Apply, EmittedEvent, Event,
+    EventStore, ExecutionError, ExpectedVersion, Handle, HandlerError, MessageMetadata, NewEvent,
+    Resource, ResourceStream, StreamType,
 };
 
 pub struct ActionContext<R: Resource> {
@@ -173,7 +173,22 @@ where
             previous_version,
         );
 
-        let decision = resource.handle(action, &mut ctx).await?;
+        let decision = match resource.handle(action, &mut ctx).await {
+            Ok(decision) => decision,
+            Err(HandlerError::Domain { error }) => {
+                if let Some(action_journal) = &self.action_journal {
+                    action_journal
+                        .append(
+                            &journal_stream,
+                            action_rejected_record::<R, A>(&action_metadata, &resource_id, &error),
+                        )
+                        .await?;
+                }
+
+                return Err(HandlerError::Domain { error }.into());
+            }
+            Err(error) => return Err(error.into()),
+        };
         let pending_events = ctx.into_events();
 
         let append_result = if pending_events.is_empty() {
@@ -248,6 +263,28 @@ where
         action_schema_version: A::SCHEMA_VERSION,
         payload,
     })
+}
+
+fn action_rejected_record<R, A>(
+    action_metadata: &ActionMetadata,
+    resource_id: &str,
+    error: &<R as Handle<A>>::Error,
+) -> ActionJournalRecord
+where
+    R: Resource + Handle<A>,
+    A: Action<Resource = R>,
+{
+    ActionJournalRecord::ActionRejected {
+        metadata: action_journal_metadata(
+            "action_rejected",
+            "journal.action_rejected.v1",
+            R::RESOURCE_TYPE,
+            resource_id,
+            action_metadata,
+        ),
+        failure_code: error.code().to_string(),
+        failure_details: error.details(),
+    }
 }
 
 fn action_journal_metadata(

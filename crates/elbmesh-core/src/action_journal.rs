@@ -30,6 +30,11 @@ pub enum ActionJournalRecord {
         action_schema_version: u32,
         payload: Value,
     },
+    ActionRejected {
+        metadata: MessageMetadata,
+        failure_code: String,
+        failure_details: Value,
+    },
     ActionCompleted {
         metadata: MessageMetadata,
         receipt: ActionReceipt,
@@ -39,9 +44,9 @@ pub enum ActionJournalRecord {
 impl ActionJournalRecord {
     fn action_id(&self) -> &str {
         match self {
-            Self::ActionCalled { metadata, .. } | Self::ActionCompleted { metadata, .. } => {
-                &metadata.action_id
-            }
+            Self::ActionCalled { metadata, .. }
+            | Self::ActionRejected { metadata, .. }
+            | Self::ActionCompleted { metadata, .. } => &metadata.action_id,
         }
     }
 }
