@@ -23,6 +23,7 @@ fn architecture_manifest_describes_resource_action_and_event_schema_identity() {
         manifest.actions[0].emitted_event_types,
         vec!["offer_created"]
     );
+    assert!(manifest.actions[0].external_operation_types.is_empty());
     assert_eq!(manifest.events[0].event_type, "offer_created");
     assert_eq!(manifest.events[0].resource_type, "offer");
     assert_eq!(manifest.events[0].schema_id, "event.offer_created.v1");
@@ -96,12 +97,14 @@ fn architecture_manifest_round_trips_as_stable_json_shape() {
                 "schema_id": "action.create_offer.v1",
                 "schema_version": 1,
                 "emitted_event_types": ["offer_created"],
+                "external_operation_types": [],
             }, {
                 "action_type": "send_offer_email",
                 "resource_type": "offer",
                 "schema_id": "action.send_offer_email.v1",
                 "schema_version": 1,
                 "emitted_event_types": [],
+                "external_operation_types": ["create_invoice"],
             }],
             "events": [{
                 "event_type": "offer_created",
@@ -294,6 +297,56 @@ fn manifest_validation_rejects_reaction_graph_cycle() {
     assert_eq!(err.code(), "manifest.reaction_graph_cycle");
 }
 
+#[test]
+fn valid_manifest_declared_external_operation_validation_succeeds() {
+    offer_manifest()
+        .validate()
+        .expect("valid declared external operation reference should pass validation");
+}
+
+#[test]
+fn manifest_validation_rejects_action_referencing_unknown_external_operation() {
+    let mut manifest = offer_manifest();
+    manifest.actions[1].external_operation_types = vec!["missing_operation".to_string()];
+
+    let err = manifest
+        .validate()
+        .expect_err("unknown action external operation should fail validation");
+
+    assert_eq!(
+        err,
+        ManifestValidationError::UnknownActionExternalOperation {
+            action_type: "send_offer_email".to_string(),
+            operation_type: "missing_operation".to_string(),
+        }
+    );
+    assert_eq!(err.code(), "manifest.action_unknown_external_operation");
+}
+
+#[test]
+fn manifest_validation_rejects_duplicate_external_operation_type() {
+    let mut manifest = offer_manifest();
+    manifest
+        .external_operations
+        .push(ExternalOperationDefinition {
+            operation_type: "create_invoice".to_string(),
+            schema_id: "external_operation.create_invoice.v2".to_string(),
+            schema_version: 2,
+        });
+
+    let err = manifest
+        .validate()
+        .expect_err("duplicate external operation type should fail validation");
+
+    assert_eq!(
+        err,
+        ManifestValidationError::DuplicateExternalOperationType {
+            operation_type: "create_invoice".to_string(),
+        }
+    );
+    assert_eq!(err.code(), "manifest.duplicate_external_operation_type");
+}
+
 fn offer_manifest() -> ArchitectureManifest {
     ArchitectureManifest {
         manifest_schema_id: "manifest.elbmesh.v1".to_string(),
@@ -315,6 +368,7 @@ fn offer_manifest() -> ArchitectureManifest {
                 schema_id: "action.create_offer.v1".to_string(),
                 schema_version: 1,
                 emitted_event_types: vec!["offer_created".to_string()],
+                external_operation_types: Vec::new(),
             },
             ActionDefinition {
                 action_type: "send_offer_email".to_string(),
@@ -322,6 +376,7 @@ fn offer_manifest() -> ArchitectureManifest {
                 schema_id: "action.send_offer_email.v1".to_string(),
                 schema_version: 1,
                 emitted_event_types: Vec::new(),
+                external_operation_types: vec!["create_invoice".to_string()],
             },
         ],
         events: vec![EventDefinition {

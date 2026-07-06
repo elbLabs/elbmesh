@@ -46,6 +46,16 @@ impl ArchitectureManifest {
             }
         }
 
+        let mut external_operation_types = HashSet::new();
+
+        for operation in &self.external_operations {
+            if !external_operation_types.insert(operation.operation_type.as_str()) {
+                return Err(ManifestValidationError::DuplicateExternalOperationType {
+                    operation_type: operation.operation_type.clone(),
+                });
+            }
+        }
+
         let action_types: HashSet<_> = self
             .actions
             .iter()
@@ -58,6 +68,15 @@ impl ArchitectureManifest {
             .collect();
 
         for action in &self.actions {
+            for operation_type in &action.external_operation_types {
+                if !external_operation_types.contains(operation_type.as_str()) {
+                    return Err(ManifestValidationError::UnknownActionExternalOperation {
+                        action_type: action.action_type.clone(),
+                        operation_type: operation_type.clone(),
+                    });
+                }
+            }
+
             for event_type in &action.emitted_event_types {
                 if !event_types.contains(event_type.as_str()) {
                     return Err(ManifestValidationError::UnknownActionEmittedEvent {
@@ -134,6 +153,15 @@ pub enum ManifestValidationError {
         resource_type: String,
     },
 
+    #[error("manifest declares external operation type '{operation_type}' more than once")]
+    DuplicateExternalOperationType { operation_type: String },
+
+    #[error("manifest action '{action_type}' references undeclared external operation '{operation_type}'")]
+    UnknownActionExternalOperation {
+        action_type: String,
+        operation_type: String,
+    },
+
     #[error("manifest event '{event_type}' belongs to undeclared resource '{resource_type}'")]
     UnknownEventResource {
         event_type: String,
@@ -167,6 +195,12 @@ impl ManifestValidationError {
         match self {
             Self::DuplicateResourceType { .. } => "manifest.duplicate_resource_type",
             Self::UnknownActionResource { .. } => "manifest.action_unknown_resource",
+            Self::DuplicateExternalOperationType { .. } => {
+                "manifest.duplicate_external_operation_type"
+            }
+            Self::UnknownActionExternalOperation { .. } => {
+                "manifest.action_unknown_external_operation"
+            }
             Self::UnknownEventResource { .. } => "manifest.event_unknown_resource",
             Self::UnknownActionEmittedEvent { .. } => "manifest.action_unknown_emitted_event",
             Self::UnknownReactionTriggerEvent { .. } => "manifest.reaction_unknown_trigger_event",
@@ -233,6 +267,7 @@ pub struct ActionDefinition {
     pub schema_id: String,
     pub schema_version: u32,
     pub emitted_event_types: Vec<String>,
+    pub external_operation_types: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
