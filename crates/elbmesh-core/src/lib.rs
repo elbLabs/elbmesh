@@ -3,6 +3,7 @@
 mod action_journal;
 
 mod error;
+mod manifest;
 mod message;
 mod runtime;
 mod store;
@@ -16,6 +17,11 @@ pub use action_journal::{
 
 pub use error::{
     ActionError, ActionFailure, EventStoreError, ExecutionError, HandlerError, ResourceError,
+};
+pub use manifest::{
+    ActionDefinition, ArchitectureManifest, ComponentDefinition, EventDefinition,
+    ExternalOperationDefinition, QueryDefinition, ReactionDefinition, ResourceDefinition,
+    ViewDefinition,
 };
 pub use message::{
     ActionDecision, ActionMetadata, ActionReceipt, ActionStatus, EmittedEvent, MessageMetadata,
