@@ -32,7 +32,10 @@ pub use message::{
     ActionDecision, ActionMetadata, ActionReceipt, ActionStatus, EmittedEvent, MessageMetadata,
     NewEvent, RecordedEvent, ResourceStream, StreamType,
 };
-pub use projection::{Projection, ProjectionExecutionError, ProjectionRuntime};
+pub use projection::{
+    Projection, ProjectionDispatchError, ProjectionDispatchFailure, ProjectionDispatchReport,
+    ProjectionDispatcher, ProjectionExecutionError, ProjectionRuntime, TypedProjectionHandler,
+};
 pub use reaction::{
     Reaction, ReactionDispatchError, ReactionDispatchFailure, ReactionDispatcher,
     ReactionExecutionError, ReactionReceipt, ReactionRuntime, TypedReactionHandler,
