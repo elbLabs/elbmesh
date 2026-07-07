@@ -1,14 +1,16 @@
 use elbmesh_core::{
     ActionExecutor, ActionMetadata, ActionScenario, ArchitectureCheckStatus, EventStore,
-    InMemoryEventStore, InMemoryReactionJournal, ReactionDispatcher, ReactionJournal,
-    ReactionJournalRecord, ReactionJournalStream, ReactionRuntime, RecordedEvent, ResourceStream,
-    StreamType, TypedReactionHandler,
+    InMemoryEventStore, InMemoryReactionJournal, InMemoryViewStore, ProjectionDispatcher,
+    ProjectionRuntime, ReactionDispatcher, ReactionJournal, ReactionJournalRecord,
+    ReactionJournalStream, ReactionRuntime, RecordedEvent, ResourceStream, StreamType,
+    TypedProjectionHandler, TypedReactionHandler, ViewKey, ViewStore,
 };
 
 use serde_json::Value;
 
 use reference_flow::{
     AcceptOfferV1, CreateInvoiceV1, CreateOfferV1, CreateOrderConfirmationV1, CreateSalesOrderV1,
+    FlowStatusFromOfferAccepted, FlowStatusFromOfferCreated, FlowStatusFromSalesOrderCreated,
     Invoice, InvoiceCreatedV1, InvoiceError, Offer, OfferAcceptedCreatesSalesOrder,
     OfferAcceptedV1, OfferCreatedV1, OfferError, OrderConfirmation, OrderConfirmationCreatedV1,
     OrderConfirmationError, SalesOrder, SalesOrderCreatedV1, SalesOrderError,
@@ -21,7 +23,8 @@ mod reference_flow {
     use elbmesh_core::{
         apply_recorded_event, Action, ActionContext, ActionDecision, ActionDefinition,
         ActionFailure, Apply, ArchitectureManifest, Event, EventDefinition, Handle, HandlerError,
-        Reaction, ReactionDefinition, Resource, ResourceDefinition, ResourceError,
+        Projection, Reaction, ReactionDefinition, Resource, ResourceDefinition, ResourceError,
+        ViewDefinition, ViewDocument, ViewIndexEntry, ViewStore, ViewStoreError,
     };
     use serde::{Deserialize, Serialize};
     use serde_json::json;
@@ -137,7 +140,11 @@ mod reference_flow {
                 schema_id: OfferAcceptedCreatesSalesOrder::SCHEMA_ID.to_string(),
                 schema_version: OfferAcceptedCreatesSalesOrder::SCHEMA_VERSION,
             }],
-            views: Vec::new(),
+            views: vec![ViewDefinition {
+                view_type: "flow_status".to_string(),
+                schema_id: "view.flow_status.v1".to_string(),
+                schema_version: 1,
+            }],
             queries: Vec::new(),
             external_operations: Vec::new(),
         }
@@ -495,6 +502,106 @@ mod reference_flow {
                 offer_id: event.offer_id,
             }
         }
+    }
+
+    pub struct FlowStatusFromOfferCreated;
+
+    #[async_trait]
+    impl Projection for FlowStatusFromOfferCreated {
+        type Source = OfferCreatedV1;
+
+        const PROJECTION_TYPE: &'static str = "flow_status_from_offer_created";
+
+        async fn project<V>(
+            &self,
+            event: Self::Source,
+            view_store: &V,
+        ) -> Result<(), ViewStoreError>
+        where
+            V: ViewStore,
+        {
+            view_store
+                .put(flow_status_document(
+                    &event.offer_id,
+                    "offer_created",
+                    json!({
+                        "offer_id": event.offer_id,
+                        "status": "offer_created",
+                        "title": event.title,
+                    }),
+                ))
+                .await
+        }
+    }
+
+    pub struct FlowStatusFromOfferAccepted;
+
+    #[async_trait]
+    impl Projection for FlowStatusFromOfferAccepted {
+        type Source = OfferAcceptedV1;
+
+        const PROJECTION_TYPE: &'static str = "flow_status_from_offer_accepted";
+
+        async fn project<V>(
+            &self,
+            event: Self::Source,
+            view_store: &V,
+        ) -> Result<(), ViewStoreError>
+        where
+            V: ViewStore,
+        {
+            view_store
+                .put(flow_status_document(
+                    &event.offer_id,
+                    "offer_accepted",
+                    json!({
+                        "offer_id": event.offer_id,
+                        "status": "offer_accepted",
+                    }),
+                ))
+                .await
+        }
+    }
+
+    pub struct FlowStatusFromSalesOrderCreated;
+
+    #[async_trait]
+    impl Projection for FlowStatusFromSalesOrderCreated {
+        type Source = SalesOrderCreatedV1;
+
+        const PROJECTION_TYPE: &'static str = "flow_status_from_sales_order_created";
+
+        async fn project<V>(
+            &self,
+            event: Self::Source,
+            view_store: &V,
+        ) -> Result<(), ViewStoreError>
+        where
+            V: ViewStore,
+        {
+            view_store
+                .put(flow_status_document(
+                    &event.offer_id,
+                    "sales_order_created",
+                    json!({
+                        "offer_id": event.offer_id,
+                        "status": "sales_order_created",
+                        "sales_order_id": event.sales_order_id,
+                    }),
+                ))
+                .await
+        }
+    }
+
+    fn flow_status_document(
+        offer_id: &str,
+        status: &str,
+        payload: serde_json::Value,
+    ) -> ViewDocument {
+        ViewDocument::new("flow_status", offer_id, payload).with_indexes(vec![
+            ViewIndexEntry::new("all", offer_id),
+            ViewIndexEntry::new("by_status", format!("{status}/{offer_id}")),
+        ])
     }
 
     #[derive(Debug, Default, Clone)]
@@ -906,6 +1013,140 @@ async fn dispatching_offer_accepted_creates_sales_order_through_reference_flow_r
 }
 
 #[tokio::test]
+async fn reference_flow_projects_document_flow_status_view() {
+    let event_store = InMemoryEventStore::new();
+    let action_executor = ActionExecutor::new(event_store.clone());
+
+    action_executor
+        .execute::<Offer, CreateOfferV1>(
+            CreateOfferV1 {
+                offer_id: "offer-1".to_string(),
+                title: "Initial offer".to_string(),
+            },
+            action_metadata("create-offer-action-1"),
+        )
+        .await
+        .expect("create offer should succeed");
+    action_executor
+        .execute::<Offer, AcceptOfferV1>(
+            AcceptOfferV1 {
+                offer_id: "offer-1".to_string(),
+            },
+            action_metadata("accept-offer-action-1"),
+        )
+        .await
+        .expect("accept offer should succeed");
+
+    let offer_events = event_store
+        .load(&ResourceStream::new("offer", "offer-1"))
+        .await
+        .expect("load offer events");
+    let offer_created = offer_events
+        .iter()
+        .find(|event| event.metadata.message_type == "offer_created")
+        .expect("offer created event should exist")
+        .clone();
+    let offer_accepted = offer_events
+        .iter()
+        .find(|event| event.metadata.message_type == "offer_accepted")
+        .expect("offer accepted event should exist")
+        .clone();
+
+    let reaction_dispatcher =
+        ReactionDispatcher::new(ReactionRuntime::new(
+            event_store.clone(),
+            InMemoryReactionJournal::new(),
+        ))
+        .with_handler(TypedReactionHandler::new(
+            OfferAcceptedCreatesSalesOrder,
+            |trigger: &RecordedEvent| {
+                ReactionRuntime::<InMemoryEventStore, InMemoryReactionJournal>::
+                reaction_action_metadata::<OfferAcceptedCreatesSalesOrder>(trigger)
+            },
+        ));
+    reaction_dispatcher
+        .dispatch(&offer_accepted)
+        .await
+        .expect("reaction dispatch should succeed");
+    let sales_order_events = event_store
+        .load(&ResourceStream::new(
+            "sales_order",
+            "sales-order-for-offer-1",
+        ))
+        .await
+        .expect("load sales order events");
+    let sales_order_created = sales_order_events
+        .iter()
+        .find(|event| event.metadata.message_type == "sales_order_created")
+        .expect("sales order created event should exist")
+        .clone();
+
+    let projection_dispatcher =
+        ProjectionDispatcher::new(ProjectionRuntime::new(InMemoryViewStore::new()))
+            .with_handler(TypedProjectionHandler::new(FlowStatusFromOfferCreated))
+            .with_handler(TypedProjectionHandler::new(FlowStatusFromOfferAccepted))
+            .with_handler(TypedProjectionHandler::new(FlowStatusFromSalesOrderCreated));
+
+    let offer_created_report = projection_dispatcher
+        .dispatch(&offer_created)
+        .await
+        .expect("offer created projection dispatch should succeed");
+    assert_eq!(offer_created_report.applied, 1);
+    let offer_created_status = projection_dispatcher
+        .view_store()
+        .load(&ViewKey::new("flow_status", "offer-1"))
+        .await
+        .expect("load offer created flow status")
+        .expect("offer created flow status should exist");
+    assert_eq!(offer_created_status.payload["status"], "offer_created");
+    assert_eq!(offer_created_status.payload["title"], "Initial offer");
+
+    let offer_accepted_report = projection_dispatcher
+        .dispatch(&offer_accepted)
+        .await
+        .expect("offer accepted projection dispatch should succeed");
+    assert_eq!(offer_accepted_report.applied, 1);
+    let offer_accepted_status = projection_dispatcher
+        .view_store()
+        .load(&ViewKey::new("flow_status", "offer-1"))
+        .await
+        .expect("load offer accepted flow status")
+        .expect("offer accepted flow status should exist");
+    assert_eq!(offer_accepted_status.payload["status"], "offer_accepted");
+
+    let sales_order_report = projection_dispatcher
+        .dispatch(&sales_order_created)
+        .await
+        .expect("sales order projection dispatch should succeed");
+    assert_eq!(sales_order_report.applied, 1);
+
+    let flow_status = projection_dispatcher
+        .view_store()
+        .load(&ViewKey::new("flow_status", "offer-1"))
+        .await
+        .expect("load flow status")
+        .expect("flow status should exist");
+    assert_eq!(flow_status.payload["offer_id"], "offer-1");
+    assert_eq!(flow_status.payload["status"], "sales_order_created");
+    assert_eq!(
+        flow_status.payload["sales_order_id"],
+        "sales-order-for-offer-1"
+    );
+
+    let listed = projection_dispatcher
+        .view_store()
+        .list_by_index_prefix("flow_status", "all", "")
+        .await
+        .expect("list flow status all index");
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0], flow_status);
+    assert!(event_store
+        .all_events()
+        .iter()
+        .all(|event| event.metadata.stream_type == StreamType::Resource));
+}
+
+#[tokio::test]
 async fn create_offer_twice_returns_typed_already_exists_error() {
     ActionScenario::<Offer>::new()
         .given(vec![OfferCreatedV1 {
@@ -1105,6 +1346,10 @@ fn reference_flow_manifest_json_names_resources_actions_and_events() {
     assert_eq!(
         vec!["create_sales_order"],
         json_field_values(&manifest_json, "reactions", "target_action_type")
+    );
+    assert_eq!(
+        vec!["flow_status"],
+        json_field_values(&manifest_json, "views", "view_type")
     );
 }
 
