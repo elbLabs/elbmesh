@@ -5,6 +5,7 @@ mod action_journal;
 mod error;
 mod manifest;
 mod message;
+mod projection;
 mod reaction;
 mod reaction_journal;
 mod runtime;
@@ -31,6 +32,7 @@ pub use message::{
     ActionDecision, ActionMetadata, ActionReceipt, ActionStatus, EmittedEvent, MessageMetadata,
     NewEvent, RecordedEvent, ResourceStream, StreamType,
 };
+pub use projection::{Projection, ProjectionExecutionError, ProjectionRuntime};
 pub use reaction::{
     Reaction, ReactionDispatchError, ReactionDispatchFailure, ReactionDispatcher,
     ReactionExecutionError, ReactionReceipt, ReactionRuntime, TypedReactionHandler,
