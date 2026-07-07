@@ -1,0 +1,62 @@
+{
+  "id": "pattern.elbmesh-given-when-then-scenario-tests",
+  "type": "pattern",
+  "name": "Elbmesh Given When Then Scenario Tests",
+  "slug": "pattern.elbmesh-given-when-then-scenario-tests",
+  "status": "stable",
+  "summary": "Write Elbmesh tests as event-sourcing scenarios: given Resource Events or journal state, when an Action, Reaction, retry, Projection, or Query runs, then assert Events, Receipts, typed errors, journals, or Views.",
+  "tags": [
+    { "tagId": "tag.language", "value": "rust" },
+    { "tagId": "tag.quality", "value": "testability" },
+    { "tagId": "tag.topic", "value": "event-sourcing" }
+  ],
+  "dependencies": [],
+  "supports": ["principle.elbmesh-explicit-runtime-boundaries"],
+  "implements": ["architecture.elbmesh-event-sourced-resource-runtime"],
+  "agent": {
+    "rules": [
+      "Write failing tests before production behavior.",
+      "Prefer Given Events -> When Action -> Then Events or typed error.",
+      "Assert metadata, schema versions, Receipts, Action Journal, Reaction Journal, Operation Journal, View, or Query effects when relevant.",
+      "Add architecture-rule tests when a rule is automatable."
+    ],
+    "constraints": [
+      "Do not implement production behavior beyond minimal test scaffolding in the test-writing step.",
+      "Do not use string matching when a typed error code or structured detail is available.",
+      "Do not mix execution failures into Resource Event streams."
+    ]
+  },
+  "body": {
+    "sections": [
+      {
+        "id": "shapes",
+        "type": "examples",
+        "title": "Preferred Shapes",
+        "blocks": [
+          {
+            "type": "list",
+            "items": [
+              "Given Resource Events -> When Action -> Then Resource Events and Receipt.",
+              "Given Resource Events -> When Action -> Then typed domain error and no new Resource Events.",
+              "Given operation journal state -> When retry -> Then no duplicate External Operation call.",
+              "Given Event -> When Reaction runs -> Then target Action is invoked once and Reaction Journal records outcome.",
+              "Given Events -> When Projection runs -> Then View documents and indexes are updated and rebuildable.",
+              "Given manifest fixture -> When validate/check_architecture runs -> Then declared relationships pass or fail with named finding codes."
+            ]
+          }
+        ]
+      },
+      {
+        "id": "references",
+        "type": "references",
+        "title": "Source References",
+        "blocks": [
+          { "type": "file-ref", "path": ".opencode/skills/elbmesh-test-writer/SKILL.md", "description": "Test writer responsibilities, preferred test shapes, and must-not rules." },
+          { "type": "file-ref", "path": "docs/adr/0010-typed-action-errors-and-scenario-tests.md", "description": "ADR for typed Action errors and scenario tests." },
+          { "type": "file-ref", "path": "docs/DEVELOPMENT_WORKFLOW.md", "description": "Test-first workflow and task card test strategy." },
+          { "type": "file-ref", "path": "crates/elbmesh-core/tests/**/*.rs", "glob": true, "description": "Current Elbmesh scenario and runtime tests." }
+        ]
+      }
+    ]
+  }
+}

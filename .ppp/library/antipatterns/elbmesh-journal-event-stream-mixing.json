@@ -1,0 +1,28 @@
+{
+  "id": "antipattern.elbmesh-journal-event-stream-mixing",
+  "type": "antipattern",
+  "name": "Elbmesh Journal Event Stream Mixing",
+  "slug": "antipattern.elbmesh-journal-event-stream-mixing",
+  "status": "stable",
+  "summary": "Execution journal records are stored in or replayed from Resource Event streams, polluting deterministic Resource state.",
+  "tags": [
+    { "tagId": "tag.quality", "value": "boundaries" },
+    { "tagId": "tag.topic", "value": "event-sourcing" }
+  ],
+  "dependencies": [],
+  "related": ["architecture.elbmesh-execution-journals"],
+  "agent": {
+    "rules": ["Keep Resource Events, Action Journal, Operation Journal, Reaction Journal, and execution traces separate."],
+    "checks": ["Resource replay reads Resource Event streams only.", "Failure/retry/journal metadata is not appended as Resource Events unless it is explicitly a business fact."],
+    "antiPatterns": ["Replay from Action Journal records.", "Store ActionRejected or ActionFailed as Resource Events by default.", "Use trace gaps as domain facts."]
+  },
+  "body": { "sections": [
+    { "id": "problem", "type": "problem", "title": "Problem", "blocks": [
+      { "type": "markdown", "markdown": "Mixing execution journals with Resource Event streams makes replay non-domain-specific and can turn runtime failures or adapter observations into false Resource state." }
+    ] },
+    { "id": "references", "type": "references", "title": "Source References", "blocks": [
+      { "type": "file-ref", "path": "docs/adr/0003-actions-events-receipts-and-journals.md", "description": "Accepted separation between Events and execution journal records." },
+      { "type": "file-ref", "path": "docs/EXECUTION_TRACE_MODEL.md", "description": "Trace gaps are diagnostics, not Resource Events." }
+    ] }
+  ] }
+}

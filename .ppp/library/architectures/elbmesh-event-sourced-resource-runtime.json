@@ -1,0 +1,71 @@
+{
+  "id": "architecture.elbmesh-event-sourced-resource-runtime",
+  "type": "architecture",
+  "name": "Elbmesh Event-Sourced Resource Runtime",
+  "slug": "architecture.elbmesh-event-sourced-resource-runtime",
+  "status": "stable",
+  "summary": "Current Elbmesh core runtime shape for executing an Action against one replayed Resource and appending typed Resource Events with journaled execution outcomes.",
+  "tags": [
+    { "tagId": "tag.language", "value": "rust" },
+    { "tagId": "tag.topic", "value": "event-sourcing" },
+    { "tagId": "tag.layer", "value": "domain" }
+  ],
+  "dependencies": [
+    { "type": "cargo", "name": "async-trait" },
+    { "type": "cargo", "name": "serde" }
+  ],
+  "supports": ["principle.elbmesh-explicit-runtime-boundaries"],
+  "agent": {
+    "rules": [
+      "Implement Resource behavior through explicit Resource, Action, Event, Apply, and Handle traits.",
+      "Use ActionContext to record typed Events for the Action's target Resource.",
+      "Let ActionExecutor load Resource history, replay through apply_recorded, run Handle<Action>, append pending Events, and return an ActionReceipt.",
+      "Journal ActionCalled, ActionCompleted, ActionRejected, and ActionFailed records when an Action Journal is configured."
+    ],
+    "constraints": [
+      "Do not add cross-Resource mutation inside a single Action handler.",
+      "Do not bypass expected-version appends when adding Resource Events.",
+      "Do not turn execution journal records into Resource replay inputs."
+    ],
+    "checks": [
+      "The Action implementation names exactly one Resource type through Action::Resource.",
+      "Event implementations name their owner Resource through Event::Resource.",
+      "Apply implementations are explicit for each supported Event type.",
+      "Handler domain errors use typed ActionFailure codes."
+    ]
+  },
+  "body": {
+    "sections": [
+      {
+        "id": "runtime-shape",
+        "type": "guidance",
+        "title": "Current Runtime Shape",
+        "blocks": [
+          {
+            "type": "list",
+            "items": [
+              "Resource defines a RESOURCE_TYPE and apply_recorded replay entry point.",
+              "Action and Event each bind to a Resource and carry ACTION_TYPE or EVENT_TYPE plus schema identity/version metadata.",
+              "Apply<Event> mutates reconstructed Resource state from a typed Event.",
+              "Handle<Action> decides whether to record Events or return a typed domain/runtime error.",
+              "ActionExecutor loads history, sorts by sequence, replays it, runs the handler, appends pending Resource Events with ExpectedVersion::Exact, and builds an ActionReceipt.",
+              "Action Journal support exists for ActionCalled, ActionCompleted, ActionRejected, and ActionFailed records. Operation Journal is a target architecture concept and should not be claimed as implemented unless code exists."
+            ]
+          }
+        ]
+      },
+      {
+        "id": "references",
+        "type": "references",
+        "title": "Source References",
+        "blocks": [
+          { "type": "file-ref", "path": "crates/elbmesh-core/src/traits.rs", "description": "Core Resource, Action, Event, Apply, Handle, and apply_recorded_event traits/helpers." },
+          { "type": "file-ref", "path": "crates/elbmesh-core/src/runtime.rs", "description": "ActionContext and ActionExecutor runtime flow." },
+          { "type": "file-ref", "path": "crates/elbmesh-core/src/action_journal.rs", "description": "Action Journal contracts and in-memory implementation." },
+          { "type": "file-ref", "path": "crates/elbmesh-core/tests/action_executor.rs", "description": "Current scenario tests for execution, replay, journals, typed errors, and failure paths." },
+          { "type": "ppp-ref", "slug": "principle.elbmesh-explicit-runtime-boundaries", "required": true, "reason": "The runtime architecture implements explicit Elbmesh boundaries." }
+        ]
+      }
+    ]
+  }
+}

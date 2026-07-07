@@ -1,0 +1,55 @@
+{
+  "id": "validation.elbmesh-manifest-contract-checks",
+  "type": "validation",
+  "name": "Elbmesh Manifest Contract Checks",
+  "slug": "validation.elbmesh-manifest-contract-checks",
+  "status": "stable",
+  "summary": "Checks for Elbmesh architecture manifest updates, separating currently implemented validation from target generated-artifact synchronization.",
+  "tags": [
+    { "tagId": "tag.topic", "value": "architecture-manifest" },
+    { "tagId": "tag.quality", "value": "testability" }
+  ],
+  "dependencies": [],
+  "supports": ["architecture.elbmesh-architecture-manifest-contract"],
+  "agent": {
+    "checks": [
+      "Run or add manifest validation tests for any new Resource, Action, Event, Reaction, View, Query, or External Operation definition.",
+      "Confirm current validation covers duplicate Resource types, unknown references, duplicate External Operation types, and reaction graph cycles.",
+      "Confirm schema IDs and schema versions are preserved or intentionally changed with tests/docs.",
+      "Report generated binding or capability-doc regeneration as needed; do not claim it happened if no generator exists for the changed artifact."
+    ]
+  },
+  "body": {
+    "sections": [
+      {
+        "id": "checks",
+        "type": "checks",
+        "title": "Manifest Checklist",
+        "blocks": [
+          {
+            "type": "checklist",
+            "items": [
+              { "text": "Each Action references a declared Resource.", "required": true },
+              { "text": "Each Event references a declared Resource.", "required": true },
+              { "text": "Each Action emitted_event_types entry references a declared Event.", "required": true },
+              { "text": "Each Action external_operation_types entry references a declared External Operation.", "required": true },
+              { "text": "Each Reaction trigger Event and target Action are declared.", "required": true },
+              { "text": "The v1 Reaction graph remains acyclic.", "required": true },
+              { "text": "Generated docs/bindings/capability metadata are updated or a regeneration-needed note is recorded when the current repo lacks generation support.", "required": true }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "references",
+        "type": "references",
+        "title": "Source References",
+        "blocks": [
+          { "type": "file-ref", "path": "crates/elbmesh-core/src/manifest.rs", "description": "Validation implementation and named ManifestValidationError codes." },
+          { "type": "file-ref", "path": "crates/elbmesh-core/tests/architecture_manifest.rs", "description": "Current tests proving manifest validation behavior." },
+          { "type": "file-ref", "path": ".opencode/skills/elbmesh-manifest-editor/SKILL.md", "description": "Manifest editor responsibilities and preservation rules." }
+        ]
+      }
+    ]
+  }
+}

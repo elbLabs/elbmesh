@@ -1,0 +1,71 @@
+{
+  "id": "validation.elbmesh-architecture-boundary-checks",
+  "type": "validation",
+  "name": "Elbmesh Architecture Boundary Checks",
+  "slug": "validation.elbmesh-architecture-boundary-checks",
+  "status": "stable",
+  "summary": "Manual and automated checks for preserving Elbmesh Resource, Action, Event, Reaction, External Operation, View, Query, journal, and trace boundaries.",
+  "tags": [
+    { "tagId": "tag.quality", "value": "boundaries" },
+    { "tagId": "tag.quality", "value": "testability" },
+    { "tagId": "tag.language", "value": "rust" }
+  ],
+  "dependencies": [],
+  "supports": ["principle.elbmesh-explicit-runtime-boundaries"],
+  "implements": ["architecture.elbmesh-event-sourced-resource-runtime"],
+  "agent": {
+    "checks": [
+      "Confirm each Action targets exactly one Resource and appends only that Resource's Events.",
+      "Confirm each Event has one owner Resource and explicit apply/replay logic when supported by current code.",
+      "Confirm replay/apply code does not call external systems.",
+      "Confirm execution failures are journaled or returned as errors rather than silently entering Resource streams.",
+      "Confirm Reactions invoke Actions and Views are rebuildable from Events where those runtime surfaces are touched.",
+      "Report missing automated checks separately from failed checks."
+    ]
+  },
+  "body": {
+    "sections": [
+      {
+        "id": "checks",
+        "type": "checks",
+        "title": "Boundary Checklist",
+        "blocks": [
+          {
+            "type": "checklist",
+            "items": [
+              { "text": "Every changed Action targets exactly one Resource.", "required": true },
+              { "text": "Every changed Event belongs to exactly one Resource stream.", "required": true },
+              { "text": "Replay/apply code is deterministic and has no external calls.", "required": true },
+              { "text": "Action failures, runtime failures, Reaction failures, and External Operation failures do not pollute Resource Event streams unless explicitly modelled as domain Events.", "required": true },
+              { "text": "Reactions invoke Actions rather than mutating Resources directly.", "required": true },
+              { "text": "Views derive from Events and can be rebuilt from source Events.", "required": true },
+              { "text": "Execution trace changes keep traces as derived visibility over Actions, Resource Events, Receipts, and journals.", "required": true }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "current-vs-target",
+        "type": "notes",
+        "title": "Current Versus Target Checks",
+        "blocks": [
+          {
+            "type": "markdown",
+            "markdown": "Current code has executable checks for Action execution, Resource replay, Action Journal behavior, Projection/View runtime, Reaction runtime/journal behavior, and manifest validation. Some target architecture checks from docs and skills, such as detecting undeclared external HTTP calls or generated-doc drift, are not yet implemented as universal automated checks; reviewers must report those as manual or missing automated checks."
+          }
+        ]
+      },
+      {
+        "id": "references",
+        "type": "references",
+        "title": "Source References",
+        "blocks": [
+          { "type": "file-ref", "path": ".opencode/skills/elbmesh-architecture-checker/SKILL.md", "description": "Agent-facing architecture checklist." },
+          { "type": "file-ref", "path": ".opencode/skills/elbmesh-reviewer/SKILL.md", "description": "Review focus and must-flag architecture drift." },
+          { "type": "file-ref", "path": "docs/GOAL.md", "description": "Target check-architecture command and core rules." },
+          { "type": "file-ref", "path": "crates/elbmesh-core/tests/**/*.rs", "glob": true, "description": "Current executable proofs for runtime behavior." }
+        ]
+      }
+    ]
+  }
+}

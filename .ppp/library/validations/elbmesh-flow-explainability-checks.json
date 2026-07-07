@@ -1,0 +1,34 @@
+{
+  "id": "validation.elbmesh-flow-explainability-checks",
+  "type": "validation",
+  "name": "Elbmesh Flow Explainability Checks",
+  "slug": "validation.elbmesh-flow-explainability-checks",
+  "status": "stable",
+  "summary": "Checks that Action/Event flow explanations preserve Elbmesh boundaries and state current versus future implementation accurately.",
+  "tags": [
+    { "tagId": "tag.topic", "value": "event-sourcing" },
+    { "tagId": "tag.quality", "value": "observability" },
+    { "tagId": "tag.quality", "value": "boundaries" }
+  ],
+  "dependencies": [],
+  "implements": ["pattern.elbmesh-execution-trace-derived-view"],
+  "agent": {
+    "checks": ["Explanation answers Resource, Policy, Event, Reaction, downstream Action, External Operation, View, Query, and journal questions when relevant.", "Flow uses Action -> Event -> Reaction -> Action, not direct Action-to-Action mutation.", "Execution trace facts are separated from Resource Events and adapter overlays.", "Current implemented runtime/tests are distinguished from target CLI, generated docs, NATS, Restate, and Operation Journal behavior."],
+    "antiPatterns": ["Describing workflow as a direct Resource mutation chain.", "Omitting journals from failure or recovery explanations.", "Presenting future explain-flow CLI output as currently implemented." ]
+  },
+  "body": { "sections": [
+    { "id": "checks", "type": "checks", "title": "Explainability Checklist", "blocks": [
+      { "type": "checklist", "items": [
+        { "text": "The explanation identifies the target Resource and Action boundary.", "required": true },
+        { "text": "Events and Reactions are shown as the only cross-Resource workflow mechanism.", "required": true },
+        { "text": "Views and Queries are derived read-side outputs, not replay state.", "required": true },
+        { "text": "Journals and trace gaps are included for audit/recovery context when outcomes fail or are incomplete.", "required": true }
+      ] }
+    ] },
+    { "id": "references", "type": "references", "title": "Source References", "blocks": [
+      { "type": "file-ref", "path": ".opencode/skills/elbmesh-flow-explainer/SKILL.md", "description": "Agent-facing flow explanation questions and preservation rule." },
+      { "type": "file-ref", "path": "docs/GOAL.md", "description": "Target explain-flow CLI behavior." },
+      { "type": "file-ref", "path": "docs/EXECUTION_TRACE_MODEL.md", "description": "Execution trace logical entries, gaps, overlays, and visualization targets." }
+    ] }
+  ] }
+}

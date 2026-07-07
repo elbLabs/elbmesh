@@ -1,0 +1,9 @@
+{
+  "type": "module",
+  "dependencies": {
+    "@opencode-ai/plugin": "1.17.7",
+    "ajv": "latest",
+    "ajv-formats": "latest",
+    "liquidjs": "^10.27.1"
+  }
+}

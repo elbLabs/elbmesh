@@ -1,0 +1,32 @@
+{
+  "id": "pattern.elbmesh-execution-trace-derived-view",
+  "type": "pattern",
+  "name": "Elbmesh Execution Trace Derived View",
+  "slug": "pattern.elbmesh-execution-trace-derived-view",
+  "status": "stable",
+  "summary": "Execution traces are derived visibility over Actions, Resource Events, Receipts, and journals, not a new execution source of truth.",
+  "tags": [
+    { "tagId": "tag.topic", "value": "event-sourcing" },
+    { "tagId": "tag.quality", "value": "observability" },
+    { "tagId": "tag.quality", "value": "boundaries" }
+  ],
+  "dependencies": [],
+  "supports": ["architecture.elbmesh-execution-journals"],
+  "related": ["validation.elbmesh-flow-explainability-checks"],
+  "agent": {
+    "rules": ["Derive trace entries from ActionMetadata, ActionJournal records, Resource Events, ActionReceipt, and ExecutionError.", "Represent missing or inconsistent observations as TraceGap diagnostics.", "Keep overlays such as NATS, Restate, Operation, Generation, CLI, or agent observations separate from core logical trace facts."],
+    "constraints": ["Do not make ExecutionTrace an input to Resource replay.", "Do not introduce a new authoritative trace stream in the current phase.", "Do not present future CLI or generated trace output as implemented."],
+    "checks": ["Trace language distinguishes ResourceEventAppended from Action Journal entries.", "Incomplete outcomes are allowed for partial commit or missing terminal journal records.", "Examples cover success, rejection, runtime failure, serialization failure, and partial commit gaps."],
+    "antiPatterns": ["Treating trace gaps as domain Events.", "Conflating Action Journal records with Resource Events.", "Using adapter overlays to change Resource replay semantics."]
+  },
+  "body": { "sections": [
+    { "id": "derived-not-authoritative", "type": "guidance", "title": "Derived Not Authoritative", "blocks": [
+      { "type": "list", "items": ["Logical entries include ActionCalled, ResourceReplay, ResourceEventAppended, ActionCompleted, ActionRejected, and ActionFailed.", "Outcomes include Completed, Rejected, Failed, Incomplete, and Unknown.", "Trace gaps explain missing or inconsistent observations without creating Resource Events.", "Adapter/tool overlays may add NATS, Restate, Operation, Generation, CLI, or agent observations later."] }
+    ] },
+    { "id": "references", "type": "references", "title": "Source References", "blocks": [
+      { "type": "file-ref", "path": "docs/EXECUTION_TRACE_MODEL.md", "description": "Logical trace model, identity rules, entries, gaps, overlays, and future test plan." },
+      { "type": "file-ref", "path": "docs/RUNTIME_DEBT_AND_FAILURE_MODES.md", "description": "Known failure modes that traces must expose rather than hide." },
+      { "type": "file-ref", "path": "crates/elbmesh-core/tests/action_executor.rs", "description": "Current Action execution and journal scenarios used as future trace proofs." }
+    ] }
+  ] }
+}

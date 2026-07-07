@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 1,
+  "id": "d9b8a7c6-5432-4f10-9abc-def012345678",
+  "slug": "task.elbmesh-update-architecture-manifest",
+  "name": "Elbmesh Update Architecture Manifest",
+  "title": "Update the Elbmesh Architecture Manifest Contract",
+  "status": "ready",
+  "version": "1.0.0",
+  "summary": "Safely add or change Elbmesh manifest definitions for Resources, Components, Actions, Events, Reactions, Views, Queries, Policies, or External Operations.",
+  "description": "Use this task when the architecture manifest or manifest-derived contract surface changes. Current Rust manifest code supports Resources, Components, Actions, Events, Reactions, Views, Queries, and External Operations; Policies and generated artifacts are target/future surfaces unless implemented in the local codebase.",
+  "tags": [
+    { "tagId": "tag.language", "value": "rust" },
+    { "tagId": "tag.task-intent", "value": "update-contract" },
+    { "tagId": "tag.topic", "value": "architecture-manifest" },
+    { "tagId": "tag.quality", "value": "boundaries" }
+  ],
+  "metadata": { "reusable": true, "scope": "elbmesh" },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["changeName", "manifestChanges", "affectedArtifacts", "testCommand"],
+    "properties": {
+      "changeName": { "type": "string", "minLength": 1 },
+      "manifestChanges": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+      "affectedArtifacts": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+      "testCommand": { "type": "string", "minLength": 1 }
+    }
+  },
+  "context": {
+    "ppp": {
+      "requiredSlugs": [
+        "principle.elbmesh-explicit-runtime-boundaries",
+        "architecture.elbmesh-architecture-manifest-contract",
+        "validation.elbmesh-manifest-contract-checks",
+        "validation.elbmesh-architecture-boundary-checks",
+        "validation.elbmesh-rust-quality-gates"
+      ],
+      "includeRelated": true,
+      "includeBody": true,
+      "sectionTypes": ["guidance", "rules", "constraints", "checks", "references", "notes"],
+      "blockTypes": ["markdown", "list", "checklist", "file-ref", "ppp-ref"]
+    }
+  },
+  "outputs": [
+    { "id": "manifest-contract", "type": "code", "title": "Manifest contract changes", "description": "Rust manifest definitions, fixtures, or JSON contract changes.", "required": true },
+    { "id": "contract-tests", "type": "test", "title": "Manifest validation tests", "required": true },
+    { "id": "sync-note", "type": "documentation", "title": "Generated artifact or docs synchronization note", "required": true }
+  ],
+  "validations": [
+    {
+      "id": "manifest-scope-review",
+      "type": "manual",
+      "title": "Confirm manifest scope",
+      "required": true,
+      "when": "before-task",
+      "criteria": [
+        "The requested manifest change names the affected Resources, Components, Actions, Events, Reactions, Views, Queries, Policies, or External Operations.",
+        "Any requested Policy or generated-artifact change is checked against current source support before implementation claims it as done."
+      ]
+    },
+    { "id": "manifest-tests", "type": "command", "title": "Run manifest tests", "required": true, "when": "after-task", "template": true, "shell": "bash", "command": "{{ task.input.testCommand }}", "success": { "exitCode": 0 } },
+    {
+      "id": "manifest-contract-review",
+      "type": "agent",
+      "title": "Review manifest contract checks",
+      "required": true,
+      "when": "after-task",
+      "context": { "ppp": { "requiredSlugs": ["architecture.elbmesh-architecture-manifest-contract", "validation.elbmesh-manifest-contract-checks"], "includeBody": true } },
+      "passCriteria": [
+        "Actions, Events, Reactions, and External Operations reference declared definitions.",
+        "Schema IDs and schema versions are preserved or intentionally changed with tests/docs.",
+        "Reaction graph remains acyclic for v1.",
+        "Generated docs, bindings, capabilities, or skills are updated or explicitly marked as needing regeneration."
+      ]
+    }
+  ],
+  "sections": [
+    {
+      "id": "requirements",
+      "type": "requirements",
+      "title": "Manifest Change Inputs",
+      "blocks": [
+        { "type": "markdown", "template": true, "markdown": "Update the Elbmesh manifest contract for `{{ task.input.changeName }}`." },
+        { "type": "list", "template": true, "items": ["Manifest changes: {{ task.input.manifestChanges }}", "Affected artifacts: {{ task.input.affectedArtifacts }}", "Verification command: `{{ task.input.testCommand }}`"] }
+      ]
+    },
+    {
+      "id": "instructions",
+      "type": "instructions",
+      "title": "Instructions",
+      "blocks": [
+        { "type": "list", "ordered": true, "items": ["Read the manifest editor skill, GOAL, glossary, relevant ADRs, current manifest.rs, and architecture_manifest tests.", "Identify whether the requested fields are implemented in current code or target/future contract only.", "Update the smallest manifest definitions, fixtures, or tests needed for the slice.", "Preserve schema IDs and versions unless the change explicitly requires a new version.", "Run manifest validation tests and Rust quality gates when feasible.", "Record generated binding, capability doc, RESOURCE_CAPABILITIES.md, resource-capabilities.json, or skill synchronization needs without claiming unavailable generation ran."] }
+      ]
+    },
+    {
+      "id": "acceptance",
+      "type": "acceptance",
+      "title": "Acceptance Criteria",
+      "blocks": [
+        { "type": "acceptance", "criteria": [
+          { "id": "contract-valid", "text": "Manifest validation passes for the changed contract and fails with named errors for relevant invalid fixtures.", "required": true, "kind": "test" },
+          { "id": "sync-accounted", "text": "Docs/generated-artifact/skill synchronization is completed or explicitly recorded as not yet implemented or needing regeneration.", "required": true, "kind": "review" },
+          { "id": "target-vs-current", "text": "The final note distinguishes current implemented manifest checks from target/future checks.", "required": true, "kind": "review" }
+        ] }
+      ]
+    }
+  ]
+}

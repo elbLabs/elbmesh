@@ -1,0 +1,215 @@
+{
+  "schemaVersion": 1,
+  "repoKey": "elbmesh",
+  "name": "Elbmesh",
+  "description": "Local PPP mapping for Elbmesh Rust core, manifest, tests, docs, and OpenCode PPP integration files.",
+  "root": ".",
+  "mappings": [
+    {
+      "id": "core-reactions-workflows",
+      "name": "Elbmesh reactions and workflow graph runtime",
+      "paths": ["crates/elbmesh-core/src/reaction.rs", "crates/elbmesh-core/src/reaction_journal.rs", "crates/elbmesh-core/tests/reaction_*.rs"],
+      "ppp": {
+        "requiredSlugs": [
+          "principle.explicit-boundaries",
+          "principle.elbmesh-explicit-runtime-boundaries",
+          "architecture.elbmesh-event-sourced-resource-runtime",
+          "architecture.elbmesh-execution-journals",
+          "architecture.elbmesh-reaction-workflow-graph",
+          "validation.elbmesh-architecture-boundary-checks",
+          "validation.elbmesh-rust-quality-gates"
+        ],
+        "includeRelated": true,
+        "includeBody": true,
+        "sectionTypes": ["guidance", "rules", "constraints", "checks", "anti-patterns", "references", "notes"],
+        "blockTypes": ["markdown", "list", "checklist", "file-ref", "ppp-ref"]
+      }
+    },
+    {
+      "id": "core-views-queries",
+      "name": "Elbmesh projections, views, and declared queries",
+      "paths": ["crates/elbmesh-core/src/projection.rs", "crates/elbmesh-core/src/view_store.rs", "crates/elbmesh-core/tests/projection_runtime.rs", "crates/elbmesh-core/tests/view_store.rs"],
+      "ppp": {
+        "requiredSlugs": [
+          "principle.explicit-boundaries",
+          "principle.elbmesh-explicit-runtime-boundaries",
+          "architecture.elbmesh-views-and-declared-queries",
+          "validation.elbmesh-view-query-checks",
+          "validation.elbmesh-architecture-boundary-checks",
+          "validation.elbmesh-rust-quality-gates"
+        ],
+        "includeRelated": true,
+        "includeBody": true,
+        "sectionTypes": ["guidance", "rules", "constraints", "checks", "anti-patterns", "references", "notes"],
+        "blockTypes": ["markdown", "list", "checklist", "file-ref", "ppp-ref"]
+      }
+    },
+    {
+      "id": "execution-trace-docs",
+      "name": "Elbmesh execution trace and runtime debt docs",
+      "paths": ["docs/EXECUTION_TRACE_MODEL.md", "docs/RUNTIME_DEBT_AND_FAILURE_MODES.md"],
+      "ppp": {
+        "requiredSlugs": [
+          "principle.explicit-boundaries",
+          "principle.elbmesh-explicit-runtime-boundaries",
+          "architecture.elbmesh-execution-journals",
+          "pattern.elbmesh-execution-trace-derived-view",
+          "validation.elbmesh-flow-explainability-checks",
+          "validation.elbmesh-architecture-boundary-checks"
+        ],
+        "includeRelated": true,
+        "includeBody": true,
+        "sectionTypes": ["guidance", "rules", "constraints", "checks", "anti-patterns", "references", "notes"],
+        "blockTypes": ["markdown", "list", "checklist", "file-ref", "ppp-ref"]
+      }
+    },
+    {
+      "id": "reference-flow-tests",
+      "name": "Elbmesh reference flow tests",
+      "paths": ["crates/elbmesh-core/tests/reference_flow.rs"],
+      "ppp": {
+        "requiredSlugs": [
+          "principle.explicit-boundaries",
+          "principle.elbmesh-explicit-runtime-boundaries",
+          "architecture.elbmesh-reaction-workflow-graph",
+          "architecture.elbmesh-views-and-declared-queries",
+          "pattern.elbmesh-declared-external-operation",
+          "pattern.elbmesh-execution-trace-derived-view",
+          "validation.elbmesh-view-query-checks",
+          "validation.elbmesh-external-operation-idempotency-checks",
+          "validation.elbmesh-flow-explainability-checks",
+          "pattern.elbmesh-given-when-then-scenario-tests"
+        ],
+        "includeRelated": true,
+        "includeBody": true,
+        "sectionTypes": ["guidance", "rules", "constraints", "checks", "anti-patterns", "references", "notes"],
+        "blockTypes": ["markdown", "list", "checklist", "file-ref", "ppp-ref"]
+      }
+    },
+    {
+      "id": "core-rust",
+      "name": "Elbmesh core Rust implementation",
+      "paths": ["crates/elbmesh-core/src/**/*.rs"],
+      "ppp": {
+        "requiredSlugs": [
+          "principle.explicit-boundaries",
+          "principle.elbmesh-explicit-runtime-boundaries",
+          "architecture.layered-ddd-backend",
+          "architecture.elbmesh-event-sourced-resource-runtime",
+          "validation.elbmesh-architecture-boundary-checks",
+          "validation.elbmesh-rust-quality-gates"
+        ],
+        "includeRelated": true,
+        "includeBody": true,
+        "sectionTypes": ["guidance", "rules", "constraints", "checks", "references"],
+        "blockTypes": ["markdown", "list", "checklist", "file-ref", "ppp-ref"]
+      }
+    },
+    {
+      "id": "core-manifest",
+      "name": "Elbmesh manifest definitions",
+      "paths": ["crates/elbmesh-core/src/manifest.rs"],
+      "ppp": {
+        "requiredSlugs": [
+          "principle.explicit-boundaries",
+          "principle.elbmesh-explicit-runtime-boundaries",
+          "architecture.elbmesh-architecture-manifest-contract",
+          "validation.elbmesh-manifest-contract-checks",
+          "validation.elbmesh-architecture-boundary-checks",
+          "validation.elbmesh-rust-quality-gates"
+        ],
+        "includeRelated": true,
+        "includeBody": true,
+        "sectionTypes": ["guidance", "rules", "constraints", "checks", "references"],
+        "blockTypes": ["markdown", "list", "checklist", "file-ref", "ppp-ref"]
+      }
+    },
+    {
+      "id": "core-tests",
+      "name": "Elbmesh core tests",
+      "paths": ["crates/elbmesh-core/tests/**/*.rs"],
+      "ppp": {
+        "requiredSlugs": [
+          "principle.explicit-boundaries",
+          "principle.elbmesh-explicit-runtime-boundaries",
+          "architecture.elbmesh-event-sourced-resource-runtime",
+          "pattern.elbmesh-given-when-then-scenario-tests",
+          "validation.elbmesh-architecture-boundary-checks",
+          "validation.elbmesh-rust-quality-gates"
+        ],
+        "includeRelated": true,
+        "includeBody": true,
+        "sectionTypes": ["guidance", "rules", "checks", "references"],
+        "blockTypes": ["markdown", "list", "checklist", "file-ref", "ppp-ref"]
+      }
+    },
+    {
+      "id": "docs",
+      "name": "Elbmesh documentation",
+      "paths": ["docs/**/*.md"],
+      "ppp": {
+        "requiredSlugs": [
+          "principle.explicit-boundaries",
+          "principle.elbmesh-explicit-runtime-boundaries",
+          "architecture.elbmesh-event-sourced-resource-runtime",
+          "architecture.elbmesh-architecture-manifest-contract",
+          "validation.elbmesh-architecture-boundary-checks"
+        ],
+        "includeRelated": true,
+        "includeBody": true,
+        "sectionTypes": ["guidance", "rules", "references"],
+        "blockTypes": ["markdown", "list", "file-ref", "ppp-ref"]
+      }
+    },
+    {
+      "id": "opencode-skills",
+      "name": "OpenCode skills",
+      "paths": [".opencode/skills/*/SKILL.md"],
+      "ppp": {
+        "requiredSlugs": [
+          "principle.explicit-boundaries",
+          "principle.elbmesh-explicit-runtime-boundaries",
+          "validation.elbmesh-architecture-boundary-checks",
+          "validation.elbmesh-manifest-contract-checks"
+        ],
+        "includeRelated": true,
+        "includeBody": true,
+        "sectionTypes": ["guidance", "rules", "references"],
+        "blockTypes": ["markdown", "list", "file-ref", "ppp-ref"]
+      }
+    },
+    {
+      "id": "opencode-ppp-binding",
+      "name": "OpenCode PPP binding and plugin",
+      "paths": [".opencode/plugins/ppp-local.ts", "ppp.config.json", ".ppp/**"],
+      "ppp": {
+        "requiredSlugs": [
+          "principle.explicit-boundaries",
+          "principle.elbmesh-explicit-runtime-boundaries",
+          "validation.elbmesh-architecture-boundary-checks"
+        ],
+        "includeRelated": true,
+        "includeBody": true,
+        "sectionTypes": ["guidance", "rules", "references"],
+        "blockTypes": ["markdown", "list", "file-ref", "ppp-ref"]
+      }
+    },
+    {
+      "id": "cargo-manifests",
+      "name": "Cargo manifests and lockfile",
+      "paths": ["Cargo.toml", "Cargo.lock", "crates/elbmesh-core/Cargo.toml"],
+      "ppp": {
+        "requiredSlugs": [
+          "principle.explicit-boundaries",
+          "principle.elbmesh-explicit-runtime-boundaries",
+          "architecture.layered-ddd-backend",
+          "validation.elbmesh-rust-quality-gates"
+        ],
+        "includeRelated": true,
+        "includeBody": true,
+        "sectionTypes": ["guidance", "rules", "constraints", "checks", "references"],
+        "blockTypes": ["markdown", "list", "checklist", "file-ref", "ppp-ref"]
+      }
+    }
+  ]
+}

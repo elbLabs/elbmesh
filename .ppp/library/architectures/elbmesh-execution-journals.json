@@ -1,0 +1,65 @@
+{
+  "id": "architecture.elbmesh-execution-journals",
+  "type": "architecture",
+  "name": "Elbmesh Execution Journals",
+  "slug": "architecture.elbmesh-execution-journals",
+  "status": "stable",
+  "summary": "Separates Resource Event streams from Action, Operation, and Reaction Journals used for audit, idempotency, recovery, and explainability.",
+  "tags": [
+    { "tagId": "tag.language", "value": "rust" },
+    { "tagId": "tag.topic", "value": "event-sourcing" },
+    { "tagId": "tag.quality", "value": "boundaries" }
+  ],
+  "dependencies": [],
+  "supports": ["principle.elbmesh-explicit-runtime-boundaries"],
+  "related": ["architecture.elbmesh-event-sourced-resource-runtime", "pattern.elbmesh-execution-trace-derived-view"],
+  "agent": {
+    "rules": [
+      "Use Resource Event streams only for durable domain facts that drive Resource replay.",
+      "Use Action Journal records for ActionCalled, ActionCompleted, ActionRejected, and ActionFailed visibility in current code.",
+      "Use Reaction Journal records for ReactionTriggered and ReactionCompleted visibility in current code.",
+      "Treat Operation Journal as target architecture until implementation exists; do not claim current Operation Journal behavior beyond manifest declarations and docs."
+    ],
+    "constraints": [
+      "Do not replay Resources from Action Journal, Reaction Journal, Operation Journal, or execution trace records.",
+      "Do not store raw provider responses or retry mechanics as Resource Events unless explicitly modelled as domain facts.",
+      "Report partial-commit and missing-terminal-record cases as trace gaps or runtime debt, not as hidden state changes."
+    ],
+    "checks": [
+      "Changed replay/apply code reads Resource Events only.",
+      "Changed failure paths journal or return execution failures without appending failure records to Resource streams.",
+      "Changed Reaction runtime code writes Reaction Journal records separately from Resource Events.",
+      "External Operation behavior is described as future/target unless Operation Journal code exists."
+    ],
+    "antiPatterns": [
+      "Using execution journal records as Resource replay input.",
+      "Encoding adapter retry details as business Events.",
+      "Claiming Operation Journal or Restate behavior is implemented when only docs/manifest declarations exist."
+    ]
+  },
+  "body": {
+    "sections": [
+      {
+        "id": "journal-separation",
+        "type": "guidance",
+        "title": "Journal Separation",
+        "blocks": [
+          { "type": "markdown", "markdown": "Elbmesh distinguishes Resource Events from execution journal records. Current code implements Action Journal and Reaction Journal surfaces. Operation Journal remains target architecture for declared External Operations, Restate recovery, and external idempotency." },
+          { "type": "list", "items": ["Resource Event stream: authoritative replay state for one Resource.", "Action Journal: Action attempt lifecycle and runtime/domain outcomes.", "Reaction Journal: Reaction trigger and completion visibility.", "Operation Journal: target store for External Operation reservation, success/failure, idempotency key, and provider diagnostics.", "Execution trace: derived visibility over existing artifacts, not a new authoritative stream."] }
+        ]
+      },
+      {
+        "id": "references",
+        "type": "references",
+        "title": "Source References",
+        "blocks": [
+          { "type": "file-ref", "path": "docs/adr/0003-actions-events-receipts-and-journals.md", "description": "Accepted separation of Actions, Events, Receipts, and execution journal records." },
+          { "type": "file-ref", "path": "docs/RUNTIME_DEBT_AND_FAILURE_MODES.md", "description": "Known partial commit, idempotency, and future Operation/Reaction Journal debt." },
+          { "type": "file-ref", "path": "docs/EXECUTION_TRACE_MODEL.md", "description": "Trace model derives logical entries from ActionMetadata, ActionJournal records, Resource Events, and results." },
+          { "type": "file-ref", "path": "crates/elbmesh-core/src/action_journal.rs", "description": "Current Action Journal contract and in-memory implementation." },
+          { "type": "file-ref", "path": "crates/elbmesh-core/src/reaction_journal.rs", "description": "Current Reaction Journal contract and in-memory implementation." }
+        ]
+      }
+    ]
+  }
+}

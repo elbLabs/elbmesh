@@ -1,0 +1,28 @@
+{
+  "id": "antipattern.elbmesh-cross-resource-direct-mutation",
+  "type": "antipattern",
+  "name": "Elbmesh Cross-Resource Direct Mutation",
+  "slug": "antipattern.elbmesh-cross-resource-direct-mutation",
+  "status": "stable",
+  "summary": "A Resource, Action, or Reaction directly mutates another Resource instead of using Event-to-Action Reactions.",
+  "tags": [
+    { "tagId": "tag.quality", "value": "boundaries" },
+    { "tagId": "tag.topic", "value": "event-sourcing" }
+  ],
+  "dependencies": [],
+  "related": ["architecture.elbmesh-reaction-workflow-graph"],
+  "agent": {
+    "rules": ["Route cross-Resource behavior through Action -> Event -> Reaction -> Action."],
+    "checks": ["Review handlers and Reactions for writes to any Resource other than the Action target."],
+    "antiPatterns": ["A Reaction directly appends Events to its target Resource stream.", "An Action handler loads or mutates another Resource as part of the same decision."]
+  },
+  "body": { "sections": [
+    { "id": "problem", "type": "problem", "title": "Problem", "blocks": [
+      { "type": "markdown", "markdown": "Direct cross-Resource mutation hides workflow edges from the manifest, weakens explainability, and bypasses Action execution, journals, and policy hooks." }
+    ] },
+    { "id": "references", "type": "references", "title": "Source References", "blocks": [
+      { "type": "file-ref", "path": "docs/GOAL.md", "description": "Core rule: cross-Resource behavior happens through Workflows/Reactions." },
+      { "type": "file-ref", "path": "docs/adr/0007-reactions-and-workflow-graphs.md", "description": "Accepted Action -> Event -> Reaction -> Action model." }
+    ] }
+  ] }
+}

@@ -1,0 +1,79 @@
+{
+  "id": "principle.elbmesh-explicit-runtime-boundaries",
+  "type": "principle",
+  "name": "Elbmesh Explicit Runtime Boundaries",
+  "slug": "principle.elbmesh-explicit-runtime-boundaries",
+  "status": "stable",
+  "summary": "Preserve Elbmesh's explicit separation between Resource Events, Actions, Reactions, External Operations, Views, Queries, Policies, journals, and execution traces.",
+  "tags": [
+    { "tagId": "tag.quality", "value": "boundaries" },
+    { "tagId": "tag.topic", "value": "event-sourcing" },
+    { "tagId": "tag.language", "value": "rust" }
+  ],
+  "dependencies": [],
+  "supports": ["principle.explicit-boundaries"],
+  "agent": {
+    "rules": [
+      "Treat Resource Events as durable domain facts stored in one Resource stream, not as execution logs.",
+      "Treat Action Journal, Operation Journal, and Reaction Journal records as execution records, not Resource replay input.",
+      "Keep Resource replay and apply logic deterministic and free of external system calls.",
+      "Make cross-Resource behavior flow through Reactions that invoke Actions."
+    ],
+    "constraints": [
+      "Do not store runtime failures as Resource Events unless they are explicitly modelled business facts.",
+      "Do not hide domain behavior behind macros or undeclared runtime magic.",
+      "Do not use execution traces as a source of truth for Resource state."
+    ],
+    "checks": [
+      "Each Action targets exactly one Resource.",
+      "Each Event belongs to exactly one Resource.",
+      "External calls are represented by declared External Operations and journaled outside Resource streams.",
+      "Views and Queries do not mutate Resources or produce Resource Events."
+    ]
+  },
+  "body": {
+    "sections": [
+      {
+        "id": "guidance",
+        "type": "guidance",
+        "title": "Boundary Model",
+        "blocks": [
+          {
+            "type": "markdown",
+            "markdown": "Elbmesh is built around explicit architecture artifacts. A Resource is reconstructed only from its stored Resource Events. An Action requests a business capability and may return a Receipt or typed error. Reactions connect Events to downstream Actions. External Operations are declared integration boundaries. Views and Queries are derived read surfaces. Action Journal, Operation Journal, and Reaction Journal records describe execution, recovery, and diagnostics but are not Resource Events."
+          }
+        ]
+      },
+      {
+        "id": "rules",
+        "type": "rules",
+        "title": "Rules",
+        "blocks": [
+          {
+            "type": "list",
+            "items": [
+              "Resource replay uses stored Resource Events only.",
+              "Replay/apply code must not call external systems.",
+              "Failed or denied Actions do not append Resource Events unless the failure is explicitly modelled as a domain Event.",
+              "Reactions invoke Actions rather than mutating Resource state directly.",
+              "Views are rebuildable from Resource Events and do not own business truth.",
+              "Execution traces explain existing artifacts; they do not create a new source of truth."
+            ]
+          }
+        ]
+      },
+      {
+        "id": "references",
+        "type": "references",
+        "title": "Source References",
+        "blocks": [
+          { "type": "file-ref", "path": "docs/GLOSSARY.md", "description": "Canonical Elbmesh vocabulary for Resources, Actions, Events, Reactions, Views, Queries, Policies, and External Operations." },
+          { "type": "file-ref", "path": "docs/GOAL.md", "description": "Architecture thesis and core rules for explicit event-sourced runtime boundaries." },
+          { "type": "file-ref", "path": "docs/EXECUTION_TRACE_MODEL.md", "description": "Trace model that separates Resource Events from journal records and future overlays." },
+          { "type": "file-ref", "path": "docs/adr/0001-event-sourcing-framework-vocabulary.md", "description": "Accepted vocabulary mapping business terms to event-sourcing mechanics." },
+          { "type": "file-ref", "path": "docs/adr/0003-actions-events-receipts-and-journals.md", "description": "Accepted decision to separate Actions, Events, Receipts, and execution journals." }
+        ]
+      }
+    ]
+  }
+}

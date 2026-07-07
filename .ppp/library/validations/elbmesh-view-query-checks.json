@@ -1,0 +1,34 @@
+{
+  "id": "validation.elbmesh-view-query-checks",
+  "type": "validation",
+  "name": "Elbmesh View Query Checks",
+  "slug": "validation.elbmesh-view-query-checks",
+  "status": "stable",
+  "summary": "Checks that Views are rebuilt from Resource Events and Queries use declared View/index boundaries.",
+  "tags": [
+    { "tagId": "tag.topic", "value": "view" },
+    { "tagId": "tag.quality", "value": "testability" },
+    { "tagId": "tag.language", "value": "rust" }
+  ],
+  "dependencies": [],
+  "implements": ["architecture.elbmesh-views-and-declared-queries"],
+  "agent": {
+    "checks": ["Every changed View has declared source Events or explicit follow-up for manifest support.", "Projection code ignores non-matching Event type, Resource type, schema, schema version, and non-Resource stream records.", "List queries use declared indexes or ViewStore::list_by_index_prefix semantics.", "View updates are rebuildable from Resource Events and do not mutate Resource state.", "NATS KV checkpoints are described as target architecture unless code exists."],
+    "antiPatterns": ["Direct View writes from Actions as authoritative state.", "Ad hoc query paths bypassing declared View/Query contracts.", "Projection code performing external enrichment in v1."]
+  },
+  "body": { "sections": [
+    { "id": "checks", "type": "checks", "title": "View And Query Checklist", "blocks": [
+      { "type": "checklist", "items": [
+        { "text": "Projection sources are Resource Events, not journals or trace records.", "required": true },
+        { "text": "Projection dispatch ignores mismatched type/schema/resource/stream records.", "required": true },
+        { "text": "ViewStore writes include deterministic ViewKey and declared indexes when list queries are needed.", "required": true },
+        { "text": "Queries are declared capabilities against Views, not arbitrary runtime searches.", "required": true }
+      ] }
+    ] },
+    { "id": "references", "type": "references", "title": "Source References", "blocks": [
+      { "type": "file-ref", "path": "docs/adr/0008-views-queries-and-nats-storage.md", "description": "Accepted View and Query rules." },
+      { "type": "file-ref", "path": "crates/elbmesh-core/tests/projection_runtime.rs", "description": "Current projection filtering and multi-Resource View tests." },
+      { "type": "file-ref", "path": "crates/elbmesh-core/tests/view_store.rs", "description": "Current ViewStore index prefix query tests." }
+    ] }
+  ] }
+}

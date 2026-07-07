@@ -1,0 +1,219 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ppp-library.local/schemas/repo-config.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "repoKey", "name", "mappings"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "repoKey": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+    "name": { "type": "string", "minLength": 1 },
+    "description": { "type": "string" },
+    "root": { "type": "string", "minLength": 1 },
+    "tags": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/tag" }
+    },
+    "dependencies": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/dependency" }
+    },
+    "mappings": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/mapping" }
+    }
+  },
+  "$defs": {
+    "tag": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tagId"],
+      "properties": {
+        "tagId": { "type": "string", "minLength": 1 },
+        "value": true
+      }
+    },
+    "mapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "paths"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "paths": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "tags": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/tag" }
+        },
+        "ppp": { "$ref": "#/$defs/pppContext" },
+        "tasks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/taskReference" }
+        },
+        "validations": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "dependencies": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/dependency" }
+        }
+      }
+    },
+    "pppContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "slugs": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "requiredSlugs": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "tags": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/tag" }
+        },
+        "includeRelated": { "type": "boolean" },
+        "includeBody": { "type": "boolean" },
+        "sectionTypes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/pppSectionType" }
+        },
+        "sectionIds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "blockTypes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/pppBlockType" }
+        }
+      }
+    },
+    "pppSectionType": {
+      "enum": ["problem", "guidance", "solution", "rules", "constraints", "examples", "checks", "anti-patterns", "references", "notes"]
+    },
+    "pppBlockType": {
+      "enum": ["markdown", "list", "checklist", "code", "file-ref", "ppp-ref"]
+    },
+    "taskReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "anyOf": [
+        { "required": ["slug"] },
+        { "required": ["id"] }
+      ],
+      "properties": {
+        "slug": { "type": "string", "minLength": 1 },
+        "id": { "type": "string", "minLength": 1 },
+        "validationIds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "dependency": {
+      "oneOf": [
+        { "$ref": "#/$defs/cargoDependency" },
+        { "$ref": "#/$defs/npmDependency" }
+      ]
+    },
+    "dependencySource": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "manifestPath": { "type": "string" },
+        "lockfilePath": { "type": "string" },
+        "packageManager": { "type": "string" },
+        "packageManagerVersion": { "type": "string" },
+        "provenance": { "type": "string" }
+      }
+    },
+    "workspaceMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "inherited": { "type": "boolean" },
+        "member": { "type": "boolean" },
+        "root": { "type": "boolean" },
+        "packagePath": { "type": "string" }
+      }
+    },
+    "dependencyBase": {
+      "type": "object",
+      "required": ["ecosystem", "packageName"],
+      "properties": {
+        "packageName": { "type": "string", "minLength": 1 },
+        "requirement": { "type": "string" },
+        "resolvedVersion": { "type": "string" },
+        "resolvedVersions": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "optional": { "type": "boolean" },
+        "dev": { "type": "boolean" },
+        "workspace": { "$ref": "#/$defs/workspaceMetadata" },
+        "source": { "$ref": "#/$defs/dependencySource" }
+      }
+    },
+    "cargoDependency": {
+      "allOf": [
+        { "$ref": "#/$defs/dependencyBase" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ecosystem", "packageName"],
+          "properties": {
+            "ecosystem": { "const": "cargo" },
+            "packageName": { "type": "string", "minLength": 1 },
+            "requirement": { "type": "string" },
+            "resolvedVersion": { "type": "string" },
+            "resolvedVersions": { "type": "array", "items": { "type": "string" } },
+            "scope": { "type": "string", "minLength": 1 },
+            "features": { "type": "array", "items": { "type": "string" } },
+            "defaultFeatures": { "type": "boolean" },
+            "optional": { "type": "boolean" },
+            "dev": { "type": "boolean" },
+            "build": { "type": "boolean" },
+            "workspace": { "$ref": "#/$defs/workspaceMetadata" },
+            "registry": { "type": "string" },
+            "git": { "type": "string" },
+            "path": { "type": "string" },
+            "source": { "$ref": "#/$defs/dependencySource" }
+          }
+        }
+      ]
+    },
+    "npmDependency": {
+      "allOf": [
+        { "$ref": "#/$defs/dependencyBase" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ecosystem", "packageName"],
+          "properties": {
+            "ecosystem": { "const": "npm" },
+            "packageName": { "type": "string", "minLength": 1 },
+            "requirement": { "type": "string" },
+            "resolvedVersion": { "type": "string" },
+            "resolvedVersions": { "type": "array", "items": { "type": "string" } },
+            "scope": { "enum": ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies", "bundledDependencies"] },
+            "optional": { "type": "boolean" },
+            "dev": { "type": "boolean" },
+            "peer": { "type": "boolean" },
+            "workspace": { "$ref": "#/$defs/workspaceMetadata" },
+            "source": { "$ref": "#/$defs/dependencySource" }
+          }
+        }
+      ]
+    }
+  }
+}

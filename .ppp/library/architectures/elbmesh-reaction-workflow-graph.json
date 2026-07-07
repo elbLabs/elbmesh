@@ -1,0 +1,64 @@
+{
+  "id": "architecture.elbmesh-reaction-workflow-graph",
+  "type": "architecture",
+  "name": "Elbmesh Reaction Workflow Graph",
+  "slug": "architecture.elbmesh-reaction-workflow-graph",
+  "status": "stable",
+  "summary": "Models cross-Resource behavior as Action -> Event -> Reaction -> Action graphs, with Reactions invoking Actions instead of mutating Resources directly.",
+  "tags": [
+    { "tagId": "tag.language", "value": "rust" },
+    { "tagId": "tag.topic", "value": "event-sourcing" },
+    { "tagId": "tag.quality", "value": "boundaries" }
+  ],
+  "dependencies": [
+    { "type": "cargo", "name": "async-trait" },
+    { "type": "cargo", "name": "serde" }
+  ],
+  "supports": ["principle.elbmesh-explicit-runtime-boundaries"],
+  "related": ["architecture.elbmesh-execution-journals", "architecture.elbmesh-architecture-manifest-contract"],
+  "agent": {
+    "rules": [
+      "Represent cross-Resource behavior as Action -> Event -> Reaction -> Action.",
+      "Reaction conditions must be pure and subscribe only to successful Resource Events.",
+      "Reaction execution must call the same Action execution API used by direct callers.",
+      "Workflow is a named graph or subgraph over declared Reactions."
+    ],
+    "constraints": [
+      "Do not let a Reaction mutate another Resource directly.",
+      "Do not introduce cyclic Reaction graphs.",
+      "Do not trigger Reactions from Action Journal, Reaction Journal, Operation Journal, or View records."
+    ],
+    "checks": [
+      "Manifest Reactions reference known trigger Events and target Actions.",
+      "Manifest cycle checks still fail cyclic Action/Event/Reaction paths.",
+      "Reaction runtime uses deterministic reaction/action IDs for retries.",
+      "Reaction Journal records use StreamType::Reaction and do not enter Resource Event streams."
+    ],
+    "antiPatterns": ["Direct Resource mutation inside Reaction code.", "Hidden Action-to-Action calls that skip Events.", "Workflow state stored as a custom saga stream when it can be derived from Events and journals."]
+  },
+  "body": {
+    "sections": [
+      {
+        "id": "graph-model",
+        "type": "guidance",
+        "title": "Graph Model",
+        "blocks": [
+          { "type": "markdown", "markdown": "The accepted model is `Action -> Event -> Reaction -> Action`. Current code includes typed Reaction, ReactionRuntime, ReactionDispatcher, ReactionJournal, deterministic reaction action IDs, and manifest cycle checks. Restate-backed durable Reaction execution remains target architecture." }
+        ]
+      },
+      {
+        "id": "references",
+        "type": "references",
+        "title": "Source References",
+        "blocks": [
+          { "type": "file-ref", "path": "docs/adr/0007-reactions-and-workflow-graphs.md", "description": "Accepted Reaction and Workflow graph model." },
+          { "type": "file-ref", "path": "crates/elbmesh-core/src/reaction.rs", "description": "Current typed Reaction runtime and dispatcher." },
+          { "type": "file-ref", "path": "crates/elbmesh-core/src/reaction_journal.rs", "description": "Current Reaction Journal records and stream boundary." },
+          { "type": "file-ref", "path": "crates/elbmesh-core/src/manifest.rs", "description": "Manifest validation for Reaction references and cycle detection." },
+          { "type": "file-ref", "path": "crates/elbmesh-core/tests/reaction_runtime.rs", "description": "Executable Reaction runtime and journal scenarios." },
+          { "type": "file-ref", "path": "crates/elbmesh-core/tests/reference_flow.rs", "description": "Offer-to-Invoice reference flow exercising declared Reactions and Views." }
+        ]
+      }
+    ]
+  }
+}

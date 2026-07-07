@@ -1,0 +1,241 @@
+{
+  "schemaVersion": 1,
+  "repoKey": "quick-thought-stdb",
+  "name": "Quick Thought SpacetimeDB Module",
+  "description": "Repo-specific PPP mapping for the quick-thought SpacetimeDB Rust module with pure domain slices mirrored by SpacetimeDB table, repository, mapper, reducer, authz, sync, and view slices.",
+  "root": "stdb",
+  "tags": [
+    { "tagId": "tag.language", "value": "rust" },
+    { "tagId": "tag.framework", "value": "spacetimedb" },
+    { "tagId": "tag.stack", "value": "rust-spacetimedb" },
+    { "tagId": "tag.topic", "value": "spacetimedb" }
+  ],
+  "dependencies": [
+    {
+      "ecosystem": "cargo",
+      "packageName": "spacetimedb",
+      "requirement": "=2.5.0",
+      "resolvedVersion": "2.5.0",
+      "resolvedVersions": ["2.5.0"],
+      "scope": "dependencies",
+      "features": [],
+      "defaultFeatures": true,
+      "optional": false,
+      "dev": false,
+      "build": false,
+      "workspace": { "inherited": false, "member": false, "root": true, "packagePath": "." },
+      "registry": "crates-io",
+      "source": {
+        "manifestPath": "Cargo.toml",
+        "lockfilePath": "Cargo.lock",
+        "packageManager": "cargo",
+        "packageManagerVersion": "1.94.1",
+        "provenance": "Declared directly by quick-thought-stdb and resolved in Cargo.lock. Provides table, reducer, view, ReducerContext, ViewContext, and SpacetimeType APIs."
+      }
+    },
+    {
+      "ecosystem": "cargo",
+      "packageName": "log",
+      "requirement": "0.4",
+      "resolvedVersion": "0.4.32",
+      "resolvedVersions": ["0.4.32"],
+      "scope": "dependencies",
+      "features": [],
+      "defaultFeatures": true,
+      "optional": false,
+      "dev": false,
+      "build": false,
+      "workspace": { "inherited": false, "member": false, "root": true, "packagePath": "." },
+      "registry": "crates-io",
+      "source": {
+        "manifestPath": "Cargo.toml",
+        "lockfilePath": "Cargo.lock",
+        "packageManager": "cargo",
+        "packageManagerVersion": "1.94.1",
+        "provenance": "Declared directly by quick-thought-stdb and resolved in Cargo.lock for diagnostic logging."
+      }
+    },
+    {
+      "ecosystem": "cargo",
+      "packageName": "serde",
+      "requirement": "1",
+      "resolvedVersion": "1.0.228",
+      "resolvedVersions": ["1.0.228"],
+      "scope": "dependencies",
+      "features": ["derive"],
+      "defaultFeatures": true,
+      "optional": false,
+      "dev": false,
+      "build": false,
+      "workspace": { "inherited": false, "member": false, "root": true, "packagePath": "." },
+      "registry": "crates-io",
+      "source": {
+        "manifestPath": "Cargo.toml",
+        "lockfilePath": "Cargo.lock",
+        "packageManager": "cargo",
+        "packageManagerVersion": "1.94.1",
+        "provenance": "Declared directly by quick-thought-stdb with derive feature and resolved in Cargo.lock."
+      }
+    },
+    {
+      "ecosystem": "cargo",
+      "packageName": "serde_json",
+      "requirement": "1",
+      "resolvedVersion": "1.0.150",
+      "resolvedVersions": ["1.0.150"],
+      "scope": "dependencies",
+      "features": [],
+      "defaultFeatures": true,
+      "optional": false,
+      "dev": false,
+      "build": false,
+      "workspace": { "inherited": false, "member": false, "root": true, "packagePath": "." },
+      "registry": "crates-io",
+      "source": {
+        "manifestPath": "Cargo.toml",
+        "lockfilePath": "Cargo.lock",
+        "packageManager": "cargo",
+        "packageManagerVersion": "1.94.1",
+        "provenance": "Declared directly by quick-thought-stdb and resolved in Cargo.lock for JSON values, action snapshots, and export/import surfaces."
+      }
+    }
+  ],
+  "mappings": [
+    {
+      "id": "module-root-and-docs",
+      "name": "Module root, docs, and wiring",
+      "description": "Top-level module wiring, connection lifecycle reducer, architecture documentation, and manifests for the Rust SpacetimeDB module.",
+      "paths": ["Cargo.toml", "Cargo.lock", "spacetime-ddd.md", "src/lib.rs", "src/connect.rs", "src/spacetime/mod.rs", "src/domain/mod.rs"],
+      "tags": [
+        { "tagId": "tag.layer", "value": "cross-cutting" },
+        { "tagId": "tag.topic", "value": "spacetimedb" }
+      ],
+      "ppp": {
+        "requiredSlugs": ["principle.explicit-boundaries", "architecture.spacetimedb-domain-module", "stack.rust-spacetimedb"],
+        "includeRelated": true,
+        "includeBody": true,
+        "sectionTypes": ["guidance", "rules", "constraints", "checks", "references"],
+        "blockTypes": ["markdown", "list", "checklist", "ppp-ref"]
+      },
+      "validations": ["validation.spacetimedb-domain-slice-checks"]
+    },
+    {
+      "id": "pure-domain-slices",
+      "name": "Pure domain slices",
+      "description": "Pure Rust domain aggregates, services, errors, roles, schemas, and policies for access, concept, link, membership, plane, trait definitions, and wearing.",
+      "paths": ["src/domain/**/*.rs"],
+      "tags": [
+        { "tagId": "tag.layer", "value": "domain" },
+        { "tagId": "tag.quality", "value": "boundaries" }
+      ],
+      "ppp": {
+        "requiredSlugs": ["principle.explicit-boundaries", "architecture.spacetimedb-domain-module", "validation.spacetimedb-domain-slice-checks"],
+        "includeRelated": true,
+        "includeBody": true,
+        "sectionTypes": ["guidance", "rules", "checks", "anti-patterns", "references"],
+        "blockTypes": ["markdown", "list", "checklist", "ppp-ref"]
+      },
+      "tasks": [
+        { "slug": "task.change-spacetimedb-reducer-domain-slice", "validationIds": ["slice-boundary-review", "cargo-fmt-check", "cargo-test", "domain-slice-review"] }
+      ],
+      "validations": ["validation.spacetimedb-domain-slice-checks"]
+    },
+    {
+      "id": "spacetime-tables-and-storage-shapes",
+      "name": "SpacetimeDB tables and storage shapes",
+      "description": "Row definitions and table attributes for concepts, traits, links, maps, workspaces, teams, atlases, organizations, identities, bots, references, actions, and admin state.",
+      "paths": ["src/spacetime/**/row.rs", "src/spacetime/reference/pinned_row.rs", "src/spacetime/reference/published_row.rs"],
+      "tags": [
+        { "tagId": "tag.layer", "value": "platform" },
+        { "tagId": "tag.topic", "value": "table" }
+      ],
+      "ppp": {
+        "requiredSlugs": ["architecture.spacetimedb-domain-module", "pattern.spacetimedb-repository-mapper-boundary", "stack.rust-spacetimedb", "validation.spacetimedb-domain-slice-checks"],
+        "includeRelated": true,
+        "includeBody": true,
+        "sectionTypes": ["guidance", "solution", "rules", "checks", "references"],
+        "blockTypes": ["markdown", "list", "checklist", "code", "ppp-ref"]
+      },
+      "dependencies": [
+        {
+          "ecosystem": "cargo",
+          "packageName": "spacetimedb",
+          "requirement": "=2.5.0",
+          "resolvedVersion": "2.5.0",
+          "scope": "dependencies",
+          "features": [],
+          "defaultFeatures": true,
+          "optional": false,
+          "dev": false,
+          "build": false,
+          "workspace": { "inherited": false, "member": false, "root": true, "packagePath": "." },
+          "registry": "crates-io",
+          "source": { "manifestPath": "Cargo.toml", "lockfilePath": "Cargo.lock", "packageManager": "cargo", "packageManagerVersion": "1.94.1", "provenance": "Table row files use SpacetimeDB table/index/type macros from the module dependency." }
+        }
+      ],
+      "validations": ["validation.spacetimedb-domain-slice-checks"]
+    },
+    {
+      "id": "repositories-mappers-and-reconciliation",
+      "name": "Repositories, mappers, and reconciliation",
+      "description": "Repository accessors, row/domain mappers, pure sync helpers, and child-row reconciliation plans for multi-table aggregates.",
+      "paths": ["src/spacetime/**/repo.rs", "src/spacetime/**/mapper.rs", "src/spacetime/**/reconcile.rs", "src/spacetime/sync.rs", "src/spacetime/**/lockstep.rs"],
+      "tags": [
+        { "tagId": "tag.layer", "value": "platform" },
+        { "tagId": "tag.topic", "value": "reconciliation" },
+        { "tagId": "tag.quality", "value": "testability" }
+      ],
+      "ppp": {
+        "requiredSlugs": ["pattern.spacetimedb-repository-mapper-boundary", "recipe.spacetimedb-multi-table-aggregate-reconciliation", "validation.spacetimedb-domain-slice-checks"],
+        "includeRelated": true,
+        "includeBody": true,
+        "sectionTypes": ["guidance", "solution", "rules", "checks", "examples"],
+        "blockTypes": ["markdown", "list", "checklist", "code", "ppp-ref"]
+      },
+      "tasks": [
+        { "slug": "task.change-spacetimedb-reducer-domain-slice", "validationIds": ["slice-boundary-review", "cargo-fmt-check", "cargo-test", "domain-slice-review"] }
+      ],
+      "validations": ["validation.spacetimedb-domain-slice-checks"]
+    },
+    {
+      "id": "reducers-and-use-case-entrypoints",
+      "name": "Reducers and mutation entrypoints",
+      "description": "SpacetimeDB reducer files for creating, updating, deleting, publishing, transferring, joining, inviting, wearing, reordering, and other transactional module mutations.",
+      "paths": ["src/spacetime/**/*.rs", "!src/spacetime/**/row.rs", "!src/spacetime/**/*_row.rs", "!src/spacetime/**/repo.rs", "!src/spacetime/**/mapper.rs", "!src/spacetime/**/reconcile.rs"],
+      "tags": [
+        { "tagId": "tag.layer", "value": "platform" },
+        { "tagId": "tag.topic", "value": "reducer" }
+      ],
+      "ppp": {
+        "requiredSlugs": ["architecture.spacetimedb-domain-module", "pattern.spacetimedb-reducer-domain-adapter", "antipattern.spacetimedb-domain-hidden-in-reducer", "validation.spacetimedb-domain-slice-checks"],
+        "includeRelated": true,
+        "includeBody": true,
+        "sectionTypes": ["guidance", "solution", "rules", "checks", "anti-patterns", "examples"],
+        "blockTypes": ["markdown", "list", "checklist", "code", "ppp-ref"]
+      },
+      "tasks": [
+        { "slug": "task.change-spacetimedb-reducer-domain-slice", "validationIds": ["slice-boundary-review", "cargo-fmt-check", "cargo-test", "domain-slice-review"] }
+      ],
+      "validations": ["validation.spacetimedb-domain-slice-checks"]
+    },
+    {
+      "id": "authz-identity-and-views",
+      "name": "Authorization, identity, and views",
+      "description": "Platform-only caller identity, bot impersonation, hierarchical membership checks, and caller-scoped SpacetimeDB view projections.",
+      "paths": ["src/spacetime/authz/**/*.rs", "src/spacetime/identity/**/*.rs", "src/spacetime/bot/**/*.rs", "src/views.rs", "src/connect.rs"],
+      "tags": [
+        { "tagId": "tag.layer", "value": "platform" },
+        { "tagId": "tag.topic", "value": "authorization" },
+        { "tagId": "tag.topic", "value": "view" }
+      ],
+      "ppp": {
+        "requiredSlugs": ["architecture.spacetimedb-domain-module", "pattern.spacetimedb-reducer-domain-adapter", "stack.rust-spacetimedb", "validation.spacetimedb-domain-slice-checks"],
+        "includeRelated": true,
+        "includeBody": true,
+        "sectionTypes": ["guidance", "rules", "checks", "references"],
+        "blockTypes": ["markdown", "list", "checklist", "code", "ppp-ref"]
+      },
+      "validations": ["validation.spacetimedb-domain-slice-checks"]
+    }
+  ]
+}

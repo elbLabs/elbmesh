@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "id": "c3d4e5f6-789a-4bcd-8e0f-123456789abc",
+  "slug": "task.elbmesh-review-change",
+  "name": "Elbmesh Review Change",
+  "title": "Review an Elbmesh Change",
+  "status": "ready",
+  "version": "1.0.0",
+  "summary": "Review Elbmesh changes for bugs, missing tests, Rust quality, documentation drift, and architecture boundary violations.",
+  "description": "Use this task for completed or proposed Elbmesh changes before claiming completion or merge readiness.",
+  "tags": [
+    { "tagId": "tag.language", "value": "rust" },
+    { "tagId": "tag.task-intent", "value": "review" },
+    { "tagId": "tag.quality", "value": "boundaries" },
+    { "tagId": "tag.quality", "value": "testability" }
+  ],
+  "metadata": { "reusable": true, "scope": "elbmesh" },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["changeSummary", "changedPaths", "verificationEvidence"],
+    "properties": {
+      "changeSummary": { "type": "string", "minLength": 1 },
+      "changedPaths": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+      "verificationEvidence": { "type": "string", "minLength": 1 }
+    }
+  },
+  "context": {
+    "ppp": {
+      "requiredSlugs": [
+        "principle.elbmesh-explicit-runtime-boundaries",
+        "architecture.elbmesh-event-sourced-resource-runtime",
+        "architecture.elbmesh-architecture-manifest-contract",
+        "validation.elbmesh-architecture-boundary-checks",
+        "validation.elbmesh-manifest-contract-checks",
+        "validation.elbmesh-rust-quality-gates",
+        "pattern.elbmesh-given-when-then-scenario-tests"
+      ],
+      "includeRelated": true,
+      "includeBody": true,
+      "sectionTypes": ["guidance", "rules", "constraints", "checks", "anti-patterns", "references", "notes"],
+      "blockTypes": ["markdown", "list", "checklist", "file-ref", "ppp-ref"]
+    }
+  },
+  "outputs": [
+    { "id": "findings", "type": "documentation", "title": "Findings ordered by severity", "required": true },
+    { "id": "testing-gaps", "type": "documentation", "title": "Testing or validation gaps", "required": true },
+    { "id": "residual-risks", "type": "documentation", "title": "Residual risks and follow-ups", "required": true }
+  ],
+  "validations": [
+    {
+      "id": "review-output-shape",
+      "type": "manual",
+      "title": "Review output shape",
+      "required": true,
+      "when": "after-task",
+      "criteria": ["Findings are listed first and ordered by severity with file/line references where possible.", "If no findings are found, residual risks and testing gaps are stated explicitly."]
+    }
+  ],
+  "sections": [
+    {
+      "id": "review-inputs",
+      "type": "requirements",
+      "title": "Review Inputs",
+      "blocks": [
+        { "type": "markdown", "template": true, "markdown": "Review change: {{ task.input.changeSummary }}" },
+        { "type": "list", "template": true, "items": ["Changed paths: {{ task.input.changedPaths }}", "Verification evidence: {{ task.input.verificationEvidence }}"] }
+      ]
+    },
+    {
+      "id": "focus",
+      "type": "instructions",
+      "title": "Review Focus",
+      "blocks": [
+        { "type": "list", "items": ["Resource/Action/Event boundaries and one-Resource Action target rule.", "Typed errors, Receipts, metadata, schema versions, and expected version handling.", "Event/journal separation across Action Journal, Operation Journal, Reaction Journal, and Resource streams.", "External Operation declaration, idempotency, and absence of hidden external calls in replay/apply.", "Reaction execution through Actions and View rebuildability from Events.", "Manifest contract consistency and generated-doc/skill drift where relevant.", "Missing failing tests, weakened tests, or unplanned scope."] }
+      ]
+    },
+    {
+      "id": "acceptance",
+      "type": "acceptance",
+      "title": "Acceptance Criteria",
+      "blocks": [
+        { "type": "acceptance", "criteria": [
+          { "id": "findings-first", "text": "Findings are reported first, ordered by severity, with concrete file/line references where possible.", "required": true, "kind": "review" },
+          { "id": "boundary-review", "text": "The review explicitly covers Elbmesh Resource, Action, Event, Reaction, External Operation, View, Query, journal, manifest, and trace boundaries that are relevant to the changed files.", "required": true, "kind": "review" },
+          { "id": "tests-reviewed", "text": "Test coverage and verification evidence are assessed, including missing or infeasible checks.", "required": true, "kind": "review" }
+        ] }
+      ]
+    }
+  ]
+}

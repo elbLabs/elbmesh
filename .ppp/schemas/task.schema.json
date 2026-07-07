@@ -1,0 +1,468 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ppp-library.local/schemas/task.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "slug", "name", "title", "status", "version", "summary", "tags", "sections"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "slug": { "type": "string", "pattern": "^task\\.[a-z0-9][a-z0-9.-]*$" },
+    "name": { "type": "string", "minLength": 1 },
+    "title": { "type": "string", "minLength": 1 },
+    "status": { "enum": ["draft", "ready", "active", "completed", "deprecated"] },
+    "version": { "type": "string", "minLength": 1 },
+    "summary": { "type": "string", "minLength": 1 },
+    "description": { "type": "string" },
+    "tags": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/itemTag" }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "inputSchema": true,
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ppp": { "$ref": "#/$defs/pppContext" }
+      }
+    },
+    "outputs": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/output" }
+    },
+    "validations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/validation" }
+    },
+    "sections": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/section" }
+    }
+  },
+  "$defs": {
+    "itemTag": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tagId"],
+      "properties": {
+        "tagId": { "type": "string", "minLength": 1 },
+        "value": true
+      }
+    },
+    "pppContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "slugs": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "tags": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/itemTag" }
+        },
+        "includeRelated": { "type": "boolean" },
+        "requiredSlugs": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "includeBody": { "type": "boolean" },
+        "sectionTypes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/pppSectionType" }
+        },
+        "sectionIds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "blockTypes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/pppBlockType" }
+        }
+      }
+    },
+    "pppSectionType": {
+      "enum": [
+        "problem",
+        "guidance",
+        "solution",
+        "rules",
+        "constraints",
+        "examples",
+        "checks",
+        "anti-patterns",
+        "references",
+        "notes"
+      ]
+    },
+    "pppBlockType": {
+      "enum": ["markdown", "list", "checklist", "code", "file-ref", "ppp-ref"]
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "title"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "enum": ["file", "code", "command", "documentation", "test", "other"] },
+        "title": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "required": { "type": "boolean" }
+      }
+    },
+    "validation": {
+      "oneOf": [
+        { "$ref": "#/$defs/commandValidation" },
+        { "$ref": "#/$defs/agentValidation" },
+        { "$ref": "#/$defs/schemaValidation" },
+        { "$ref": "#/$defs/manualValidation" }
+      ]
+    },
+    "validationId": { "type": "string", "minLength": 1 },
+    "validationTitle": { "type": "string", "minLength": 1 },
+    "validationDescription": { "type": "string" },
+    "validationRequired": { "type": "boolean" },
+    "validationWhen": { "enum": ["before-task", "after-task"] },
+    "validationTimeoutSeconds": { "type": "number", "exclusiveMinimum": 0 },
+    "validationDependsOn": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "validationTags": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/itemTag" }
+    },
+    "validationMetadata": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "commandValidation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "title", "command"],
+      "properties": {
+        "id": { "$ref": "#/$defs/validationId" },
+        "type": { "const": "command" },
+        "title": { "$ref": "#/$defs/validationTitle" },
+        "description": { "$ref": "#/$defs/validationDescription" },
+        "required": { "$ref": "#/$defs/validationRequired" },
+        "when": { "$ref": "#/$defs/validationWhen" },
+        "timeoutSeconds": { "$ref": "#/$defs/validationTimeoutSeconds" },
+        "dependsOn": { "$ref": "#/$defs/validationDependsOn" },
+        "tags": { "$ref": "#/$defs/validationTags" },
+        "metadata": { "$ref": "#/$defs/validationMetadata" },
+        "template": { "type": "boolean" },
+        "shell": { "enum": ["bash", "sh", "powershell", "other"] },
+        "command": { "type": "string", "minLength": 1 },
+        "cwd": { "type": "string" },
+        "env": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "success": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "exitCode": { "type": "integer" },
+            "stdoutIncludes": { "type": "array", "items": { "type": "string" } },
+            "stdoutExcludes": { "type": "array", "items": { "type": "string" } },
+            "stderrIncludes": { "type": "array", "items": { "type": "string" } },
+            "stderrExcludes": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    },
+    "agentValidation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "title", "passCriteria"],
+      "properties": {
+        "id": { "$ref": "#/$defs/validationId" },
+        "type": { "const": "agent" },
+        "title": { "$ref": "#/$defs/validationTitle" },
+        "description": { "$ref": "#/$defs/validationDescription" },
+        "required": { "$ref": "#/$defs/validationRequired" },
+        "when": { "$ref": "#/$defs/validationWhen" },
+        "timeoutSeconds": { "$ref": "#/$defs/validationTimeoutSeconds" },
+        "dependsOn": { "$ref": "#/$defs/validationDependsOn" },
+        "tags": { "$ref": "#/$defs/validationTags" },
+        "metadata": { "$ref": "#/$defs/validationMetadata" },
+        "prompt": { "type": "string" },
+        "promptBlocks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/block" }
+        },
+        "passCriteria": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "context": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ppp": { "$ref": "#/$defs/pppContext" },
+            "additions": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/block" }
+            }
+          }
+        },
+        "outputSchema": true
+      }
+    },
+    "schemaValidation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "title", "target", "schema"],
+      "properties": {
+        "id": { "$ref": "#/$defs/validationId" },
+        "type": { "const": "schema" },
+        "title": { "$ref": "#/$defs/validationTitle" },
+        "description": { "$ref": "#/$defs/validationDescription" },
+        "required": { "$ref": "#/$defs/validationRequired" },
+        "when": { "$ref": "#/$defs/validationWhen" },
+        "timeoutSeconds": { "$ref": "#/$defs/validationTimeoutSeconds" },
+        "dependsOn": { "$ref": "#/$defs/validationDependsOn" },
+        "tags": { "$ref": "#/$defs/validationTags" },
+        "metadata": { "$ref": "#/$defs/validationMetadata" },
+        "target": { "enum": ["task-output", "artifact", "file", "agent-output", "bundle"] },
+        "targetId": { "type": "string", "minLength": 1 },
+        "targetPath": { "type": "string", "minLength": 1 },
+        "jsonPath": { "type": "string", "minLength": 1 },
+        "schema": true
+      }
+    },
+    "manualValidation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "title", "criteria"],
+      "properties": {
+        "id": { "$ref": "#/$defs/validationId" },
+        "type": { "const": "manual" },
+        "title": { "$ref": "#/$defs/validationTitle" },
+        "description": { "$ref": "#/$defs/validationDescription" },
+        "required": { "$ref": "#/$defs/validationRequired" },
+        "when": { "$ref": "#/$defs/validationWhen" },
+        "timeoutSeconds": { "$ref": "#/$defs/validationTimeoutSeconds" },
+        "dependsOn": { "$ref": "#/$defs/validationDependsOn" },
+        "tags": { "$ref": "#/$defs/validationTags" },
+        "metadata": { "$ref": "#/$defs/validationMetadata" },
+        "criteria": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "checklist": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/manualValidationChecklistItem" }
+        }
+      }
+    },
+    "manualValidationChecklistItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "text": { "type": "string", "minLength": 1 },
+        "required": { "type": "boolean" }
+      }
+    },
+    "section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "title", "blocks"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": {
+          "enum": [
+            "overview",
+            "context",
+            "instructions",
+            "requirements",
+            "implementation",
+            "verification",
+            "outputs",
+            "acceptance",
+            "notes",
+            "rules",
+            "constraints",
+            "examples",
+            "implementation-notes",
+            "acceptance-checks",
+            "references",
+            "risks",
+            "open-questions"
+          ]
+        },
+        "title": { "type": "string", "minLength": 1 },
+        "blocks": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/block" }
+        }
+      }
+    },
+    "block": {
+      "oneOf": [
+        { "$ref": "#/$defs/markdownBlock" },
+        { "$ref": "#/$defs/listBlock" },
+        { "$ref": "#/$defs/checklistBlock" },
+        { "$ref": "#/$defs/codeBlock" },
+        { "$ref": "#/$defs/commandBlock" },
+        { "$ref": "#/$defs/jsonBlock" },
+        { "$ref": "#/$defs/schemaBlock" },
+        { "$ref": "#/$defs/fileRefBlock" },
+        { "$ref": "#/$defs/pppRefBlock" },
+        { "$ref": "#/$defs/acceptanceBlock" }
+      ]
+    },
+    "markdownBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "markdown"],
+      "properties": {
+        "type": { "const": "markdown" },
+        "template": { "type": "boolean" },
+        "markdown": { "type": "string" }
+      }
+    },
+    "listBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "items"],
+      "properties": {
+        "type": { "const": "list" },
+        "template": { "type": "boolean" },
+        "items": { "type": "array", "items": { "type": "string" } },
+        "ordered": { "type": "boolean" }
+      }
+    },
+    "checklistBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "items"],
+      "properties": {
+        "type": { "const": "checklist" },
+        "template": { "type": "boolean" },
+        "items": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/checklistItem" }
+        }
+      }
+    },
+    "checklistItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text"],
+      "properties": {
+        "text": { "type": "string", "minLength": 1 },
+        "checked": { "type": "boolean" },
+        "required": { "type": "boolean" }
+      }
+    },
+    "codeBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "language", "code"],
+      "properties": {
+        "type": { "const": "code" },
+        "template": { "type": "boolean" },
+        "language": { "type": "string", "minLength": 1 },
+        "code": { "type": "string" },
+        "filename": { "type": "string" }
+      }
+    },
+    "commandBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "command"],
+      "properties": {
+        "type": { "const": "command" },
+        "template": { "type": "boolean" },
+        "command": { "type": "string", "minLength": 1 },
+        "cwd": { "type": "string" },
+        "description": { "type": "string" },
+        "shell": { "enum": ["bash", "sh", "powershell", "other"] }
+      }
+    },
+    "jsonBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "const": "json" },
+        "template": { "type": "boolean" },
+        "value": true
+      }
+    },
+    "schemaBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "schema"],
+      "properties": {
+        "type": { "const": "schema" },
+        "template": { "type": "boolean" },
+        "schema": true,
+        "description": { "type": "string" }
+      }
+    },
+    "fileRefBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "path"],
+      "properties": {
+        "type": { "const": "file-ref" },
+        "template": { "type": "boolean" },
+        "path": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "glob": { "type": "boolean" },
+        "purpose": { "type": "string" }
+      }
+    },
+    "pppRefBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "slug"],
+      "properties": {
+        "type": { "const": "ppp-ref" },
+        "template": { "type": "boolean" },
+        "slug": { "type": "string", "minLength": 1 },
+        "note": { "type": "string" },
+        "required": { "type": "boolean" },
+        "reason": { "type": "string" }
+      }
+    },
+    "acceptanceBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "criteria"],
+      "properties": {
+        "type": { "const": "acceptance" },
+        "template": { "type": "boolean" },
+        "criteria": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/acceptanceCriterion" }
+        }
+      }
+    },
+    "acceptanceCriterion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "text": { "type": "string", "minLength": 1 },
+        "required": { "type": "boolean" },
+        "kind": { "enum": ["manual", "test", "build", "lint", "review"] }
+      }
+    }
+  }
+}

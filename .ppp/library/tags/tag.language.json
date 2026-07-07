@@ -1,0 +1,6 @@
+{
+  "id": "tag.language",
+  "label": "Language",
+  "valueType": "select",
+  "options": ["rust", "typescript", "generic"]
+}

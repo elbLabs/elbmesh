@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 1,
+  "id": "4a5e9c12-7b3d-4d8e-9c6f-2a1b0e3d4c5f",
+  "slug": "task.elbmesh-write-failing-tests",
+  "name": "Elbmesh Write Failing Tests",
+  "title": "Write Failing Elbmesh Scenario Tests",
+  "status": "ready",
+  "version": "1.0.0",
+  "summary": "Create failing tests first for an Elbmesh implementation slice using Resource/Action/Event scenario shapes and boundary checks.",
+  "description": "Use this task before production implementation when a planned Elbmesh slice needs executable tests or a precise test plan.",
+  "tags": [
+    { "tagId": "tag.language", "value": "rust" },
+    { "tagId": "tag.quality", "value": "testability" },
+    { "tagId": "tag.task-intent", "value": "write-tests" },
+    { "tagId": "tag.topic", "value": "event-sourcing" }
+  ],
+  "metadata": { "reusable": true, "scope": "elbmesh" },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["sliceName", "taskCard", "affectedPaths", "expectedBehavior", "testCommand"],
+    "properties": {
+      "sliceName": { "type": "string", "minLength": 1 },
+      "taskCard": { "type": "string", "minLength": 1, "description": "Issue/task-card text or path." },
+      "affectedPaths": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+      "expectedBehavior": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+      "testCommand": { "type": "string", "minLength": 1, "description": "Targeted command expected to fail before implementation." }
+    }
+  },
+  "context": {
+    "ppp": {
+      "requiredSlugs": [
+        "principle.elbmesh-explicit-runtime-boundaries",
+        "architecture.elbmesh-event-sourced-resource-runtime",
+        "pattern.elbmesh-given-when-then-scenario-tests",
+        "validation.elbmesh-architecture-boundary-checks",
+        "validation.elbmesh-rust-quality-gates"
+      ],
+      "includeRelated": true,
+      "includeBody": true,
+      "sectionTypes": ["guidance", "rules", "constraints", "examples", "checks", "references", "notes"],
+      "blockTypes": ["markdown", "list", "checklist", "file-ref", "ppp-ref"]
+    }
+  },
+  "outputs": [
+    { "id": "failing-tests", "type": "test", "title": "Failing Elbmesh tests", "description": "Scenario, contract, or architecture-rule tests that fail for the intended reason before production implementation.", "required": true },
+    { "id": "test-plan-gaps", "type": "documentation", "title": "Untestable or deferred checks", "description": "Explicit notes for checks that cannot yet be automated.", "required": true }
+  ],
+  "validations": [
+    {
+      "id": "confirm-planned-slice",
+      "type": "manual",
+      "title": "Confirm planned slice",
+      "required": true,
+      "when": "before-task",
+      "criteria": [
+        "The slice belongs to the active Elbmesh phase or has an explicit task card.",
+        "Production implementation has not started for behavior that lacks tests or an explicit test plan."
+      ]
+    },
+    {
+      "id": "run-targeted-failing-tests",
+      "type": "command",
+      "title": "Run targeted tests and capture expected failure",
+      "required": true,
+      "when": "after-task",
+      "template": true,
+      "shell": "bash",
+      "command": "{{ task.input.testCommand }}",
+      "success": { "exitCode": 101 }
+    },
+    {
+      "id": "boundary-test-review",
+      "type": "agent",
+      "title": "Review failing tests against Elbmesh boundaries",
+      "required": true,
+      "when": "after-task",
+      "context": { "ppp": { "requiredSlugs": ["pattern.elbmesh-given-when-then-scenario-tests", "validation.elbmesh-architecture-boundary-checks"], "includeBody": true } },
+      "passCriteria": [
+        "Tests use Resource, Action, Event, Reaction, External Operation, View, Query, Policy, journal, or execution trace terminology accurately.",
+        "Tests assert typed errors or structured journal records where available instead of brittle strings.",
+        "Tests fail because behavior is missing, not because of syntax errors or unrelated fixtures.",
+        "The test-writing step does not implement production behavior beyond minimal scaffolding."
+      ]
+    }
+  ],
+  "sections": [
+    {
+      "id": "requirements",
+      "type": "requirements",
+      "title": "Slice Inputs",
+      "blocks": [
+        { "type": "markdown", "template": true, "markdown": "Write failing tests for `{{ task.input.sliceName }}` from `{{ task.input.taskCard }}`." },
+        { "type": "list", "template": true, "items": ["Affected paths: {{ task.input.affectedPaths }}", "Expected behavior: {{ task.input.expectedBehavior }}", "Targeted test command: `{{ task.input.testCommand }}`"] }
+      ]
+    },
+    {
+      "id": "instructions",
+      "type": "instructions",
+      "title": "Instructions",
+      "blocks": [
+        {
+          "type": "list",
+          "ordered": true,
+          "items": [
+            "Read the task card, glossary, relevant ADRs, and affected source/tests before editing.",
+            "Choose the smallest scenario shape that proves the intended behavior or boundary rule.",
+            "Write tests that express Given Events or journal state, When an Action/Reaction/Projection/Query runs, Then Events, Receipts, typed errors, journals, Views, or manifest findings are asserted.",
+            "Prefer typed ActionFailure codes, ManifestValidationError codes, schema versions, metadata, Receipts, and journal record variants over string-only assertions.",
+            "Run the targeted test command and confirm the failure is expected. If a test cannot be automated yet, document the exact gap."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "acceptance",
+      "type": "acceptance",
+      "title": "Acceptance Criteria",
+      "blocks": [
+        {
+          "type": "acceptance",
+          "criteria": [
+            { "id": "failing-first", "text": "The targeted test command fails before production implementation for the intended behavior or boundary gap.", "required": true, "kind": "test" },
+            { "id": "terminology", "text": "Tests use Elbmesh Resource, Action, Event, Reaction, External Operation, View, Query, Policy, journal, manifest, or execution trace terminology consistently.", "required": true, "kind": "review" },
+            { "id": "no-production", "text": "No production behavior is implemented beyond minimal scaffolding needed for compiling the failing tests.", "required": true, "kind": "review" }
+          ]
+        }
+      ]
+    }
+  ]
+}

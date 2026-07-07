@@ -1,0 +1,28 @@
+{
+  "id": "antipattern.elbmesh-hidden-external-call",
+  "type": "antipattern",
+  "name": "Elbmesh Hidden External Call",
+  "slug": "antipattern.elbmesh-hidden-external-call",
+  "status": "stable",
+  "summary": "An external HTTP/provider call is made without a declared External Operation, idempotency key, and Operation Journal visibility.",
+  "tags": [
+    { "tagId": "tag.topic", "value": "event-sourcing" },
+    { "tagId": "tag.quality", "value": "observability" }
+  ],
+  "dependencies": [],
+  "related": ["pattern.elbmesh-declared-external-operation"],
+  "agent": {
+    "rules": ["External calls require declared External Operations."],
+    "checks": ["Search changed handler, projection, replay, and adapter code for direct HTTP/provider calls.", "Verify Action manifest entries include required external_operation_types."],
+    "antiPatterns": ["Provider SDK call inside Apply<Event>.", "HTTP call inside Projection code for v1 live enrichment.", "Domain handler directly imports Restate or a provider client instead of using framework operation APIs."]
+  },
+  "body": { "sections": [
+    { "id": "problem", "type": "problem", "title": "Problem", "blocks": [
+      { "type": "markdown", "markdown": "Hidden external calls break retry safety and explainability. If a provider succeeds but Resource Event append fails, the framework cannot know whether retrying will duplicate the side effect." }
+    ] },
+    { "id": "references", "type": "references", "title": "Source References", "blocks": [
+      { "type": "file-ref", "path": "docs/adr/0004-external-operations-and-restate.md", "description": "External operations are first-class execution metadata." },
+      { "type": "file-ref", "path": "docs/RUNTIME_DEBT_AND_FAILURE_MODES.md", "description": "Debt D4 flags arbitrary async handlers performing non-durable side effects." }
+    ] }
+  ] }
+}

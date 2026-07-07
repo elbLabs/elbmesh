@@ -1,0 +1,33 @@
+{
+  "id": "pattern.elbmesh-declared-external-operation",
+  "type": "pattern",
+  "name": "Elbmesh Declared External Operation",
+  "slug": "pattern.elbmesh-declared-external-operation",
+  "status": "stable",
+  "summary": "External calls used by Actions must be declared as External Operations with idempotency and journal visibility rather than hidden in handlers.",
+  "tags": [
+    { "tagId": "tag.topic", "value": "event-sourcing" },
+    { "tagId": "tag.quality", "value": "boundaries" },
+    { "tagId": "tag.language", "value": "rust" }
+  ],
+  "dependencies": [],
+  "supports": ["principle.elbmesh-explicit-runtime-boundaries"],
+  "related": ["architecture.elbmesh-execution-journals", "validation.elbmesh-external-operation-idempotency-checks"],
+  "agent": {
+    "rules": ["Declare every external system call used by an Action as an External Operation.", "Use stable operation identity and idempotency keys for retry safety.", "Map selected provider results into Resource Events; keep raw provider diagnostics in Operation Journal or object storage.", "Use Restate behind framework APIs in target architecture, not directly in domain handlers."],
+    "constraints": ["Do not call HTTP/provider SDKs from Resource replay or Apply implementations.", "Do not hide external calls in Action handlers without manifest declaration.", "Do not model provider request/response mechanics as Resource Events unless they are business facts."],
+    "checks": ["Action manifest entries list referenced external_operation_types.", "External Operation types referenced by Actions are declared in the manifest.", "Idempotency and partial-commit behavior are explicitly tested or marked as future work.", "Current implementation claims are limited to manifest validation/docs until Operation Journal and Restate code exists."],
+    "antiPatterns": ["Hidden provider calls in handlers.", "Repeating a successful external call on Resource Event append retry.", "Storing raw provider responses as Resource replay state."]
+  },
+  "body": { "sections": [
+    { "id": "operation-contract", "type": "guidance", "title": "Operation Contract", "blocks": [
+      { "type": "markdown", "markdown": "The target flow is reserve operation, call external API with an idempotency key, journal operation success/failure, append Resource Event, and retry failed appends without repeating a successful external call. Current code validates External Operation declarations in the manifest but does not yet implement OperationJournal or Restate-backed operation execution." }
+    ] },
+    { "id": "references", "type": "references", "title": "Source References", "blocks": [
+      { "type": "file-ref", "path": "docs/adr/0004-external-operations-and-restate.md", "description": "Accepted External Operation and Restate decision." },
+      { "type": "file-ref", "path": "docs/GOAL.md", "description": "Core rules for declared External Operations and operation records." },
+      { "type": "file-ref", "path": "docs/IMPLEMENTATION_PLAN.md", "description": "Target External Operation and Operation Journal implementation flow." },
+      { "type": "file-ref", "path": "crates/elbmesh-core/src/manifest.rs", "description": "Current manifest validation for declared External Operation references." }
+    ] }
+  ] }
+}

@@ -1,0 +1,48 @@
+{
+  "id": "architecture.layered-ddd-backend",
+  "type": "architecture",
+  "name": "Layered DDD Backend",
+  "slug": "architecture.layered-ddd-backend",
+  "status": "stable",
+  "summary": "Arrange backend code into transport, application, domain, and infrastructure layers with dependencies pointing inward.",
+  "tags": [
+    { "tagId": "tag.layer", "value": "cross-cutting" },
+    { "tagId": "tag.quality", "value": "boundaries" },
+    { "tagId": "tag.topic", "value": "layering" }
+  ],
+  "dependencies": [],
+  "supports": ["principle.explicit-boundaries"],
+  "body": {
+    "sections": [
+      {
+        "id": "layers",
+        "type": "guidance",
+        "title": "Layer Responsibilities",
+        "blocks": [
+          {
+            "type": "list",
+            "items": [
+              "Transport receives protocol input and returns protocol output.",
+              "Application use cases coordinate decisions and ports.",
+              "Domain code owns business rules and invariants.",
+              "Infrastructure implements persistence, network, and runtime adapters."
+            ]
+          }
+        ]
+      },
+      {
+        "id": "boundary-principle",
+        "type": "references",
+        "title": "Boundary Principle",
+        "blocks": [
+          {
+            "type": "ppp-ref",
+            "slug": "principle.explicit-boundaries",
+            "required": true,
+            "reason": "The architecture is an implementation of explicit boundaries."
+          }
+        ]
+      }
+    ]
+  }
+}

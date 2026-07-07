@@ -1,0 +1,60 @@
+{
+  "id": "architecture.elbmesh-architecture-manifest-contract",
+  "type": "architecture",
+  "name": "Elbmesh Architecture Manifest Contract",
+  "slug": "architecture.elbmesh-architecture-manifest-contract",
+  "status": "stable",
+  "summary": "The Elbmesh manifest contract that connects modelled Resources, Components, Actions, Events, Reactions, Views, Queries, and External Operations to generated/runtime artifacts.",
+  "tags": [
+    { "tagId": "tag.topic", "value": "architecture-manifest" },
+    { "tagId": "tag.language", "value": "rust" },
+    { "tagId": "tag.quality", "value": "boundaries" }
+  ],
+  "dependencies": [
+    { "type": "cargo", "name": "serde" }
+  ],
+  "supports": ["principle.elbmesh-explicit-runtime-boundaries"],
+  "agent": {
+    "rules": [
+      "Preserve schema IDs and schema versions when editing manifest definitions.",
+      "Declare each Action's target Resource and emitted Event types.",
+      "Declare each Event's owner Resource.",
+      "Declare Reactions as Event-to-Action links and keep v1 reaction graphs acyclic.",
+      "Declare External Operations before Actions reference them.",
+      "Keep generated docs, capability metadata, and skills synchronized with the manifest when generation exists."
+    ],
+    "checks": [
+      "No duplicate Resource type is declared.",
+      "Actions, Events, Reactions, and External Operation references point at declared definitions.",
+      "Reaction graph validation does not report a cycle.",
+      "Manifest changes include matching tests or an explicit note for unimplemented/future generated artifacts."
+    ]
+  },
+  "body": {
+    "sections": [
+      {
+        "id": "contract",
+        "type": "guidance",
+        "title": "Current Manifest Contract",
+        "blocks": [
+          {
+            "type": "markdown",
+            "markdown": "Current Rust code defines an `ArchitectureManifest` with Resources, Actions, Events, Reactions, Views, Queries, and External Operations. Validation currently checks duplicate Resource types, unknown Action/Event Resource references, duplicate/unknown External Operations, Actions that emit undeclared Events, Reactions that trigger from undeclared Events or target undeclared Actions, and reaction graph cycles. Docs describe a broader target manifest including Policies, NATS metadata, generated artifact hashes, and capability docs; those should be treated as target scope until implemented."
+          }
+        ]
+      },
+      {
+        "id": "references",
+        "type": "references",
+        "title": "Source References",
+        "blocks": [
+          { "type": "file-ref", "path": "crates/elbmesh-core/src/manifest.rs", "description": "Current ArchitectureManifest types and validation implementation." },
+          { "type": "file-ref", "path": "crates/elbmesh-core/tests/architecture_manifest.rs", "description": "Manifest contract and validation tests." },
+          { "type": "file-ref", "path": ".opencode/skills/elbmesh-manifest-editor/SKILL.md", "description": "Agent guidance for manifest changes." },
+          { "type": "file-ref", "path": "docs/GOAL.md", "description": "Target architecture manifest content and generated capability docs." },
+          { "type": "file-ref", "path": "docs/adr/0006-schema-generated-bindings-and-handwritten-behavior.md", "description": "Generated contract and handwritten behavior direction." }
+        ]
+      }
+    ]
+  }
+}

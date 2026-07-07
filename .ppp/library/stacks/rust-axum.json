@@ -1,0 +1,40 @@
+{
+  "id": "stack.rust-axum",
+  "type": "stack",
+  "name": "Rust Axum",
+  "slug": "stack.rust-axum",
+  "status": "stable",
+  "summary": "Rust HTTP API stack using Axum handlers, extractors, state, and typed response mapping.",
+  "tags": [
+    { "tagId": "tag.language", "value": "rust" },
+    { "tagId": "tag.framework", "value": "axum" },
+    { "tagId": "tag.stack", "value": "rust-axum" }
+  ],
+  "dependencies": [
+    { "type": "cargo", "name": "axum" },
+    { "type": "cargo", "name": "tokio" },
+    { "type": "cargo", "name": "serde" },
+    { "type": "cargo", "name": "thiserror" }
+  ],
+  "implements": ["architecture.layered-ddd-backend"],
+  "body": {
+    "sections": [
+      {
+        "id": "conventions",
+        "type": "guidance",
+        "title": "Conventions",
+        "blocks": [
+          {
+            "type": "list",
+            "items": [
+              "Use Axum extractors only in transport modules.",
+              "Put shared application dependencies behind explicit state types.",
+              "Use Serialize response DTOs rather than returning domain objects directly.",
+              "Prefer IntoResponse implementations or narrow mapper functions for HTTP error conversion."
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

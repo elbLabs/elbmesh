@@ -1,0 +1,47 @@
+{
+  "id": "validation.spacetimedb-domain-slice-checks",
+  "type": "validation",
+  "name": "SpacetimeDB Domain Slice Checks",
+  "slug": "validation.spacetimedb-domain-slice-checks",
+  "status": "stable",
+  "summary": "Review and test checks for changing a SpacetimeDB reducer/domain slice while preserving explicit domain/platform boundaries.",
+  "tags": [
+    { "tagId": "tag.language", "value": "rust" },
+    { "tagId": "tag.framework", "value": "spacetimedb" },
+    { "tagId": "tag.topic", "value": "reducer" },
+    { "tagId": "tag.quality", "value": "testability" }
+  ],
+  "dependencies": [],
+  "supports": ["principle.explicit-boundaries"],
+  "implements": ["architecture.spacetimedb-domain-module"],
+  "agent": {
+    "checks": [
+      "Domain files for rich slices do not import `spacetimedb`.",
+      "Reducers follow authorize, load, domain call, save, record side effects.",
+      "Table access for aggregate state goes through repositories and indexed accessors.",
+      "Mapper and reconciliation tests cover row/domain round trips and child update plans when shapes change.",
+      "Run cargo fmt --check and cargo test when a Cargo module is present; run cargo check or spacetime build when feasible."
+    ]
+  },
+  "body": {
+    "sections": [
+      {
+        "id": "checks",
+        "type": "checks",
+        "title": "Slice Checks",
+        "blocks": [
+          {
+            "type": "checklist",
+            "items": [
+              { "text": "Business rules live in domain aggregate/service code or are explicitly platform-only authz/read concerns.", "required": true },
+              { "text": "New or changed reducers do not hide domain behavior in transport/platform glue.", "required": true },
+              { "text": "New table lookups have matching indexes or a documented bounded-scan reason.", "required": true },
+              { "text": "Views are caller-scoped projections and do not replace reducer authorization.", "required": true },
+              { "text": "Relevant domain, mapper, reconciliation, and reducer-adjacent tests were run or infeasibility was recorded.", "required": true }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

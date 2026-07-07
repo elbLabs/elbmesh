@@ -1,0 +1,56 @@
+{
+  "id": "validation.elbmesh-rust-quality-gates",
+  "type": "validation",
+  "name": "Elbmesh Rust Quality Gates",
+  "slug": "validation.elbmesh-rust-quality-gates",
+  "status": "stable",
+  "summary": "Rust verification commands and review expectations for Elbmesh runtime slices.",
+  "tags": [
+    { "tagId": "tag.language", "value": "rust" },
+    { "tagId": "tag.quality", "value": "testability" }
+  ],
+  "dependencies": [
+    { "type": "cargo", "name": "cargo" }
+  ],
+  "supports": ["principle.elbmesh-explicit-runtime-boundaries"],
+  "agent": {
+    "checks": [
+      "Run cargo fmt --check.",
+      "Run cargo clippy --all-targets --all-features -- -D warnings when feasible.",
+      "Run cargo test --all or the narrowest documented equivalent for the slice.",
+      "Use named typed errors for public/runtime failure paths.",
+      "Record any skipped command with the concrete reason."
+    ]
+  },
+  "body": {
+    "sections": [
+      {
+        "id": "commands",
+        "type": "checks",
+        "title": "Commands",
+        "blocks": [
+          {
+            "type": "checklist",
+            "items": [
+              { "text": "`cargo fmt --check` passes or the blocker is recorded.", "required": true },
+              { "text": "`cargo clippy --all-targets --all-features -- -D warnings` passes or the blocker is recorded.", "required": true },
+              { "text": "`cargo test --all` or a justified targeted test command passes.", "required": true },
+              { "text": "Changed public/runtime errors have stable names or codes rather than ad hoc strings.", "required": true },
+              { "text": "Docs are updated when architecture, vocabulary, manifest, generated outputs, or agent guidance changes; otherwise a no-docs-needed note is recorded.", "required": true }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "references",
+        "type": "references",
+        "title": "Source References",
+        "blocks": [
+          { "type": "file-ref", "path": "docs/DEVELOPMENT_WORKFLOW.md", "description": "MR requirements, quality gates, and test-first workflow." },
+          { "type": "file-ref", "path": ".opencode/skills/elbmesh-implementer/SKILL.md", "description": "Implementation agent responsibilities and preservation rules." },
+          { "type": "file-ref", "path": ".opencode/skills/elbmesh-reviewer/SKILL.md", "description": "Review quality and architecture checks." }
+        ]
+      }
+    ]
+  }
+}

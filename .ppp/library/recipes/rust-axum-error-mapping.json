@@ -1,0 +1,62 @@
+{
+  "id": "recipe.rust-axum-error-mapping",
+  "type": "recipe",
+  "name": "Rust Axum Error Mapping",
+  "slug": "recipe.rust-axum-error-mapping",
+  "status": "stable",
+  "summary": "Map application errors to Axum responses once at the transport boundary.",
+  "tags": [
+    { "tagId": "tag.language", "value": "rust" },
+    { "tagId": "tag.framework", "value": "axum" },
+    { "tagId": "tag.topic", "value": "error-mapping" },
+    { "tagId": "tag.quality", "value": "error-handling" }
+  ],
+  "dependencies": [
+    { "type": "cargo", "name": "axum" },
+    { "type": "cargo", "name": "thiserror" },
+    { "type": "cargo", "name": "serde" }
+  ],
+  "implements": ["pattern.http-use-case-adapter", "stack.rust-axum"],
+  "agent": {
+    "rules": [
+      "Do not return application error enums directly as HTTP responses.",
+      "Map each expected use-case error to an intentional HTTP status and stable error body."
+    ],
+    "checks": [
+      "Unexpected errors do not expose internal details in response bodies.",
+      "Known application errors have tests or explicit review coverage for status mapping."
+    ]
+  },
+  "body": {
+    "sections": [
+      {
+        "id": "guidance",
+        "type": "guidance",
+        "title": "Mapping Guidance",
+        "blocks": [
+          {
+            "type": "list",
+            "items": [
+              "Create a transport error type or mapper that implements IntoResponse.",
+              "Convert use-case errors into transport errors at the handler boundary with From or map_err.",
+              "Return stable machine-readable error codes when clients need branching behavior.",
+              "Log internal diagnostic detail separately from client-facing error payloads."
+            ]
+          }
+        ]
+      },
+      {
+        "id": "example",
+        "type": "examples",
+        "title": "Generic Error Mapper Shape",
+        "blocks": [
+          {
+            "type": "code",
+            "language": "rust",
+            "code": "impl IntoResponse for ApiError {\n    fn into_response(self) -> Response {\n        let (status, code) = match self {\n            ApiError::InvalidInput(_) => (StatusCode::BAD_REQUEST, \"invalid_input\"),\n            ApiError::Conflict(_) => (StatusCode::CONFLICT, \"conflict\"),\n            ApiError::Unavailable(_) => (StatusCode::SERVICE_UNAVAILABLE, \"unavailable\"),\n        };\n\n        (status, Json(ErrorBody { code })).into_response()\n    }\n}"
+          }
+        ]
+      }
+    ]
+  }
+}

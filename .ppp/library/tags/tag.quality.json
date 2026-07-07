@@ -1,0 +1,6 @@
+{
+  "id": "tag.quality",
+  "label": "Quality",
+  "valueType": "select",
+  "options": ["boundaries", "testability", "error-handling", "observability", "simplicity"]
+}

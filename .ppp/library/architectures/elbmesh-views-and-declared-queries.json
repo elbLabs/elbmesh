@@ -1,0 +1,63 @@
+{
+  "id": "architecture.elbmesh-views-and-declared-queries",
+  "type": "architecture",
+  "name": "Elbmesh Views And Declared Queries",
+  "slug": "architecture.elbmesh-views-and-declared-queries",
+  "status": "stable",
+  "summary": "Defines Views as materialized read models derived from Resource Events and Queries as declared read capabilities against those Views.",
+  "tags": [
+    { "tagId": "tag.language", "value": "rust" },
+    { "tagId": "tag.topic", "value": "view" },
+    { "tagId": "tag.quality", "value": "testability" }
+  ],
+  "dependencies": [
+    { "type": "cargo", "name": "async-trait" },
+    { "type": "cargo", "name": "serde_json" }
+  ],
+  "supports": ["principle.elbmesh-explicit-runtime-boundaries"],
+  "related": ["pattern.elbmesh-execution-trace-derived-view", "validation.elbmesh-view-query-checks"],
+  "agent": {
+    "rules": [
+      "Treat Resource as the write/consistency boundary and View as the query boundary.",
+      "Update Views through Projection code from matching Resource Events.",
+      "Declare Queries against Views and indexes rather than inventing ad hoc read paths.",
+      "Use ViewStore query primitives such as load/get_by_id and list_by_index_prefix in current code."
+    ],
+    "constraints": [
+      "Do not use Views as Resource replay state.",
+      "Do not write Views directly from Actions to represent authoritative domain state.",
+      "Do not promise arbitrary SQL-like querying in v1."
+    ],
+    "checks": [
+      "Projection handlers ignore non-matching or non-Resource stream records.",
+      "View indexes used by list queries are declared and deterministic.",
+      "Projection updates are idempotent or safe to replay.",
+      "Current NATS KV persistence, checkpoints, and generated query contracts are target architecture unless implementation exists."
+    ],
+    "antiPatterns": ["Using a View as the source of truth for Resource decisions.", "Adding undeclared list-all queries without an index.", "Calling external systems from Projection code for live enrichment in v1."]
+  },
+  "body": {
+    "sections": [
+      {
+        "id": "view-query-boundary",
+        "type": "guidance",
+        "title": "View And Query Boundary",
+        "blocks": [
+          { "type": "list", "items": ["Resource Events drive Projection code.", "Projection code writes View documents and index entries.", "Declared Queries read from Views using explicit primitives.", "Views may combine Events from multiple Resource types but remain rebuildable from those Events.", "Current code has in-memory ViewStore and Projection runtime; NATS KV storage and checkpointing are target architecture."] }
+        ]
+      },
+      {
+        "id": "references",
+        "type": "references",
+        "title": "Source References",
+        "blocks": [
+          { "type": "file-ref", "path": "docs/adr/0008-views-queries-and-nats-storage.md", "description": "Accepted View, Query, Projection, and NATS storage decision." },
+          { "type": "file-ref", "path": "crates/elbmesh-core/src/projection.rs", "description": "Current Projection trait, runtime, dispatcher, and named failures." },
+          { "type": "file-ref", "path": "crates/elbmesh-core/src/view_store.rs", "description": "Current ViewStore, ViewDocument, ViewKey, and index prefix query primitive." },
+          { "type": "file-ref", "path": "crates/elbmesh-core/tests/projection_runtime.rs", "description": "Projection behavior for matching, ignored, invalid, and multi-Resource events." },
+          { "type": "file-ref", "path": "crates/elbmesh-core/tests/view_store.rs", "description": "ViewStore load and index listing behavior." }
+        ]
+      }
+    ]
+  }
+}

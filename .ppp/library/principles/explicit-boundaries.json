@@ -1,0 +1,55 @@
+{
+  "id": "principle.explicit-boundaries",
+  "type": "principle",
+  "name": "Explicit Boundaries",
+  "slug": "principle.explicit-boundaries",
+  "status": "stable",
+  "summary": "Keep transport, application, domain, and infrastructure responsibilities explicit so changes stay localized.",
+  "tags": [
+    { "tagId": "tag.quality", "value": "boundaries" },
+    { "tagId": "tag.topic", "value": "layering" }
+  ],
+  "dependencies": [],
+  "agent": {
+    "rules": [
+      "Name the boundary crossed by each adapter and keep mapping code at that boundary.",
+      "Do not let transport concerns leak into use-case or domain code."
+    ],
+    "constraints": [
+      "Framework extractors, response types, and HTTP status codes stay outside the use-case boundary."
+    ],
+    "checks": [
+      "The endpoint can be changed without modifying core use-case logic unless behavior changed."
+    ]
+  },
+  "body": {
+    "sections": [
+      {
+        "id": "why",
+        "type": "guidance",
+        "title": "Why This Matters",
+        "blocks": [
+          {
+            "type": "markdown",
+            "markdown": "Explicit boundaries make responsibilities inspectable. Handlers adapt protocols, use cases coordinate behavior, domain code enforces invariants, and infrastructure performs external I/O."
+          }
+        ]
+      },
+      {
+        "id": "rules",
+        "type": "rules",
+        "title": "Rules",
+        "blocks": [
+          {
+            "type": "list",
+            "items": [
+              "Keep request extraction and response construction in the transport layer.",
+              "Pass use-case input as application-owned data, not framework types.",
+              "Translate errors once at the outer boundary."
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

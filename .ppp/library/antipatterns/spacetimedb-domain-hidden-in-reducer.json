@@ -1,0 +1,52 @@
+{
+  "id": "antipattern.spacetimedb-domain-hidden-in-reducer",
+  "type": "antipattern",
+  "name": "SpacetimeDB Domain Hidden In Reducer",
+  "slug": "antipattern.spacetimedb-domain-hidden-in-reducer",
+  "status": "stable",
+  "summary": "Avoid placing business invariants directly in SpacetimeDB reducers instead of explicit domain aggregates or services.",
+  "tags": [
+    { "tagId": "tag.language", "value": "rust" },
+    { "tagId": "tag.framework", "value": "spacetimedb" },
+    { "tagId": "tag.topic", "value": "reducer" },
+    { "tagId": "tag.quality", "value": "boundaries" }
+  ],
+  "dependencies": [],
+  "supports": ["principle.explicit-boundaries"],
+  "related": ["pattern.spacetimedb-reducer-domain-adapter"],
+  "agent": {
+    "antiPatterns": [
+      "A reducer contains a multi-branch business state machine that should belong to an aggregate or domain service.",
+      "A repository silently performs cross-aggregate cascades that are not visible at a coordinating reducer boundary.",
+      "Domain types derive or import SpacetimeDB traits solely to reuse storage or wire representation."
+    ]
+  },
+  "body": {
+    "sections": [
+      {
+        "id": "problem",
+        "type": "problem",
+        "title": "Problem",
+        "blocks": [
+          {
+            "type": "markdown",
+            "markdown": "Reducers are the transactional entrypoint, not a dumping ground for domain policy. Hiding invariants in reducer glue makes host tests harder and spreads decisions across network-facing functions."
+          }
+        ]
+      },
+      {
+        "id": "avoidance",
+        "type": "guidance",
+        "title": "Avoidance",
+        "blocks": [
+          {
+            "type": "ppp-ref",
+            "slug": "pattern.spacetimedb-reducer-domain-adapter",
+            "required": true,
+            "reason": "Use the reducer as an adapter to explicit domain behavior."
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "id": "validation.elbmesh-external-operation-idempotency-checks",
+  "type": "validation",
+  "name": "Elbmesh External Operation Idempotency Checks",
+  "slug": "validation.elbmesh-external-operation-idempotency-checks",
+  "status": "stable",
+  "summary": "Checks declared External Operations for idempotency, journal separation, and retry-safe partial failure behavior.",
+  "tags": [
+    { "tagId": "tag.topic", "value": "event-sourcing" },
+    { "tagId": "tag.quality", "value": "observability" },
+    { "tagId": "tag.quality", "value": "boundaries" }
+  ],
+  "dependencies": [],
+  "implements": ["pattern.elbmesh-declared-external-operation"],
+  "agent": {
+    "checks": ["Each external call is represented by a manifest ExternalOperationDefinition and referenced by the Action that uses it.", "Operation identity and idempotency key rules are specified before retries are enabled.", "If an external call succeeds and Resource Event append fails, retry must not repeat the external call.", "Provider diagnostics are kept out of Resource Event replay state.", "Current missing OperationJournal/Restate implementation is called out as a limitation when relevant."],
+    "antiPatterns": ["Calling providers directly from replay/apply/projection code.", "Retrying a successful external side effect without checking the Operation Journal.", "Using failure Events to compensate for missing execution journal visibility."]
+  },
+  "body": { "sections": [
+    { "id": "checks", "type": "checks", "title": "Idempotency Checklist", "blocks": [
+      { "type": "checklist", "items": [
+        { "text": "Action declares every External Operation it can perform.", "required": true },
+        { "text": "External Operation declares system/type/schema and idempotency behavior in docs or manifest.", "required": true },
+        { "text": "Tests or design notes cover provider success followed by Resource Event append failure.", "required": true },
+        { "text": "Resource Events contain selected domain facts only, not raw provider diagnostics.", "required": true }
+      ] }
+    ] },
+    { "id": "references", "type": "references", "title": "Source References", "blocks": [
+      { "type": "file-ref", "path": "docs/adr/0004-external-operations-and-restate.md", "description": "External Operation idempotency and Restate retry rule." },
+      { "type": "file-ref", "path": "docs/GOAL.md", "description": "Reference app hard acceptance test for external operation recovery." },
+      { "type": "file-ref", "path": "docs/IMPLEMENTATION_PLAN.md", "description": "Target External Operation and Operation Journal implementation sequence." },
+      { "type": "file-ref", "path": "crates/elbmesh-core/src/manifest.rs", "description": "Current manifest validation for External Operation declarations." }
+    ] }
+  ] }
+}

@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 1,
+  "id": "71d5faa5-a10e-42b2-96f2-2433e27542c1",
+  "slug": "task.elbmesh-explain-action-event-flow",
+  "name": "Elbmesh Explain Action Event Flow",
+  "title": "Explain an Elbmesh Action/Event Flow",
+  "status": "ready",
+  "version": "1.0.0",
+  "summary": "Explain what happens from an Elbmesh Action or Event through Resources, Policies, Events, Reactions, External Operations, Views, Queries, journals, and execution trace gaps.",
+  "description": "Use this task to produce an implementation-aware flow explanation without overstating future Elbmesh CLI, generated docs, NATS, Restate, or Operation Journal behavior.",
+  "tags": [
+    { "tagId": "tag.task-intent", "value": "validate-implementation" },
+    { "tagId": "tag.topic", "value": "event-sourcing" },
+    { "tagId": "tag.quality", "value": "boundaries" },
+    { "tagId": "tag.language", "value": "rust" }
+  ],
+  "metadata": { "reusable": true, "scope": "elbmesh" },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["flowSubject", "subjectKind"],
+    "properties": {
+      "flowSubject": { "type": "string", "minLength": 1 },
+      "subjectKind": { "enum": ["action", "event", "reaction", "view", "query", "unknown"] },
+      "paths": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+      "includeCurrentVsTarget": { "type": "boolean" },
+      "depth": { "enum": ["summary", "normal", "detailed"] }
+    }
+  },
+  "context": {
+    "ppp": {
+      "requiredSlugs": [
+        "principle.elbmesh-explicit-runtime-boundaries",
+        "architecture.elbmesh-event-sourced-resource-runtime",
+        "architecture.elbmesh-execution-journals",
+        "architecture.elbmesh-reaction-workflow-graph",
+        "architecture.elbmesh-views-and-declared-queries",
+        "pattern.elbmesh-declared-external-operation",
+        "pattern.elbmesh-execution-trace-derived-view",
+        "validation.elbmesh-flow-explainability-checks"
+      ],
+      "includeRelated": true,
+      "includeBody": true,
+      "sectionTypes": ["guidance", "rules", "constraints", "checks", "anti-patterns", "references", "notes"],
+      "blockTypes": ["markdown", "list", "checklist", "file-ref", "ppp-ref"]
+    }
+  },
+  "outputs": [
+    { "id": "flow-explanation", "type": "documentation", "title": "Flow explanation", "required": true },
+    { "id": "current-vs-target", "type": "documentation", "title": "Current implemented versus target architecture notes", "required": true },
+    { "id": "trace-or-journal-context", "type": "documentation", "title": "Trace, journal, and gap context", "required": true }
+  ],
+  "validations": [
+    {
+      "id": "flow-explainability-review",
+      "type": "manual",
+      "title": "Flow explainability review",
+      "required": true,
+      "when": "after-task",
+      "criteria": [
+        "The explanation preserves Action -> Event -> Reaction -> Action boundaries.",
+        "The explanation identifies Views and Queries as derived read-side outputs rather than replay state.",
+        "The explanation states current implemented code/tests separately from target architecture for CLI, NATS, Restate, generated docs, and Operation Journal behavior."
+      ]
+    }
+  ],
+  "sections": [
+    {
+      "id": "inputs",
+      "type": "requirements",
+      "title": "Inputs",
+      "blocks": [
+        { "type": "markdown", "template": true, "markdown": "Explain {{ task.input.subjectKind }} flow: {{ task.input.flowSubject }}" },
+        { "type": "list", "template": true, "items": ["Relevant paths: {{ task.input.paths }}", "Depth: {{ task.input.depth }}", "Include current versus target: {{ task.input.includeCurrentVsTarget }}"] }
+      ]
+    },
+    {
+      "id": "instructions",
+      "type": "instructions",
+      "title": "Instructions",
+      "blocks": [
+        { "type": "list", "items": ["Inspect manifest definitions, docs, skills, and source/tests for the named Action/Event/Reaction/View/Query.", "Identify the target Resource and any Policies that govern the Action when known.", "List Events that can be recorded and which Resource stream owns them.", "Traverse Reactions as Action -> Event -> Reaction -> Action edges only.", "Identify declared External Operations and state whether operation idempotency is currently implemented, tested, or only target architecture.", "Identify Views updated by Projection code and declared Queries or ViewStore primitives that expose results.", "Describe Action Journal, Reaction Journal, Operation Journal, and execution trace entries/gaps relevant to success, rejection, runtime failure, and incomplete outcomes."] }
+      ]
+    },
+    {
+      "id": "acceptance",
+      "type": "acceptance",
+      "title": "Acceptance Criteria",
+      "blocks": [
+        { "type": "acceptance", "criteria": [
+          { "id": "boundaries", "text": "The explanation uses Elbmesh terminology accurately: Resource, Action, Event, Reaction, External Operation, View, Query, Policy, Action Journal, Operation Journal, Reaction Journal, execution trace, and manifest.", "required": true, "kind": "review" },
+          { "id": "current-target", "text": "Future architecture such as Operation Journal, Restate, NATS adapters, generated docs, and explain-flow CLI is not overstated as current implementation.", "required": true, "kind": "review" },
+          { "id": "source-backed", "text": "Claims are backed by source docs, skills, Rust code, tests, or explicit missing-implementation notes.", "required": true, "kind": "review" }
+        ] }
+      ]
+    },
+    {
+      "id": "references",
+      "type": "references",
+      "title": "Source References",
+      "blocks": [
+        { "type": "file-ref", "path": ".opencode/skills/elbmesh-flow-explainer/SKILL.md", "description": "Flow explanation checklist." },
+        { "type": "file-ref", "path": "docs/GOAL.md", "description": "Target explain-flow command and core rules." },
+        { "type": "file-ref", "path": "docs/EXECUTION_TRACE_MODEL.md", "description": "Trace entries, outcomes, gaps, overlays, and visualization targets." },
+        { "type": "file-ref", "path": "crates/elbmesh-core/tests/reference_flow.rs", "description": "Current executable reference flow examples." }
+      ]
+    }
+  ]
+}

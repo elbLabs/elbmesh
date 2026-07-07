@@ -1,0 +1,6 @@
+{
+  "id": "tag.framework",
+  "label": "Framework",
+  "valueType": "select",
+  "options": ["axum", "express", "generic", "spacetimedb"]
+}

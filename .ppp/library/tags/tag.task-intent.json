@@ -1,0 +1,6 @@
+{
+  "id": "tag.task-intent",
+  "label": "Task Intent",
+  "valueType": "select",
+  "options": ["expose-use-case", "validate-implementation", "refactor-boundary", "implement-feature", "write-tests", "implement", "review", "update-contract"]
+}

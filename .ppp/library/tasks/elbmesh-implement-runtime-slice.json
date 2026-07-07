@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "id": "8f0c2e6a-1d94-4f73-8a2b-6c5d7e9f0a12",
+  "slug": "task.elbmesh-implement-runtime-slice",
+  "name": "Elbmesh Implement Runtime Slice",
+  "title": "Implement a Minimal Elbmesh Runtime Slice",
+  "status": "ready",
+  "version": "1.0.0",
+  "summary": "Make existing failing Elbmesh tests pass with the smallest production change while preserving runtime and architecture boundaries.",
+  "description": "Use this task after failing tests or an explicit test plan exists for an Elbmesh runtime, manifest, reaction, view, journal, or trace slice.",
+  "tags": [
+    { "tagId": "tag.language", "value": "rust" },
+    { "tagId": "tag.task-intent", "value": "implement" },
+    { "tagId": "tag.topic", "value": "event-sourcing" },
+    { "tagId": "tag.quality", "value": "boundaries" }
+  ],
+  "metadata": { "reusable": true, "scope": "elbmesh" },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["sliceName", "failingTestEvidence", "affectedPaths", "testCommand"],
+    "properties": {
+      "sliceName": { "type": "string", "minLength": 1 },
+      "failingTestEvidence": { "type": "string", "minLength": 1, "description": "Failing command/output summary or test-plan reference." },
+      "affectedPaths": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+      "testCommand": { "type": "string", "minLength": 1 }
+    }
+  },
+  "context": {
+    "ppp": {
+      "requiredSlugs": [
+        "principle.elbmesh-explicit-runtime-boundaries",
+        "architecture.elbmesh-event-sourced-resource-runtime",
+        "validation.elbmesh-architecture-boundary-checks",
+        "validation.elbmesh-rust-quality-gates",
+        "pattern.elbmesh-given-when-then-scenario-tests"
+      ],
+      "includeRelated": true,
+      "includeBody": true,
+      "sectionTypes": ["guidance", "rules", "constraints", "checks", "examples", "references", "notes"],
+      "blockTypes": ["markdown", "list", "checklist", "file-ref", "ppp-ref"]
+    }
+  },
+  "outputs": [
+    { "id": "implementation", "type": "code", "title": "Minimal production implementation", "required": true },
+    { "id": "verification", "type": "test", "title": "Passing verification results", "required": true },
+    { "id": "architecture-note", "type": "documentation", "title": "Architecture impact note", "required": true }
+  ],
+  "validations": [
+    {
+      "id": "failing-tests-exist",
+      "type": "manual",
+      "title": "Confirm failing tests or test plan",
+      "required": true,
+      "when": "before-task",
+      "criteria": ["Failing tests or an explicit test plan exist before production implementation starts.", "If tests appear wrong, implementation stops and the mismatch is reported instead of silently rewriting tests."]
+    },
+    { "id": "fmt", "type": "command", "title": "cargo fmt", "required": true, "when": "after-task", "shell": "bash", "command": "cargo fmt --check", "success": { "exitCode": 0 } },
+    { "id": "clippy", "type": "command", "title": "cargo clippy", "required": true, "when": "after-task", "shell": "bash", "command": "cargo clippy --all-targets --all-features -- -D warnings", "success": { "exitCode": 0 } },
+    { "id": "tests", "type": "command", "title": "Run slice tests", "required": true, "when": "after-task", "template": true, "shell": "bash", "command": "{{ task.input.testCommand }}", "success": { "exitCode": 0 } },
+    {
+      "id": "architecture-boundary-review",
+      "type": "agent",
+      "title": "Review architecture boundary preservation",
+      "required": true,
+      "when": "after-task",
+      "context": { "ppp": { "requiredSlugs": ["validation.elbmesh-architecture-boundary-checks", "validation.elbmesh-rust-quality-gates"], "includeBody": true } },
+      "passCriteria": [
+        "Implementation is slice-focused and does not include unplanned refactors.",
+        "Resource replay remains deterministic and uses Resource Events only.",
+        "External calls, Reaction execution, Views, Queries, journals, and execution traces stay on their documented side of the boundary.",
+        "Verification commands and any infeasible checks are recorded."
+      ]
+    }
+  ],
+  "sections": [
+    {
+      "id": "requirements",
+      "type": "requirements",
+      "title": "Implementation Inputs",
+      "blocks": [
+        { "type": "markdown", "template": true, "markdown": "Implement `{{ task.input.sliceName }}` using the existing failing-test evidence: {{ task.input.failingTestEvidence }}." },
+        { "type": "list", "template": true, "items": ["Affected paths: {{ task.input.affectedPaths }}", "Verification command: `{{ task.input.testCommand }}`"] }
+      ]
+    },
+    {
+      "id": "instructions",
+      "type": "instructions",
+      "title": "Instructions",
+      "blocks": [
+        { "type": "list", "ordered": true, "items": ["Inspect the failing tests, source, docs, and skills before editing.", "Make the smallest production change that satisfies the test contract.", "Preserve explicit traits and Elbmesh vocabulary; do not hide domain behavior behind macros.", "Keep execution failures in journals/errors unless explicitly modelled as domain Events.", "Run fmt, clippy, and tests when feasible; record blockers and architecture impact."] }
+      ]
+    },
+    {
+      "id": "acceptance",
+      "type": "acceptance",
+      "title": "Acceptance Criteria",
+      "blocks": [
+        { "type": "acceptance", "criteria": [
+          { "id": "tests-pass", "text": "The targeted failing tests now pass without weakening their intent.", "required": true, "kind": "test" },
+          { "id": "boundaries", "text": "Resource/Action/Event/Reaction/External Operation/View/Query/journal/trace boundaries are preserved.", "required": true, "kind": "review" },
+          { "id": "quality-gates", "text": "Rust quality gates pass or each infeasible command is explained.", "required": true, "kind": "build" }
+        ] }
+      ]
+    }
+  ]
+}
