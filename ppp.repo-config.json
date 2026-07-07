@@ -2,8 +2,115 @@
   "schemaVersion": 1,
   "repoKey": "elbmesh",
   "name": "Elbmesh",
-  "description": "Local PPP mapping for Elbmesh Rust core, manifest, tests, docs, and OpenCode PPP integration files.",
+  "description": "PPP mapping for Elbmesh Rust core, manifest, tests, docs, and OpenCode PPP integration files.",
   "root": ".",
+  "dependencies": [
+    {
+      "ecosystem": "cargo",
+      "packageName": "async-trait",
+      "requirement": "0.1",
+      "resolvedVersion": "0.1.89",
+      "scope": "dependencies",
+      "features": [],
+      "defaultFeatures": true,
+      "optional": false,
+      "dev": false,
+      "build": false,
+      "workspace": { "inherited": false, "member": true, "root": false, "packagePath": "crates/elbmesh-core" },
+      "registry": "crates-io",
+      "source": { "manifestPath": "crates/elbmesh-core/Cargo.toml", "lockfilePath": "Cargo.lock", "packageManager": "cargo", "provenance": "Declared directly by elbmesh-core for async trait boundaries in runtime, reactions, projections, stores, and journals." }
+    },
+    {
+      "ecosystem": "cargo",
+      "packageName": "chrono",
+      "requirement": "0.4",
+      "resolvedVersion": "0.4.45",
+      "scope": "dependencies",
+      "features": ["serde"],
+      "defaultFeatures": true,
+      "optional": false,
+      "dev": false,
+      "build": false,
+      "workspace": { "inherited": false, "member": true, "root": false, "packagePath": "crates/elbmesh-core" },
+      "registry": "crates-io",
+      "source": { "manifestPath": "crates/elbmesh-core/Cargo.toml", "lockfilePath": "Cargo.lock", "packageManager": "cargo", "provenance": "Declared directly by elbmesh-core for timestamped journal and trace records." }
+    },
+    {
+      "ecosystem": "cargo",
+      "packageName": "serde",
+      "requirement": "1",
+      "resolvedVersion": "1.0.228",
+      "scope": "dependencies",
+      "features": ["derive"],
+      "defaultFeatures": true,
+      "optional": false,
+      "dev": false,
+      "build": false,
+      "workspace": { "inherited": false, "member": true, "root": false, "packagePath": "crates/elbmesh-core" },
+      "registry": "crates-io",
+      "source": { "manifestPath": "crates/elbmesh-core/Cargo.toml", "lockfilePath": "Cargo.lock", "packageManager": "cargo", "provenance": "Declared directly by elbmesh-core for manifest, action/event, view, journal, and trace serialization contracts." }
+    },
+    {
+      "ecosystem": "cargo",
+      "packageName": "serde_json",
+      "requirement": "1",
+      "resolvedVersion": "1.0.150",
+      "scope": "dependencies",
+      "features": [],
+      "defaultFeatures": true,
+      "optional": false,
+      "dev": false,
+      "build": false,
+      "workspace": { "inherited": false, "member": true, "root": false, "packagePath": "crates/elbmesh-core" },
+      "registry": "crates-io",
+      "source": { "manifestPath": "crates/elbmesh-core/Cargo.toml", "lockfilePath": "Cargo.lock", "packageManager": "cargo", "provenance": "Declared directly by elbmesh-core for JSON payloads, snapshots, manifests, and view documents." }
+    },
+    {
+      "ecosystem": "cargo",
+      "packageName": "thiserror",
+      "requirement": "1",
+      "resolvedVersion": "1.0.69",
+      "scope": "dependencies",
+      "features": [],
+      "defaultFeatures": true,
+      "optional": false,
+      "dev": false,
+      "build": false,
+      "workspace": { "inherited": false, "member": true, "root": false, "packagePath": "crates/elbmesh-core" },
+      "registry": "crates-io",
+      "source": { "manifestPath": "crates/elbmesh-core/Cargo.toml", "lockfilePath": "Cargo.lock", "packageManager": "cargo", "provenance": "Declared directly by elbmesh-core for stable named runtime and validation errors." }
+    },
+    {
+      "ecosystem": "cargo",
+      "packageName": "uuid",
+      "requirement": "1",
+      "resolvedVersion": "1.23.4",
+      "scope": "dependencies",
+      "features": ["v4", "serde"],
+      "defaultFeatures": true,
+      "optional": false,
+      "dev": false,
+      "build": false,
+      "workspace": { "inherited": false, "member": true, "root": false, "packagePath": "crates/elbmesh-core" },
+      "registry": "crates-io",
+      "source": { "manifestPath": "crates/elbmesh-core/Cargo.toml", "lockfilePath": "Cargo.lock", "packageManager": "cargo", "provenance": "Declared directly by elbmesh-core for stream, event, action, journal, and trace identifiers." }
+    },
+    {
+      "ecosystem": "cargo",
+      "packageName": "tokio",
+      "requirement": "1",
+      "resolvedVersion": "1.52.3",
+      "scope": "dev-dependencies",
+      "features": ["macros", "rt-multi-thread"],
+      "defaultFeatures": true,
+      "optional": false,
+      "dev": true,
+      "build": false,
+      "workspace": { "inherited": false, "member": true, "root": false, "packagePath": "crates/elbmesh-core" },
+      "registry": "crates-io",
+      "source": { "manifestPath": "crates/elbmesh-core/Cargo.toml", "lockfilePath": "Cargo.lock", "packageManager": "cargo", "provenance": "Declared directly by elbmesh-core for async runtime tests." }
+    }
+  ],
   "mappings": [
     {
       "id": "core-reactions-workflows",
@@ -103,7 +210,15 @@
         "includeBody": true,
         "sectionTypes": ["guidance", "rules", "constraints", "checks", "references"],
         "blockTypes": ["markdown", "list", "checklist", "file-ref", "ppp-ref"]
-      }
+      },
+      "dependencies": [
+        { "ecosystem": "cargo", "packageName": "async-trait", "scope": "dependencies", "source": { "manifestPath": "crates/elbmesh-core/Cargo.toml", "provenance": "Core traits and async storage/runtime boundaries use async_trait." } },
+        { "ecosystem": "cargo", "packageName": "chrono", "scope": "dependencies", "source": { "manifestPath": "crates/elbmesh-core/Cargo.toml", "provenance": "Core journals and trace records carry timestamps." } },
+        { "ecosystem": "cargo", "packageName": "serde", "scope": "dependencies", "source": { "manifestPath": "crates/elbmesh-core/Cargo.toml", "provenance": "Core runtime contracts derive and carry serializable metadata." } },
+        { "ecosystem": "cargo", "packageName": "serde_json", "scope": "dependencies", "source": { "manifestPath": "crates/elbmesh-core/Cargo.toml", "provenance": "Core runtime stores JSON payloads, snapshots, and documents." } },
+        { "ecosystem": "cargo", "packageName": "thiserror", "scope": "dependencies", "source": { "manifestPath": "crates/elbmesh-core/Cargo.toml", "provenance": "Core runtime exposes typed error enums." } },
+        { "ecosystem": "cargo", "packageName": "uuid", "scope": "dependencies", "source": { "manifestPath": "crates/elbmesh-core/Cargo.toml", "provenance": "Core runtime identifies streams, events, actions, journal records, and traces." } }
+      ]
     },
     {
       "id": "core-manifest",
@@ -122,7 +237,12 @@
         "includeBody": true,
         "sectionTypes": ["guidance", "rules", "constraints", "checks", "references"],
         "blockTypes": ["markdown", "list", "checklist", "file-ref", "ppp-ref"]
-      }
+      },
+      "dependencies": [
+        { "ecosystem": "cargo", "packageName": "serde", "scope": "dependencies", "source": { "manifestPath": "crates/elbmesh-core/Cargo.toml", "provenance": "Manifest structs are serialized as public architecture contracts." } },
+        { "ecosystem": "cargo", "packageName": "serde_json", "scope": "dependencies", "source": { "manifestPath": "crates/elbmesh-core/Cargo.toml", "provenance": "Manifest tests and consumers use JSON-shaped contract data." } },
+        { "ecosystem": "cargo", "packageName": "thiserror", "scope": "dependencies", "source": { "manifestPath": "crates/elbmesh-core/Cargo.toml", "provenance": "Manifest validation uses typed named errors." } }
+      ]
     },
     {
       "id": "core-tests",
@@ -141,7 +261,10 @@
         "includeBody": true,
         "sectionTypes": ["guidance", "rules", "checks", "references"],
         "blockTypes": ["markdown", "list", "checklist", "file-ref", "ppp-ref"]
-      }
+      },
+      "dependencies": [
+        { "ecosystem": "cargo", "packageName": "tokio", "scope": "dev-dependencies", "dev": true, "source": { "manifestPath": "crates/elbmesh-core/Cargo.toml", "provenance": "Async tests use tokio macros and multi-thread runtime." } }
+      ]
     },
     {
       "id": "docs",
@@ -162,9 +285,9 @@
       }
     },
     {
-      "id": "opencode-skills",
-      "name": "OpenCode skills",
-      "paths": [".opencode/skills/*/SKILL.md"],
+      "id": "opencode-ppp-skill",
+      "name": "OpenCode PPP routing skill",
+      "paths": [".opencode/skills/ppp/SKILL.md"],
       "ppp": {
         "requiredSlugs": [
           "principle.explicit-boundaries",
@@ -179,9 +302,27 @@
       }
     },
     {
+      "id": "ppp-library-tasks",
+      "name": "PPP task library",
+      "paths": [".ppp/library/tasks/**/*.json"],
+      "ppp": {
+        "requiredSlugs": [
+          "principle.explicit-boundaries",
+          "principle.elbmesh-explicit-runtime-boundaries",
+          "validation.elbmesh-architecture-boundary-checks",
+          "validation.elbmesh-manifest-contract-checks",
+          "validation.elbmesh-rust-quality-gates"
+        ],
+        "includeRelated": true,
+        "includeBody": true,
+        "sectionTypes": ["guidance", "rules", "constraints", "checks", "references", "notes"],
+        "blockTypes": ["markdown", "list", "checklist", "file-ref", "ppp-ref"]
+      }
+    },
+    {
       "id": "opencode-ppp-binding",
       "name": "OpenCode PPP binding and plugin",
-      "paths": [".opencode/plugins/ppp-local.ts", "ppp.config.json", ".ppp/**"],
+      "paths": [".opencode/plugins/ppp.ts", "ppp.config.json", ".ppp/**"],
       "ppp": {
         "requiredSlugs": [
           "principle.explicit-boundaries",
@@ -209,7 +350,16 @@
         "includeBody": true,
         "sectionTypes": ["guidance", "rules", "constraints", "checks", "references"],
         "blockTypes": ["markdown", "list", "checklist", "file-ref", "ppp-ref"]
-      }
+      },
+      "dependencies": [
+        { "ecosystem": "cargo", "packageName": "async-trait", "scope": "dependencies", "source": { "manifestPath": "crates/elbmesh-core/Cargo.toml" } },
+        { "ecosystem": "cargo", "packageName": "chrono", "scope": "dependencies", "source": { "manifestPath": "crates/elbmesh-core/Cargo.toml" } },
+        { "ecosystem": "cargo", "packageName": "serde", "scope": "dependencies", "source": { "manifestPath": "crates/elbmesh-core/Cargo.toml" } },
+        { "ecosystem": "cargo", "packageName": "serde_json", "scope": "dependencies", "source": { "manifestPath": "crates/elbmesh-core/Cargo.toml" } },
+        { "ecosystem": "cargo", "packageName": "thiserror", "scope": "dependencies", "source": { "manifestPath": "crates/elbmesh-core/Cargo.toml" } },
+        { "ecosystem": "cargo", "packageName": "tokio", "scope": "dev-dependencies", "dev": true, "source": { "manifestPath": "crates/elbmesh-core/Cargo.toml" } },
+        { "ecosystem": "cargo", "packageName": "uuid", "scope": "dependencies", "source": { "manifestPath": "crates/elbmesh-core/Cargo.toml" } }
+      ]
     }
   ]
 }

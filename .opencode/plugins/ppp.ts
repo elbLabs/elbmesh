@@ -11,7 +11,7 @@ import path from "node:path";
 type ValidationMode = "none" | "record-only" | "enforce";
 type ValidationPhase = "before-task" | "after-task";
 type PhaseInput = ValidationPhase | "all";
-type LocalValidationIssue = { filePath: string; severity: "error" | "warning"; path: string; instancePath?: string; schemaPath?: string; message: string; referenced?: string };
+type PppValidationIssue = { filePath: string; severity: "error" | "warning"; path: string; instancePath?: string; schemaPath?: string; message: string; referenced?: string };
 
 const itemDirectories: Record<string, string> = {
   principle: "principles",
@@ -43,8 +43,8 @@ const liquidRenderOptions = { strictVariables: true, ownPropertyOnly: true, rend
 export default (async ({ directory }) => {
   return {
     tool: {
-      ppp_local_status: tool({
-        description: "Show local-only PPP plugin configuration and resolved local library sources.",
+      ppp_status: tool({
+        description: "Show PPP plugin configuration and resolved project library sources.",
         args: {},
         async execute() {
           const binding = await readBinding(directory);
@@ -52,31 +52,31 @@ export default (async ({ directory }) => {
           const validation = await validateLocalLibrary(directory);
           return JSON.stringify({
             ok: true,
-            mode: "local-only",
+            mode: "project",
             repoKey: binding.repoKey,
             repoConfigPath: binding.repoConfigPath || "ppp.repo-config.json",
             libraryRoot: library.root,
             librarySource: library.source,
             selfContained: library.selfContained,
-            configuredLocalLibraryPath: binding.localLibraryPath || binding.pppLocalLibraryPath,
-            envLocalLibraryPath: process.env.PPP_LOCAL_LIBRARY_DIR,
+            configuredLibraryPath: binding.libraryPath,
+            envLibraryPath: process.env.PPP_LIBRARY_DIR,
             schemaRoot: validation.schemaRoot,
             schemaSource: validation.schemaSource,
             validation: summarizeValidation(validation.issues),
-            note: "Tools in this plugin do not call PPP API/MCP. Pack generation is out of scope for this runtime parity prototype. Restart OpenCode after changing plugin files or .opencode/package.json.",
+            note: "Pack generation is not implemented in this project plugin. Restart OpenCode after changing plugin files or .opencode/package.json.",
           }, null, 2);
         },
       }),
-      ppp_local_validate_library: tool({
-        description: "Validate local PPP task, item, and repo-config JSON shapes with structured local errors.",
+      ppp_validate_library: tool({
+        description: "Validate PPP task, item, and repo-config JSON shapes with structured errors.",
         args: {},
         async execute() {
           const validation = await validateLocalLibrary(directory);
           return JSON.stringify({ ok: validation.issues.every((issue) => issue.severity !== "error"), ...summarizeValidation(validation.issues), issues: validation.issues }, null, 2);
         },
       }),
-      ppp_local_list_tasks: tool({
-        description: "List reusable PPP tasks from local PPP library JSON files.",
+      ppp_list_tasks: tool({
+        description: "List reusable PPP tasks from project PPP library JSON files.",
         args: {
           slug: tool.schema.string().optional(),
           status: tool.schema.string().optional(),
@@ -88,8 +88,8 @@ export default (async ({ directory }) => {
           return markdown(["# PPP Tasks", "", ...tasks.map((task) => `- ${task.slug} (${task.id}): ${task.title} - ${task.summary || "No summary"}`)]);
         },
       }),
-      ppp_local_get_task_bundle: tool({
-        description: "Resolve a PPP task bundle locally by id or slug.",
+      ppp_get_task_bundle: tool({
+        description: "Resolve a PPP task bundle by id or slug.",
         args: {
           taskId: tool.schema.string().describe("Task id or slug."),
           includePrompt: tool.schema.boolean().optional(),
@@ -100,8 +100,8 @@ export default (async ({ directory }) => {
           return formatTaskBundle(bundle, args?.includePrompt !== false, args?.includeJson === true);
         },
       }),
-      ppp_local_assemble_task_bundle: tool({
-        description: "Assemble a PPP task bundle locally with task inputs and overlays.",
+      ppp_assemble_task_bundle: tool({
+        description: "Assemble a PPP task bundle with task inputs and overlays.",
         args: {
           taskId: tool.schema.string().describe("Task id or slug."),
           input: tool.schema.any().optional(),
@@ -117,16 +117,16 @@ export default (async ({ directory }) => {
           return formatTaskBundle(bundle, args?.includePrompt !== false, args?.includeJson === true);
         },
       }),
-      ppp_local_list_repo_configs: tool({
-        description: "List repo configs from local project and local PPP library sources.",
+      ppp_list_repo_configs: tool({
+        description: "List repo configs from project PPP sources.",
         args: {},
         async execute() {
           const configs = await readRepoConfigs(directory);
           return markdown(["# PPP Repo Configs", "", ...configs.map((config) => `- ${config.repoKey}: ${config.name} (${(config.mappings || []).length} mappings)`)]);
         },
       }),
-      ppp_local_get_repo_config_offline: tool({
-        description: "Return a repo config from local files only. Use this to avoid PPP API/MCP.",
+      ppp_get_repo_config: tool({
+        description: "Return a PPP repo config.",
         args: {
           repoKey: tool.schema.string().optional(),
           repoConfig: tool.schema.any().optional(),
@@ -137,8 +137,8 @@ export default (async ({ directory }) => {
           return formatRepoConfig(config, args?.includeJson === true);
         },
       }),
-      ppp_local_resolve_repo_context_offline: tool({
-        description: "Resolve PPP repo context from local files only. Use this to avoid PPP API/MCP.",
+      ppp_resolve_repo_context: tool({
+        description: "Resolve PPP repo context for paths, changed files, and dependencies.",
         args: {
           repoKey: tool.schema.string().optional(),
           repoConfig: tool.schema.any().optional(),
@@ -148,12 +148,12 @@ export default (async ({ directory }) => {
           includeJson: tool.schema.boolean().optional(),
         },
         async execute(args: any) {
-          const resolved = await resolveRepoContextLocal(directory, args || {});
+          const resolved = await resolveRepoContext(directory, args || {});
           return formatRepoContext(resolved, args?.includeJson === true);
         },
       }),
-      ppp_local_generate_opencode_pack: tool({
-        description: "Out of scope for the local-only PPP runtime parity prototype; generation is intentionally not implemented here.",
+      ppp_generate_opencode_pack: tool({
+        description: "Generated OpenCode pack output is not implemented in this project plugin.",
         args: {
           repoKey: tool.schema.string().describe("Repo key to generate for."),
           target: tool.schema.string().describe("Target directory."),
@@ -161,11 +161,11 @@ export default (async ({ directory }) => {
           force: tool.schema.boolean().optional(),
         },
         async execute(args: any) {
-          return JSON.stringify({ ok: false, outOfScope: true, tool: "ppp_local_generate_opencode_pack", message: "Generated OpenCode pack output is out of scope for this local-only runtime parity phase. Use the remote PPP pack generator or a future dedicated generation phase." }, null, 2);
+          return JSON.stringify({ ok: false, outOfScope: true, tool: "ppp_generate_opencode_pack", message: "Generated OpenCode pack output is not implemented in this project plugin." }, null, 2);
         },
       }),
-      ppp_local_validate: tool({
-        description: "Run PPP command validations locally from a task bundle, validations array, or bundle JSON path.",
+      ppp_validate: tool({
+        description: "Run PPP command validations from a task bundle, validations array, or bundle JSON path.",
         args: {
           bundle: tool.schema.any().optional(),
           bundlePath: tool.schema.string().optional(),
@@ -188,8 +188,8 @@ export default (async ({ directory }) => {
           return JSON.stringify(result, null, 2);
         },
       }),
-      ppp_local_precommit_validate: tool({
-        description: "Run PPP validations for staged files using local validationPolicy.preCommitMode.",
+      ppp_precommit_validate: tool({
+        description: "Run PPP validations for staged files using validationPolicy.preCommitMode.",
         args: {
           bundle: tool.schema.any().optional(),
           bundlePath: tool.schema.string().optional(),
@@ -225,9 +225,8 @@ async function resolveLibraryRoot(directory: string, binding?: any) {
 
 async function resolveLibrarySource(directory: string, binding?: any) {
   const candidates = [
-    { source: "env:PPP_LOCAL_LIBRARY_DIR", value: process.env.PPP_LOCAL_LIBRARY_DIR },
-    { source: "ppp.config.json:localLibraryPath", value: binding?.localLibraryPath },
-    { source: "ppp.config.json:pppLocalLibraryPath", value: binding?.pppLocalLibraryPath },
+    { source: "env:PPP_LIBRARY_DIR", value: process.env.PPP_LIBRARY_DIR },
+    { source: "ppp.config.json:libraryPath", value: binding?.libraryPath },
     { source: "project:.ppp/library", value: ".ppp/library" },
     { source: "project:.ppp", value: ".ppp" },
     { source: "adjacent:../ppp-library/library", value: "../ppp-library/library" },
@@ -261,7 +260,7 @@ async function readRepoConfigs(directory: string) {
   if (localConfig?.repoKey) configs.set(localConfig.repoKey, localConfig);
   for (const config of await readJsonDirectory(path.join(directory, ".ppp", "repo-configs"))) if (config.repoKey) configs.set(config.repoKey, config);
   for (const config of await readJsonDirectory(path.join(libraryRoot, "repo-configs"))) if (config.repoKey) configs.set(config.repoKey, config);
-  for (const extraDir of (process.env.PPP_LOCAL_REPO_CONFIG_DIRS || "").split(path.delimiter).filter(Boolean)) {
+  for (const extraDir of (process.env.PPP_REPO_CONFIG_DIRS || "").split(path.delimiter).filter(Boolean)) {
     for (const config of await readJsonDirectory(extraDir)) if (config.repoKey) configs.set(config.repoKey, config);
   }
   return Array.from(configs.values()).sort((left, right) => String(left.repoKey).localeCompare(String(right.repoKey)));
@@ -289,7 +288,7 @@ async function readLocalRepoConfig(directory: string, binding: any) {
 async function validateLocalLibrary(directory: string) {
   const binding = await readBinding(directory);
   const library = await resolveLibrarySource(directory, binding);
-  const issues: LocalValidationIssue[] = [];
+  const issues: PppValidationIssue[] = [];
   const schemas = await loadPppSchemas(directory, binding, issues);
   await validateNoLegacyPracticesDirectory(library.root, issues);
   await validateJsonFiles(path.join(library.root, "tasks"), "task", issues, schemas);
@@ -303,14 +302,14 @@ async function validateLocalLibrary(directory: string) {
   return { libraryRoot: library.root, librarySource: library.source, schemaRoot: schemas.root, schemaSource: schemas.source, selfContained: library.selfContained, issues };
 }
 
-async function validateJsonFiles(directory: string, kind: "task" | "item" | "repo-config" | "tag", issues: LocalValidationIssue[], schemas: PppSchemaValidators, folder?: string) {
+async function validateJsonFiles(directory: string, kind: "task" | "item" | "repo-config" | "tag", issues: PppValidationIssue[], schemas: PppSchemaValidators, folder?: string) {
   for (const entry of await readJsonDirectoryWithFiles(directory)) {
     validateJsonValue(entry.value, entry.filePath, kind, issues, schemas);
     if (kind === "item" && folder) validateItemFolderParity(entry.value, entry.filePath, folder, issues);
   }
 }
 
-async function readJsonFileForValidation(filePath: string, issues: LocalValidationIssue[]) {
+async function readJsonFileForValidation(filePath: string, issues: PppValidationIssue[]) {
   try {
     return JSON.parse(await fs.readFile(filePath, "utf8"));
   } catch (error) {
@@ -322,7 +321,7 @@ async function readJsonFileForValidation(filePath: string, issues: LocalValidati
 type PppSchemaKind = "task" | "item" | "repo-config" | "tag";
 type PppSchemaValidators = { root: string; source: string; validators: Partial<Record<PppSchemaKind, any>> };
 
-async function loadPppSchemas(directory: string, binding: any, issues: LocalValidationIssue[]): Promise<PppSchemaValidators> {
+async function loadPppSchemas(directory: string, binding: any, issues: PppValidationIssue[]): Promise<PppSchemaValidators> {
   const source = await resolveSchemaSource(directory, binding);
   const ajv = new Ajv2020({ allErrors: true, strict: false });
   addFormats(ajv);
@@ -337,9 +336,8 @@ async function loadPppSchemas(directory: string, binding: any, issues: LocalVali
 
 async function resolveSchemaSource(directory: string, binding: any) {
   const candidates = [
-    { source: "env:PPP_LOCAL_SCHEMA_DIR", value: process.env.PPP_LOCAL_SCHEMA_DIR },
+    { source: "env:PPP_SCHEMA_DIR", value: process.env.PPP_SCHEMA_DIR },
     { source: "ppp.config.json:schemaPath", value: binding?.schemaPath },
-    { source: "ppp.config.json:localSchemaPath", value: binding?.localSchemaPath },
     { source: "project:.ppp/schemas", value: ".ppp/schemas" },
     { source: "reference:ppp-library/schemas", value: path.join(PPP_LIBRARY_ROOT, "schemas") },
   ].filter((entry): entry is { source: string; value: string } => typeof entry.value === "string" && entry.value.trim() !== "");
@@ -350,7 +348,7 @@ async function resolveSchemaSource(directory: string, binding: any) {
   return { root: path.join(PPP_LIBRARY_ROOT, "schemas"), source: "missing:reference:ppp-library/schemas" };
 }
 
-function validateJsonValue(value: unknown, filePath: string, kind: PppSchemaKind, issues: LocalValidationIssue[], schemas: PppSchemaValidators) {
+function validateJsonValue(value: unknown, filePath: string, kind: PppSchemaKind, issues: PppValidationIssue[], schemas: PppSchemaValidators) {
   validateLegacyPracticeReferences(value, filePath, issues);
   const validate = schemas.validators[kind];
   if (!validate) {
@@ -368,14 +366,14 @@ function validateJsonValue(value: unknown, filePath: string, kind: PppSchemaKind
   }
 }
 
-function validateSafeRepoConfigPaths(value: unknown, filePath: string, issues: LocalValidationIssue[]) {
+function validateSafeRepoConfigPaths(value: unknown, filePath: string, issues: PppValidationIssue[]) {
   if (!isRecord(value) || !Array.isArray(value.mappings)) return;
   value.mappings.forEach((mapping: any, index: number) => {
     for (const pathValue of mapping.paths || []) if (typeof pathValue !== "string" || !isSafeRepoPath(pathValue.replace(/^!/, ""))) issues.push({ filePath, severity: "error", path: `/mappings/${index}/paths`, instancePath: `/mappings/${index}/paths`, message: "paths must be safe relative paths or glob patterns" });
   });
 }
 
-function validateLegacyPracticeReferences(value: unknown, filePath: string, issues: LocalValidationIssue[]) {
+function validateLegacyPracticeReferences(value: unknown, filePath: string, issues: PppValidationIssue[]) {
   walkValue(value, (entry, instancePath, key) => {
     if (typeof entry === "string" && /\bpractice\.[a-z0-9][a-z0-9.-]*/.test(entry)) {
       const field = key && ["supports", "implements", "related", "slug", "requiredSlugs", "slugs"].includes(key) ? ` in ${key}` : "";
@@ -398,13 +396,13 @@ function escapeJsonPointer(value: string) {
   return value.replace(/~/g, "~0").replace(/\//g, "~1");
 }
 
-async function validateNoLegacyPracticesDirectory(root: string, issues: LocalValidationIssue[]) {
+async function validateNoLegacyPracticesDirectory(root: string, issues: PppValidationIssue[]) {
   const practicesPath = path.join(root, "practices");
   const stat = await fs.stat(practicesPath).catch(() => undefined);
   if (stat?.isDirectory()) issues.push({ filePath: practicesPath, severity: "error", path: "", instancePath: "", message: "legacy practices directory is not supported; use plural PPP item folders" });
 }
 
-function validateItemFolderParity(item: unknown, filePath: string, folder: string, issues: LocalValidationIssue[]) {
+function validateItemFolderParity(item: unknown, filePath: string, folder: string, issues: PppValidationIssue[]) {
   if (!isRecord(item)) return;
   const expectedType = Object.entries(itemDirectories).find(([, itemFolder]) => itemFolder === folder)?.[0];
   if (expectedType && item.type !== expectedType) issues.push({ filePath, severity: "error", path: "/type", instancePath: "/type", message: `item type ${String(item.type)} must match folder ${folder}` });
@@ -419,7 +417,7 @@ type ReferenceIndex = {
   tagsById: Map<string, JsonValidationEntry>;
 };
 
-async function validateCrossReferences(directory: string, libraryRoot: string, localRepoConfigPath: string, localRepoConfig: unknown, issues: LocalValidationIssue[]) {
+async function validateCrossReferences(directory: string, libraryRoot: string, localRepoConfigPath: string, localRepoConfig: unknown, issues: PppValidationIssue[]) {
   const entries = await readReferenceEntries(directory, libraryRoot, localRepoConfigPath, localRepoConfig);
   const index = buildReferenceIndex(entries, issues);
   for (const entry of entries) {
@@ -441,7 +439,7 @@ async function readReferenceEntries(directory: string, libraryRoot: string, loca
   return entries;
 }
 
-function buildReferenceIndex(entries: JsonValidationEntry[], issues: LocalValidationIssue[]): ReferenceIndex {
+function buildReferenceIndex(entries: JsonValidationEntry[], issues: PppValidationIssue[]): ReferenceIndex {
   const index: ReferenceIndex = { itemsBySlug: new Map(), tasksBySlug: new Map(), tasksById: new Map(), tagsById: new Map() };
   for (const entry of entries) {
     const value = entry.value;
@@ -455,7 +453,7 @@ function buildReferenceIndex(entries: JsonValidationEntry[], issues: LocalValida
   return index;
 }
 
-function addUniqueReference(map: Map<string, JsonValidationEntry>, key: string, entry: JsonValidationEntry, pathName: string, label: string, issues: LocalValidationIssue[]) {
+function addUniqueReference(map: Map<string, JsonValidationEntry>, key: string, entry: JsonValidationEntry, pathName: string, label: string, issues: PppValidationIssue[]) {
   const existing = map.get(key);
   if (existing) {
     issues.push({ filePath: entry.filePath, severity: "error", path: pathName, instancePath: pathName, message: `duplicate ${label}; first defined in ${existing.filePath}`, referenced: key });
@@ -464,13 +462,13 @@ function addUniqueReference(map: Map<string, JsonValidationEntry>, key: string, 
   map.set(key, entry);
 }
 
-function validateItemReferences(entry: JsonValidationEntry, index: ReferenceIndex, issues: LocalValidationIssue[]) {
+function validateItemReferences(entry: JsonValidationEntry, index: ReferenceIndex, issues: PppValidationIssue[]) {
   if (!isRecord(entry.value)) return;
   for (const field of ["supports", "implements", "related"] as const) validateItemSlugArray(entry.value[field], entry.filePath, `/${field}`, index, issues);
   validatePppRefBlocks(entry.value.body?.sections, entry.filePath, index, issues, "/body/sections");
 }
 
-function validateTaskReferences(entry: JsonValidationEntry, index: ReferenceIndex, issues: LocalValidationIssue[]) {
+function validateTaskReferences(entry: JsonValidationEntry, index: ReferenceIndex, issues: PppValidationIssue[]) {
   if (!isRecord(entry.value)) return;
   validatePppContext(entry.value.context?.ppp, entry.filePath, "/context/ppp", index, issues);
   validatePppRefBlocks(entry.value.sections, entry.filePath, index, issues, "/sections");
@@ -492,7 +490,7 @@ function validateTaskReferences(entry: JsonValidationEntry, index: ReferenceInde
   });
 }
 
-function validateRepoConfigReferences(entry: JsonValidationEntry, index: ReferenceIndex, issues: LocalValidationIssue[]) {
+function validateRepoConfigReferences(entry: JsonValidationEntry, index: ReferenceIndex, issues: PppValidationIssue[]) {
   if (!isRecord(entry.value)) return;
   validateTagAssignments(entry.value.tags, entry.filePath, "/tags", index, issues);
   (entry.value.mappings || []).forEach((mapping: any, mappingIndex: number) => {
@@ -505,7 +503,7 @@ function validateRepoConfigReferences(entry: JsonValidationEntry, index: Referen
   });
 }
 
-function validateTaskReference(reference: unknown, filePath: string, basePath: string, index: ReferenceIndex, issues: LocalValidationIssue[]) {
+function validateTaskReference(reference: unknown, filePath: string, basePath: string, index: ReferenceIndex, issues: PppValidationIssue[]) {
   if (!isRecord(reference)) return;
   const taskEntry = typeof reference.slug === "string" ? index.tasksBySlug.get(reference.slug) : typeof reference.id === "string" ? index.tasksById.get(reference.id) : undefined;
   if (typeof reference.slug === "string" && !index.tasksBySlug.has(reference.slug)) issues.push({ filePath, severity: "error", path: `${basePath}/slug`, instancePath: `${basePath}/slug`, message: "unknown task slug reference", referenced: reference.slug });
@@ -516,7 +514,7 @@ function validateTaskReference(reference: unknown, filePath: string, basePath: s
   }
 }
 
-function validatePppContext(context: unknown, filePath: string, basePath: string, index: ReferenceIndex, issues: LocalValidationIssue[]) {
+function validatePppContext(context: unknown, filePath: string, basePath: string, index: ReferenceIndex, issues: PppValidationIssue[]) {
   if (!isRecord(context)) return;
   validateItemSlugArray(context.slugs, filePath, `${basePath}/slugs`, index, issues);
   validateItemSlugArray(context.requiredSlugs, filePath, `${basePath}/requiredSlugs`, index, issues);
@@ -527,14 +525,14 @@ function validatePppContext(context: unknown, filePath: string, basePath: string
   }
 }
 
-function validateItemSlugArray(value: unknown, filePath: string, basePath: string, index: ReferenceIndex, issues: LocalValidationIssue[]) {
+function validateItemSlugArray(value: unknown, filePath: string, basePath: string, index: ReferenceIndex, issues: PppValidationIssue[]) {
   if (!Array.isArray(value)) return;
   value.forEach((slug, indexNumber) => {
     if (typeof slug === "string" && !index.itemsBySlug.has(slug)) issues.push({ filePath, severity: "error", path: `${basePath}/${indexNumber}`, instancePath: `${basePath}/${indexNumber}`, message: "unknown PPP item slug reference", referenced: slug });
   });
 }
 
-function validateValidationItemSlugs(value: unknown, filePath: string, basePath: string, index: ReferenceIndex, issues: LocalValidationIssue[]) {
+function validateValidationItemSlugs(value: unknown, filePath: string, basePath: string, index: ReferenceIndex, issues: PppValidationIssue[]) {
   if (!Array.isArray(value)) return;
   value.forEach((slug, indexNumber) => {
     if (typeof slug !== "string") return;
@@ -544,7 +542,7 @@ function validateValidationItemSlugs(value: unknown, filePath: string, basePath:
   });
 }
 
-function validatePppRefBlocks(value: unknown, filePath: string, index: ReferenceIndex, issues: LocalValidationIssue[], basePath: string) {
+function validatePppRefBlocks(value: unknown, filePath: string, index: ReferenceIndex, issues: PppValidationIssue[], basePath: string) {
   if (!Array.isArray(value)) return;
   value.forEach((entry, entryIndex) => {
     const entryPath = `${basePath}/${entryIndex}`;
@@ -554,12 +552,12 @@ function validatePppRefBlocks(value: unknown, filePath: string, index: Reference
   });
 }
 
-function validateTagAssignmentsInValue(value: unknown, filePath: string, index: ReferenceIndex, issues: LocalValidationIssue[]) {
+function validateTagAssignmentsInValue(value: unknown, filePath: string, index: ReferenceIndex, issues: PppValidationIssue[]) {
   if (!isRecord(value)) return;
   validateTagAssignments(value.tags, filePath, "/tags", index, issues);
 }
 
-function validateTagAssignments(tags: unknown, filePath: string, basePath: string, index: ReferenceIndex, issues: LocalValidationIssue[]) {
+function validateTagAssignments(tags: unknown, filePath: string, basePath: string, index: ReferenceIndex, issues: PppValidationIssue[]) {
   if (!Array.isArray(tags)) return;
   tags.forEach((tag, indexNumber) => {
     if (!isRecord(tag) || typeof tag.tagId !== "string") return;
@@ -575,14 +573,14 @@ function validateTagAssignments(tags: unknown, filePath: string, basePath: strin
   });
 }
 
-function validateStringArrayReferences(value: unknown, filePath: string, basePath: string, allowed: Set<string>, label: string, issues: LocalValidationIssue[]) {
+function validateStringArrayReferences(value: unknown, filePath: string, basePath: string, allowed: Set<string>, label: string, issues: PppValidationIssue[]) {
   if (!Array.isArray(value)) return;
   value.forEach((reference, indexNumber) => {
     if (typeof reference === "string" && !allowed.has(reference)) issues.push({ filePath, severity: "error", path: `${basePath}/${indexNumber}`, instancePath: `${basePath}/${indexNumber}`, message: `unknown ${label} reference`, referenced: reference });
   });
 }
 
-function summarizeValidation(issues: LocalValidationIssue[]) {
+function summarizeValidation(issues: PppValidationIssue[]) {
   return { issueCount: issues.length, errorCount: issues.filter((issue) => issue.severity === "error").length, warningCount: issues.filter((issue) => issue.severity === "warning").length };
 }
 
@@ -590,11 +588,11 @@ async function resolveRepoConfig(directory: string, input: any) {
   if (isRecord(input.repoConfig)) return input.repoConfig;
   const repoKey = typeof input.repoKey === "string" ? input.repoKey : (await readBinding(directory)).repoKey;
   const config = (await readRepoConfigs(directory)).find((entry) => entry.repoKey === repoKey);
-  if (!config) throw new Error(`Repo config not found locally for ${repoKey}`);
+  if (!config) throw new Error(`Repo config not found for ${repoKey}`);
   return config;
 }
 
-async function resolveRepoContextLocal(directory: string, input: any) {
+async function resolveRepoContext(directory: string, input: any) {
   validateResolveRepoContextInput(input);
   const config = await resolveRepoConfig(directory, input);
   const inputPaths = unique([...(normalizeStringArray(input.paths) || []), ...(normalizeStringArray(input.changedFiles) || [])]);
@@ -602,7 +600,8 @@ async function resolveRepoContextLocal(directory: string, input: any) {
     const matchedPaths = inputPaths.filter((inputPath) => matchesPathMapping(mapping.paths || [], inputPath, config.root));
     return matchedPaths.length > 0 ? [{ ...mapping, matchedPaths }] : [];
   });
-  const pppBundle = await resolveAgentContext(directory, buildAgentContextRequest(matchedMappings));
+  const dependencies = dedupeDependencies([...(config.dependencies || []), ...matchedMappings.flatMap((mapping: any) => mapping.dependencies || []), ...(Array.isArray(input.dependencies) ? input.dependencies : [])]);
+  const pppBundle = await resolveAgentContext(directory, await buildAgentContextRequest(directory, matchedMappings, dependencies));
   return {
     repoKey: config.repoKey,
     inputPaths,
@@ -610,7 +609,7 @@ async function resolveRepoContextLocal(directory: string, input: any) {
     pppBundle,
     taskReferences: dedupeByJson(matchedMappings.flatMap((mapping: any) => mapping.tasks || [])),
     validationReferences: unique(matchedMappings.flatMap((mapping: any) => mapping.validations || [])),
-    dependencies: dedupeDependencies([...(config.dependencies || []), ...matchedMappings.flatMap((mapping: any) => mapping.dependencies || []), ...(Array.isArray(input.dependencies) ? input.dependencies : [])]),
+    dependencies,
   };
 }
 
@@ -618,7 +617,6 @@ function validateResolveRepoContextInput(input: any) {
   const errors: Array<{ path: string; message: string }> = [];
   if (!isRecord(input)) throwValidationError("Validation failed", [{ path: "", message: "body must be an object" }]);
   if (input.repoKey !== undefined && (typeof input.repoKey !== "string" || !/^[a-z0-9][a-z0-9._-]*$/.test(input.repoKey))) errors.push({ path: "/repoKey", message: "repoKey must be a safe repo key" });
-  // Local offline mode can default repoKey from ppp.config.json; API mode requires an explicit repoKey or repoConfig.
   if (input.repoConfig !== undefined && !isRecord(input.repoConfig)) errors.push({ path: "/repoConfig", message: "repoConfig must be an object" });
   const paths = validatePathArrayInput(input, "paths", errors);
   const changedFiles = validatePathArrayInput(input, "changedFiles", errors);
@@ -637,9 +635,10 @@ function validatePathArrayInput(input: Record<string, unknown>, key: "paths" | "
   return value;
 }
 
-function buildAgentContextRequest(mappings: any[]) {
+async function buildAgentContextRequest(directory: string, mappings: any[], dependencies: any[] = []) {
+  const dependencySlugs = await dependencyGuidanceSlugs(directory, dependencies);
   const request: any = {
-    slugs: unique(mappings.flatMap((mapping) => [...(mapping.ppp?.slugs || []), ...(mapping.ppp?.requiredSlugs || []), ...(mapping.validations || [])])),
+    slugs: unique([...mappings.flatMap((mapping) => [...(mapping.ppp?.slugs || []), ...(mapping.ppp?.requiredSlugs || []), ...(mapping.validations || [])]), ...dependencySlugs]),
     tags: mappings.flatMap((mapping) => mapping.ppp?.tags || []),
   };
   const sectionTypes = unique(mappings.flatMap((mapping) => mapping.ppp?.sectionTypes || []));
@@ -651,6 +650,20 @@ function buildAgentContextRequest(mappings: any[]) {
   if (sectionIds.length > 0) request.sectionIds = sectionIds;
   if (blockTypes.length > 0) request.blockTypes = blockTypes;
   return request;
+}
+
+async function dependencyGuidanceSlugs(directory: string, dependencies: any[]) {
+  if (dependencies.length === 0) return [];
+  const dependencyKeys = new Set(dependencies.map(normalizeDependencyKey).filter((key): key is string => key !== undefined));
+  if (dependencyKeys.size === 0) return [];
+  const items = await readItems(directory);
+  return items.filter((item) => (item.dependencies || []).some((dependency: any) => dependencyKeys.has(normalizeDependencyKey(dependency) || ""))).map((item) => item.slug);
+}
+
+function normalizeDependencyKey(dependency: any) {
+  const ecosystem = dependency?.ecosystem || dependency?.type;
+  const packageName = dependency?.packageName || dependency?.name;
+  return typeof ecosystem === "string" && typeof packageName === "string" ? `${ecosystem}:${packageName}` : undefined;
 }
 
 async function resolveAgentContext(directory: string, request: any) {
@@ -804,8 +817,8 @@ async function generateOpenCodePack(directory: string, input: any) {
   const config = await resolveRepoConfig(directory, { repoKey });
   const files: Record<string, string> = {
     ".opencode/package.json": `${JSON.stringify({ type: "module" }, null, 2)}\n`,
-    "ppp.config.json": `${JSON.stringify({ schemaVersion: 1, repoKey: config.repoKey, name: config.name, root: input.pathPrefix || config.root || ".", repoConfigPath: "ppp.repo-config.json", localLibraryPath: ".ppp/library", validationPolicy: { defaultMode: "record-only", preCommitMode: "record-only", defaultPhase: "after-task", timeoutSeconds: 120 } }, null, 2)}\n`,
-    ".opencode/skills/ppp/SKILL.md": `---\nname: ppp\ndescription: Use local-only PPP plugin tools for repo context, task bundles, and validation workflows.\n---\n\n# PPP Local\n\nUse the ppp_local_* tools. Restart OpenCode after changing plugin registration or plugin files.\n`,
+    "ppp.config.json": `${JSON.stringify({ schemaVersion: 1, repoKey: config.repoKey, name: config.name, root: input.pathPrefix || config.root || ".", repoConfigPath: "ppp.repo-config.json", libraryPath: ".ppp/library", schemaPath: ".ppp/schemas", validationPolicy: { defaultMode: "record-only", preCommitMode: "record-only", defaultPhase: "after-task", timeoutSeconds: 120 } }, null, 2)}\n`,
+    ".opencode/skills/ppp/SKILL.md": `---\nname: ppp\ndescription: Use PPP plugin tools for repo context, task bundles, and validation workflows.\n---\n\n# PPP\n\nUse the ppp_* tools. Restart OpenCode after changing plugin registration or plugin files.\n`,
   };
   const written: string[] = [];
   for (const [relativePath, content] of Object.entries(files)) {

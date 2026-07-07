@@ -21,7 +21,7 @@
       "Declare each Event's owner Resource.",
       "Declare Reactions as Event-to-Action links and keep v1 reaction graphs acyclic.",
       "Declare External Operations before Actions reference them.",
-      "Keep generated docs, capability metadata, and skills synchronized with the manifest when generation exists."
+      "Keep generated docs, capability metadata, PPP tasks, and the central PPP route map synchronized with the manifest when generation exists."
     ],
     "checks": [
       "No duplicate Resource type is declared.",
@@ -50,7 +50,7 @@
         "blocks": [
           { "type": "file-ref", "path": "crates/elbmesh-core/src/manifest.rs", "description": "Current ArchitectureManifest types and validation implementation." },
           { "type": "file-ref", "path": "crates/elbmesh-core/tests/architecture_manifest.rs", "description": "Manifest contract and validation tests." },
-          { "type": "file-ref", "path": ".opencode/skills/elbmesh-manifest-editor/SKILL.md", "description": "Agent guidance for manifest changes." },
+          { "type": "file-ref", "path": ".ppp/library/tasks/elbmesh-update-architecture-manifest.json", "description": "Agent guidance for manifest changes." },
           { "type": "file-ref", "path": "docs/GOAL.md", "description": "Target architecture manifest content and generated capability docs." },
           { "type": "file-ref", "path": "docs/adr/0006-schema-generated-bindings-and-handwritten-behavior.md", "description": "Generated contract and handwritten behavior direction." }
         ]

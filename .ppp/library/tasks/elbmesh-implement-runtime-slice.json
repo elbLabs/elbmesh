@@ -88,7 +88,7 @@
       "type": "instructions",
       "title": "Instructions",
       "blocks": [
-        { "type": "list", "ordered": true, "items": ["Inspect the failing tests, source, docs, and skills before editing.", "Make the smallest production change that satisfies the test contract.", "Preserve explicit traits and Elbmesh vocabulary; do not hide domain behavior behind macros.", "Keep execution failures in journals/errors unless explicitly modelled as domain Events.", "Run fmt, clippy, and tests when feasible; record blockers and architecture impact."] }
+        { "type": "list", "ordered": true, "items": ["Inspect the failing tests, source, docs, PPP task bundle, and task card before editing.", "Keep the implementation inside the active phase and task card, making the smallest production change that satisfies the test contract.", "Preserve explicit traits and Elbmesh vocabulary; do not hide domain behavior behind macros.", "Keep replay/apply deterministic, with external calls only through declared External Operations and Resource event streams containing only Resource Events.", "Stop and report the mismatch to the planning workflow if tests appear wrong; do not silently rewrite tests to match implementation preferences.", "Run fmt, clippy, and tests when feasible; record blockers and architecture impact."] }
       ]
     },
     {

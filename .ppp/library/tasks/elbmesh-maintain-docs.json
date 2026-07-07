@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "id": "3f9a4e10-2c7b-4d8f-a3b5-1e6d9c0f2a44",
+  "slug": "task.elbmesh-maintain-docs",
+  "name": "Elbmesh Maintain Docs",
+  "title": "Maintain Elbmesh Documentation",
+  "status": "ready",
+  "version": "1.0.0",
+  "summary": "Keep Elbmesh documentation, ADRs, glossary, implementation plans, generated-doc notes, and agent guidance aligned with architecture and implementation changes.",
+  "description": "Use this task when updating docs or when a code/manifest change creates documentation drift.",
+  "tags": [
+    { "tagId": "tag.language", "value": "generic" },
+    { "tagId": "tag.task-intent", "value": "update-contract" },
+    { "tagId": "tag.quality", "value": "boundaries" },
+    { "tagId": "tag.topic", "value": "architecture-manifest" }
+  ],
+  "metadata": { "reusable": true, "scope": "elbmesh" },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["changeSummary", "docPaths"],
+    "properties": {
+      "changeSummary": { "type": "string", "minLength": 1 },
+      "docPaths": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+      "sourcePaths": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+    }
+  },
+  "context": {
+    "ppp": {
+      "requiredSlugs": [
+        "principle.elbmesh-explicit-runtime-boundaries",
+        "architecture.elbmesh-event-sourced-resource-runtime",
+        "architecture.elbmesh-architecture-manifest-contract",
+        "validation.elbmesh-architecture-boundary-checks"
+      ],
+      "includeRelated": true,
+      "includeBody": true,
+      "sectionTypes": ["guidance", "rules", "checks", "references", "notes"],
+      "blockTypes": ["markdown", "list", "checklist", "file-ref", "ppp-ref"]
+    }
+  },
+  "outputs": [
+    { "id": "doc-updates", "type": "documentation", "title": "Documentation updates", "required": true },
+    { "id": "open-questions", "type": "documentation", "title": "Open questions or decisions", "required": true }
+  ],
+  "validations": [
+    {
+      "id": "documentation-drift-review",
+      "type": "manual",
+      "title": "Documentation drift review",
+      "required": true,
+      "when": "after-task",
+      "criteria": [
+        "ADRs are added or updated for architecture decisions.",
+        "Glossary, implementation plan, phased delivery plan, README indexes, PPP tasks, and the central PPP route map are updated when their vocabulary or workflow changes.",
+        "Generated docs are not manually edited once generation exists; generated Markdown and JSON share manifest hash and generator version when generation exists.",
+        "Open questions are recorded instead of hiding unresolved decisions."
+      ]
+    }
+  ],
+  "sections": [
+    {
+      "id": "requirements",
+      "type": "requirements",
+      "title": "Documentation Inputs",
+      "blocks": [
+        { "type": "markdown", "template": true, "markdown": "Maintain docs for: {{ task.input.changeSummary }}" },
+        { "type": "list", "template": true, "items": ["Documentation paths: {{ task.input.docPaths }}", "Source paths: {{ task.input.sourcePaths }}"] }
+      ]
+    },
+    {
+      "id": "instructions",
+      "type": "instructions",
+      "title": "Instructions",
+      "blocks": [
+        {
+          "type": "list",
+          "ordered": true,
+          "items": [
+            "Read docs/README.md, docs/GOAL.md, docs/GLOSSARY.md, docs/DEVELOPMENT_WORKFLOW.md, docs/PHASED_DELIVERY_PLAN.md, docs/AGENT_SKILLS.md, docs/IMPLEMENTATION_PLAN.md, and relevant ADRs.",
+            "Update ADRs, glossary, implementation plan, phased delivery plan, README indexes, PPP tasks, and the central PPP route map when architecture or workflow changes require it.",
+            "Treat documentation drift as a defect and preserve Resource, Action, Event, Reaction, External Operation, View, Query, journal, and manifest vocabulary.",
+            "Do not manually edit generated docs once generation exists; record regeneration needs with manifest hash and generator version expectations.",
+            "Record open questions explicitly when a decision remains unresolved."
+          ]
+        }
+      ]
+    }
+  ]
+}

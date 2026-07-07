@@ -79,7 +79,7 @@
       "type": "instructions",
       "title": "Instructions",
       "blocks": [
-        { "type": "list", "items": ["Inspect manifest definitions, docs, skills, and source/tests for the named Action/Event/Reaction/View/Query.", "Identify the target Resource and any Policies that govern the Action when known.", "List Events that can be recorded and which Resource stream owns them.", "Traverse Reactions as Action -> Event -> Reaction -> Action edges only.", "Identify declared External Operations and state whether operation idempotency is currently implemented, tested, or only target architecture.", "Identify Views updated by Projection code and declared Queries or ViewStore primitives that expose results.", "Describe Action Journal, Reaction Journal, Operation Journal, and execution trace entries/gaps relevant to success, rejection, runtime failure, and incomplete outcomes."] }
+        { "type": "list", "items": ["Inspect manifest definitions, docs, PPP tasks, and source/tests for the named Action/Event/Reaction/View/Query.", "Identify the target Resource and any Policies that govern the Action when known.", "List Events that can be recorded and which Resource stream owns them.", "Traverse Reactions as Action -> Event -> Reaction -> Action edges only.", "Identify declared External Operations and state whether operation idempotency is currently implemented, tested, or only target architecture.", "Identify Views updated by Projection code and declared Queries or ViewStore primitives that expose results.", "Describe Action Journal, Reaction Journal, Operation Journal, and execution trace entries/gaps relevant to success, rejection, runtime failure, and incomplete outcomes."] }
       ]
     },
     {
@@ -90,7 +90,7 @@
         { "type": "acceptance", "criteria": [
           { "id": "boundaries", "text": "The explanation uses Elbmesh terminology accurately: Resource, Action, Event, Reaction, External Operation, View, Query, Policy, Action Journal, Operation Journal, Reaction Journal, execution trace, and manifest.", "required": true, "kind": "review" },
           { "id": "current-target", "text": "Future architecture such as Operation Journal, Restate, NATS adapters, generated docs, and explain-flow CLI is not overstated as current implementation.", "required": true, "kind": "review" },
-          { "id": "source-backed", "text": "Claims are backed by source docs, skills, Rust code, tests, or explicit missing-implementation notes.", "required": true, "kind": "review" }
+          { "id": "source-backed", "text": "Claims are backed by source docs, PPP tasks, Rust code, tests, or explicit missing-implementation notes.", "required": true, "kind": "review" }
         ] }
       ]
     },
@@ -99,7 +99,7 @@
       "type": "references",
       "title": "Source References",
       "blocks": [
-        { "type": "file-ref", "path": ".opencode/skills/elbmesh-flow-explainer/SKILL.md", "description": "Flow explanation checklist." },
+        { "type": "file-ref", "path": ".ppp/library/validations/elbmesh-flow-explainability-checks.json", "description": "Flow explanation checklist." },
         { "type": "file-ref", "path": "docs/GOAL.md", "description": "Target explain-flow command and core rules." },
         { "type": "file-ref", "path": "docs/EXECUTION_TRACE_MODEL.md", "description": "Trace entries, outcomes, gaps, overlays, and visualization targets." },
         { "type": "file-ref", "path": "crates/elbmesh-core/tests/reference_flow.rs", "description": "Current executable reference flow examples." }

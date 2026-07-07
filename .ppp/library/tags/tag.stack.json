@@ -1,6 +1,0 @@
-{
-  "id": "tag.stack",
-  "label": "Stack",
-  "valueType": "select",
-  "options": ["rust-axum", "rust-spacetimedb", "generic"]
-}

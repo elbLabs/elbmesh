@@ -47,8 +47,9 @@
         "title": "Source References",
         "blocks": [
           { "type": "file-ref", "path": "docs/DEVELOPMENT_WORKFLOW.md", "description": "MR requirements, quality gates, and test-first workflow." },
-          { "type": "file-ref", "path": ".opencode/skills/elbmesh-implementer/SKILL.md", "description": "Implementation agent responsibilities and preservation rules." },
-          { "type": "file-ref", "path": ".opencode/skills/elbmesh-reviewer/SKILL.md", "description": "Review quality and architecture checks." }
+          { "type": "file-ref", "path": ".opencode/skills/ppp/SKILL.md", "description": "PPP task routes for implementation and review responsibilities." },
+          { "type": "file-ref", "path": ".ppp/library/tasks/elbmesh-implement-runtime-slice.json", "description": "Implementation responsibilities and preservation rules." },
+          { "type": "file-ref", "path": ".ppp/library/tasks/elbmesh-review-change.json", "description": "Review quality and architecture checks." }
         ]
       }
     ]

@@ -72,7 +72,7 @@
       "type": "instructions",
       "title": "Review Focus",
       "blocks": [
-        { "type": "list", "items": ["Resource/Action/Event boundaries and one-Resource Action target rule.", "Typed errors, Receipts, metadata, schema versions, and expected version handling.", "Event/journal separation across Action Journal, Operation Journal, Reaction Journal, and Resource streams.", "External Operation declaration, idempotency, and absence of hidden external calls in replay/apply.", "Reaction execution through Actions and View rebuildability from Events.", "Manifest contract consistency and generated-doc/skill drift where relevant.", "Missing failing tests, weakened tests, or unplanned scope."] }
+        { "type": "list", "items": ["Resource/Action/Event boundaries and one-Resource Action target rule; flag direct multi-Resource Action mutation.", "Typed errors, Receipts, metadata, schema versions, and expected version handling.", "Event/journal separation across Action Journal, Operation Journal, Reaction Journal, and Resource streams; flag execution failures stored as Resource Events without domain modelling.", "External Operation declaration, idempotency, and absence of hidden external calls in replay/apply or undeclared handler code.", "Reaction execution through Actions and View rebuildability from Events.", "Manifest contract consistency and generated-doc/PPP-task/central-route-map drift where relevant.", "Missing failing tests, weakened tests, or unplanned scope."] }
       ]
     },
     {

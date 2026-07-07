@@ -2,5 +2,5 @@
   "id": "tag.topic",
   "label": "Topic",
   "valueType": "select",
-  "options": ["api-endpoint", "use-case-adapter", "error-mapping", "layering", "sql-boundary", "spacetimedb", "reducer", "table", "view", "authorization", "reconciliation", "event-sourcing", "architecture-manifest"]
+  "options": ["layering", "view", "event-sourcing", "architecture-manifest"]
 }

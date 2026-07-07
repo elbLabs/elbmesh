@@ -1,12 +1,12 @@
 {
-  "$comment": "Project-local PPP binding for OpenCode. The project-local .ppp library and .opencode/plugins/ppp-local.ts are the source of truth for PPP tools in this repository.",
+  "$comment": "Project PPP binding for OpenCode. The .ppp library and .opencode/plugins/ppp.ts are the source of truth for PPP tools in this repository.",
   "schemaVersion": 1,
   "repoKey": "elbmesh",
   "name": "Elbmesh",
   "root": ".",
   "repoConfigPath": "ppp.repo-config.json",
-  "localLibraryPath": ".ppp/library",
-  "localSchemaPath": ".ppp/schemas",
+  "libraryPath": ".ppp/library",
+  "schemaPath": ".ppp/schemas",
   "validationPolicy": {
     "defaultMode": "record-only",
     "preCommitMode": "record-only",
@@ -14,8 +14,8 @@
     "timeoutSeconds": 120
   },
   "instructions": [
-    "Use only ppp_local_* OpenCode plugin tools for PPP task bundles, validation guidance, dependency guidance, reusable PPP blocks, and repo context.",
-    "Use ppp_local_get_repo_config_offline and ppp_local_resolve_repo_context_offline when resolving this repo's local ppp.repo-config.json.",
-    "Use repoKey elbmesh when resolving PPP context for this repository. Do not call PPP MCP/API for this project."
+    "Use ppp_* OpenCode plugin tools for PPP task bundles, validation guidance, dependency guidance, reusable PPP blocks, and repo context.",
+    "Use ppp_get_repo_config and ppp_resolve_repo_context when resolving this repo's ppp.repo-config.json.",
+    "Use repoKey elbmesh when resolving PPP context for this repository."
   ]
 }

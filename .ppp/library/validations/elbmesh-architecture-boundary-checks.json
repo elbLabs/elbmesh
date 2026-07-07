@@ -16,10 +16,13 @@
   "agent": {
     "checks": [
       "Confirm each Action targets exactly one Resource and appends only that Resource's Events.",
+      "Confirm each Action version has exactly one registered handler where handler registration is in scope.",
       "Confirm each Event has one owner Resource and explicit apply/replay logic when supported by current code.",
       "Confirm replay/apply code does not call external systems.",
+      "Confirm external HTTP calls appear only through declared External Operations where external calls are in scope.",
       "Confirm execution failures are journaled or returned as errors rather than silently entering Resource streams.",
       "Confirm Reactions invoke Actions and Views are rebuildable from Events where those runtime surfaces are touched.",
+    "Confirm schemas, capability docs, generated docs, PPP task guidance, and the central PPP route map stay in sync with manifest/docs when those artifacts change.",
       "Report missing automated checks separately from failed checks."
     ]
   },
@@ -34,12 +37,16 @@
             "type": "checklist",
             "items": [
               { "text": "Every changed Action targets exactly one Resource.", "required": true },
+              { "text": "Every changed Action version has exactly one registered handler when handler registration is present.", "required": true },
               { "text": "Every changed Event belongs to exactly one Resource stream.", "required": true },
+              { "text": "Every changed Event version has explicit apply/replay behavior when current code supports versioned apply logic.", "required": true },
               { "text": "Replay/apply code is deterministic and has no external calls.", "required": true },
+              { "text": "External HTTP calls appear only through declared External Operations.", "required": true },
               { "text": "Action failures, runtime failures, Reaction failures, and External Operation failures do not pollute Resource Event streams unless explicitly modelled as domain Events.", "required": true },
               { "text": "Reactions invoke Actions rather than mutating Resources directly.", "required": true },
               { "text": "Views derive from Events and can be rebuilt from source Events.", "required": true },
-              { "text": "Execution trace changes keep traces as derived visibility over Actions, Resource Events, Receipts, and journals.", "required": true }
+              { "text": "Execution trace changes keep traces as derived visibility over Actions, Resource Events, Receipts, and journals.", "required": true },
+              { "text": "Schemas, capability docs, PPP task guidance, and the central PPP route map are synchronized with manifest/docs changes.", "required": true }
             ]
           }
         ]
@@ -51,7 +58,7 @@
         "blocks": [
           {
             "type": "markdown",
-            "markdown": "Current code has executable checks for Action execution, Resource replay, Action Journal behavior, Projection/View runtime, Reaction runtime/journal behavior, and manifest validation. Some target architecture checks from docs and skills, such as detecting undeclared external HTTP calls or generated-doc drift, are not yet implemented as universal automated checks; reviewers must report those as manual or missing automated checks."
+            "markdown": "Current code has executable checks for Action execution, Resource replay, Action Journal behavior, Projection/View runtime, Reaction runtime/journal behavior, and manifest validation. Some target architecture checks from docs and PPP tasks, such as detecting undeclared external HTTP calls or generated-doc drift, are not yet implemented as universal automated checks; reviewers must report those as manual or missing automated checks."
           }
         ]
       },
@@ -60,8 +67,8 @@
         "type": "references",
         "title": "Source References",
         "blocks": [
-          { "type": "file-ref", "path": ".opencode/skills/elbmesh-architecture-checker/SKILL.md", "description": "Agent-facing architecture checklist." },
-          { "type": "file-ref", "path": ".opencode/skills/elbmesh-reviewer/SKILL.md", "description": "Review focus and must-flag architecture drift." },
+          { "type": "file-ref", "path": ".ppp/library/tasks/elbmesh-check-architecture-boundaries.json", "description": "Agent-facing architecture checklist." },
+          { "type": "file-ref", "path": ".ppp/library/tasks/elbmesh-review-change.json", "description": "Review focus and must-flag architecture drift." },
           { "type": "file-ref", "path": "docs/GOAL.md", "description": "Target check-architecture command and core rules." },
           { "type": "file-ref", "path": "crates/elbmesh-core/tests/**/*.rs", "glob": true, "description": "Current executable proofs for runtime behavior." }
         ]

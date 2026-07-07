@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "id": "95b0c2d4-1a6e-4f37-90bd-8e3a5f7c9d12",
+  "slug": "task.elbmesh-plan-implementation-slice",
+  "name": "Elbmesh Plan Implementation Slice",
+  "title": "Plan an Elbmesh Implementation Slice",
+  "status": "ready",
+  "version": "1.0.0",
+  "summary": "Define the next smallest useful Elbmesh implementation slice, task card, acceptance criteria, tests-first plan, non-goals, docs updates, and verification commands.",
+  "description": "Use this task to coordinate the test-first loop inside the active phase. Use the phase coordination task for Issue/PR queue ownership.",
+  "tags": [
+    { "tagId": "tag.language", "value": "rust" },
+    { "tagId": "tag.task-intent", "value": "implement-feature" },
+    { "tagId": "tag.quality", "value": "simplicity" },
+    { "tagId": "tag.topic", "value": "event-sourcing" }
+  ],
+  "metadata": { "reusable": true, "scope": "elbmesh" },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["sliceName", "phase", "goal"],
+    "properties": {
+      "sliceName": { "type": "string", "minLength": 1 },
+      "phase": { "type": "string", "minLength": 1 },
+      "goal": { "type": "string", "minLength": 1 },
+      "candidatePaths": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+    }
+  },
+  "context": {
+    "ppp": {
+      "requiredSlugs": [
+        "principle.elbmesh-explicit-runtime-boundaries",
+        "architecture.elbmesh-event-sourced-resource-runtime",
+        "architecture.elbmesh-execution-journals",
+        "validation.elbmesh-architecture-boundary-checks",
+        "validation.elbmesh-rust-quality-gates",
+        "pattern.elbmesh-given-when-then-scenario-tests"
+      ],
+      "includeRelated": true,
+      "includeBody": true,
+      "sectionTypes": ["guidance", "rules", "constraints", "checks", "references", "notes"],
+      "blockTypes": ["markdown", "list", "checklist", "file-ref", "ppp-ref"]
+    }
+  },
+  "outputs": [
+    { "id": "task-card", "type": "documentation", "title": "Task card", "required": true },
+    { "id": "test-plan", "type": "test", "title": "Tests to write first", "required": true },
+    { "id": "verification", "type": "command", "title": "Verification commands", "required": true }
+  ],
+  "validations": [
+    {
+      "id": "slice-planning-review",
+      "type": "manual",
+      "title": "Slice planning review",
+      "required": true,
+      "when": "after-task",
+      "criteria": [
+        "The slice is the smallest useful change inside the active phase.",
+        "The task card includes goal, architecture context, acceptance criteria, tests to write first, non-goals, documentation updates, and verification commands.",
+        "Only one implementation direction is active; no unplanned refactors or speculative abstractions are included."
+      ]
+    }
+  ],
+  "sections": [
+    {
+      "id": "requirements",
+      "type": "requirements",
+      "title": "Slice Inputs",
+      "blocks": [
+        { "type": "markdown", "template": true, "markdown": "Plan `{{ task.input.sliceName }}` for phase `{{ task.input.phase }}`: {{ task.input.goal }}" },
+        { "type": "list", "template": true, "items": ["Candidate paths: {{ task.input.candidatePaths }}"] }
+      ]
+    },
+    {
+      "id": "instructions",
+      "type": "instructions",
+      "title": "Instructions",
+      "blocks": [
+        {
+          "type": "list",
+          "ordered": true,
+          "items": [
+            "Read docs/GOAL.md, docs/GLOSSARY.md, docs/DEVELOPMENT_WORKFLOW.md, docs/PHASED_DELIVERY_PLAN.md, docs/AGENT_SKILLS.md, docs/IMPLEMENTATION_PLAN.md, and relevant ADRs.",
+            "Define the smallest useful slice and prefer creating or updating the GitHub Issue task card when Issue work is in scope.",
+            "Identify relevant ADRs, glossary terms, architecture boundaries, non-goals, and docs updates.",
+            "Require tests or a test plan before implementation starts and keep implementation direction singular.",
+            "Preserve Resource as event-sourced aggregate root, one-Resource Action targets, one-Resource Event streams, declared External Operations, tests before implementation, docs as done, and no unplanned refactors."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "task-card-shape",
+      "type": "outputs",
+      "title": "Task Card Shape",
+      "blocks": [
+        { "type": "list", "items": ["Goal", "Architecture context", "Acceptance criteria", "Tests to write first", "Non-goals", "Documentation updates", "Verification commands"] }
+      ]
+    }
+  ]
+}

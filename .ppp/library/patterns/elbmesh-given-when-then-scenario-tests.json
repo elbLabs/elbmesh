@@ -51,7 +51,7 @@
         "type": "references",
         "title": "Source References",
         "blocks": [
-          { "type": "file-ref", "path": ".opencode/skills/elbmesh-test-writer/SKILL.md", "description": "Test writer responsibilities, preferred test shapes, and must-not rules." },
+          { "type": "file-ref", "path": ".ppp/library/tasks/elbmesh-write-failing-tests.json", "description": "Test writer responsibilities, preferred test shapes, and must-not rules." },
           { "type": "file-ref", "path": "docs/adr/0010-typed-action-errors-and-scenario-tests.md", "description": "ADR for typed Action errors and scenario tests." },
           { "type": "file-ref", "path": "docs/DEVELOPMENT_WORKFLOW.md", "description": "Test-first workflow and task card test strategy." },
           { "type": "file-ref", "path": "crates/elbmesh-core/tests/**/*.rs", "glob": true, "description": "Current Elbmesh scenario and runtime tests." }

@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 1,
+  "id": "d4e7a6b8-3c21-4f90-a2bd-5f1c8e0a7b33",
+  "slug": "task.elbmesh-coordinate-phase-work",
+  "name": "Elbmesh Coordinate Phase Work",
+  "title": "Coordinate Elbmesh Phase Work",
+  "status": "ready",
+  "version": "1.0.0",
+  "summary": "Coordinate phased GitHub Issue and PR/MR based Elbmesh delivery, including task cards, agent handoffs, queue state, quality gates, and human decision requests.",
+  "description": "Use this task for phase ownership and multi-agent coordination rather than individual slice implementation.",
+  "tags": [
+    { "tagId": "tag.language", "value": "generic" },
+    { "tagId": "tag.task-intent", "value": "validate-implementation" },
+    { "tagId": "tag.quality", "value": "boundaries" },
+    { "tagId": "tag.quality", "value": "simplicity" }
+  ],
+  "metadata": { "reusable": true, "scope": "elbmesh" },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["phase", "coordinationGoal"],
+    "properties": {
+      "phase": { "type": "string", "minLength": 1 },
+      "coordinationGoal": { "type": "string", "minLength": 1 },
+      "queueState": { "type": "string" }
+    }
+  },
+  "context": {
+    "ppp": {
+      "requiredSlugs": [
+        "principle.elbmesh-explicit-runtime-boundaries",
+        "architecture.elbmesh-event-sourced-resource-runtime",
+        "validation.elbmesh-architecture-boundary-checks",
+        "validation.elbmesh-rust-quality-gates",
+        "pattern.elbmesh-given-when-then-scenario-tests"
+      ],
+      "includeRelated": true,
+      "includeBody": true,
+      "sectionTypes": ["guidance", "rules", "constraints", "checks", "references", "notes"],
+      "blockTypes": ["markdown", "list", "checklist", "file-ref", "ppp-ref"]
+    }
+  },
+  "outputs": [
+    { "id": "phase-plan", "type": "documentation", "title": "Phase plan or queue update", "required": true },
+    { "id": "quality-gates", "type": "documentation", "title": "Quality gate status", "required": true },
+    { "id": "human-decisions", "type": "documentation", "title": "Human decision requests", "required": true }
+  ],
+  "validations": [
+    {
+      "id": "phase-coordination-review",
+      "type": "manual",
+      "title": "Phase coordination review",
+      "required": true,
+      "when": "after-task",
+      "criteria": [
+        "No implementation is planned outside the active phase or without a GitHub Issue when Issue tracking is in scope.",
+        "Parallel tasks are independent and do not conflict on traits/modules.",
+        "Every PR/MR has tests or a test plan, named errors, fmt, clippy with warnings denied once configured, cargo test, docs status, and an architecture impact note.",
+        "Human decision requests follow docs/HUMAN_DECISION_LOOP.md and include options, recommendation, consequences, and default."
+      ]
+    }
+  ],
+  "sections": [
+    {
+      "id": "requirements",
+      "type": "requirements",
+      "title": "Coordination Inputs",
+      "blocks": [
+        { "type": "markdown", "template": true, "markdown": "Coordinate phase `{{ task.input.phase }}` for: {{ task.input.coordinationGoal }}" },
+        { "type": "list", "template": true, "items": ["Queue state: {{ task.input.queueState }}"] }
+      ]
+    },
+    {
+      "id": "instructions",
+      "type": "instructions",
+      "title": "Instructions",
+      "blocks": [
+        {
+          "type": "list",
+          "ordered": true,
+          "items": [
+            "Read docs/GOAL.md, docs/GLOSSARY.md, docs/DEVELOPMENT_WORKFLOW.md, docs/HUMAN_DECISION_LOOP.md, docs/PHASED_DELIVERY_PLAN.md, docs/AGENT_SKILLS.md, docs/IMPLEMENTATION_PLAN.md, and relevant ADRs.",
+            "Select the active phase, create the next smallest GitHub Issue task card, define acceptance criteria and quality gates, and spawn Test Writer and Implementation Agents only for planned work.",
+            "Maintain MR queue entries with phase, issue, pull request, owner agent, dependencies, status, verification result, review result, merge result, follow-up tasks, and human decision requests.",
+            "Reject unplanned implementation, speculative abstractions, conflicting parallel work, and unplanned refactors inside feature MRs.",
+            "Ask the human only for domain, priority, scope, and architecture blockers covered by docs/HUMAN_DECISION_LOOP.md, using option-based requests."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "quality-gates",
+      "type": "verification",
+      "title": "MR Quality Gates",
+      "blocks": [
+        { "type": "checklist", "items": [
+          { "text": "Tests for changed behavior are present.", "required": true },
+          { "text": "Named errors exist for public/runtime failures.", "required": true },
+          { "text": "cargo fmt --check passes or blocker is recorded.", "required": true },
+          { "text": "cargo clippy --all-targets --all-features -- -D warnings passes once configured or blocker is recorded.", "required": true },
+          { "text": "cargo test --all or justified targeted command passes.", "required": true },
+          { "text": "Docs are updated or no-docs-needed is explained.", "required": true },
+          { "text": "Architecture impact note is included.", "required": true }
+        ] }
+      ]
+    }
+  ]
+}

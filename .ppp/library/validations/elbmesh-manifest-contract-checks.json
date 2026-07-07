@@ -47,7 +47,7 @@
         "blocks": [
           { "type": "file-ref", "path": "crates/elbmesh-core/src/manifest.rs", "description": "Validation implementation and named ManifestValidationError codes." },
           { "type": "file-ref", "path": "crates/elbmesh-core/tests/architecture_manifest.rs", "description": "Current tests proving manifest validation behavior." },
-          { "type": "file-ref", "path": ".opencode/skills/elbmesh-manifest-editor/SKILL.md", "description": "Manifest editor responsibilities and preservation rules." }
+          { "type": "file-ref", "path": ".ppp/library/tasks/elbmesh-update-architecture-manifest.json", "description": "Manifest editor responsibilities and preservation rules." }
         ]
       }
     ]

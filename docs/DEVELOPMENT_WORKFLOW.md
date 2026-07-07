@@ -2,7 +2,7 @@
 
 This document defines how Elbmesh should be built. The workflow is intentionally phased, MR-based, test-first, documentation-backed, and agent-friendly.
 
-The concrete agent skill catalog is maintained in [Agent Skills](AGENT_SKILLS.md). The roles in this workflow map directly to those skills.
+The concrete agent workflow catalog is maintained in [Agent Workflow Task Routes](AGENT_SKILLS.md). The roles in this workflow map directly to PPP task routes.
 
 The implementation phases are maintained in [Phased Delivery Plan](PHASED_DELIVERY_PLAN.md). Work should not start unless it belongs to an active phase and GitHub Issue task card.
 
@@ -34,7 +34,7 @@ Query = declared read capability.
 
 ### Orchestrator Agent
 
-Skill: `elbmesh-orchestrator`
+PPP task route: `task.elbmesh-coordinate-phase-work`
 
 The Orchestrator owns phases, GitHub Issue task cards, PR/MR queue, and sequencing.
 
@@ -55,7 +55,7 @@ The Orchestrator is not the same as the Implementation Agent. It coordinates the
 
 ### Driver Agent
 
-Skill: `elbmesh-driver`
+PPP task route: `task.elbmesh-plan-implementation-slice`
 
 The Driver owns the slice plan.
 
@@ -75,7 +75,7 @@ The Driver should not let implementation start until the expected behavior is ca
 
 ### Test Agent
 
-Skill: `elbmesh-test-writer`
+PPP task route: `task.elbmesh-write-failing-tests`
 
 The Test Agent writes failing tests first.
 
@@ -102,7 +102,7 @@ And these journal records exist
 
 ### Implementation Agent
 
-Skill: `elbmesh-implementer`
+PPP task route: `task.elbmesh-implement-runtime-slice`
 
 The Implementation Agent writes the smallest production code that satisfies the tests.
 
@@ -119,7 +119,7 @@ Run the required verification commands.
 
 ### Review Agent
 
-Skill: `elbmesh-reviewer`
+PPP task route: `task.elbmesh-review-change`
 
 The Review Agent checks correctness, architecture fit, and documentation drift.
 
@@ -135,7 +135,7 @@ Confirm generated or derived docs remain in sync when generation exists.
 
 ### MR Reviewer/Merger Agent
 
-Skill: `elbmesh-mr-reviewer`
+PPP task route: `task.elbmesh-review-mr-readiness`
 
 The MR Reviewer/Merger reviews complete MRs and merges only after all gates pass.
 

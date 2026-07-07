@@ -262,7 +262,7 @@ Both outputs must be generated from the same manifest and include:
 - Implementation entry points.
 - Architecture rules relevant to each Resource.
 
-The Markdown is for humans. The JSON is for agents and MCP tools. They must stay in sync because they are generated from the same source.
+The Markdown is for humans. The JSON is for agents and automation. They must stay in sync because they are generated from the same source.
 
 ## Reference App
 

@@ -2,5 +2,5 @@
   "id": "tag.quality",
   "label": "Quality",
   "valueType": "select",
-  "options": ["boundaries", "testability", "error-handling", "observability", "simplicity"]
+  "options": ["boundaries", "testability", "observability", "simplicity"]
 }

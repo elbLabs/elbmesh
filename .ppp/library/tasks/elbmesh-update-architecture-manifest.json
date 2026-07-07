@@ -89,7 +89,7 @@
       "type": "instructions",
       "title": "Instructions",
       "blocks": [
-        { "type": "list", "ordered": true, "items": ["Read the manifest editor skill, GOAL, glossary, relevant ADRs, current manifest.rs, and architecture_manifest tests.", "Identify whether the requested fields are implemented in current code or target/future contract only.", "Update the smallest manifest definitions, fixtures, or tests needed for the slice.", "Preserve schema IDs and versions unless the change explicitly requires a new version.", "Run manifest validation tests and Rust quality gates when feasible.", "Record generated binding, capability doc, RESOURCE_CAPABILITIES.md, resource-capabilities.json, or skill synchronization needs without claiming unavailable generation ran."] }
+        { "type": "list", "ordered": true, "items": ["Read the manifest update PPP task, GOAL, glossary, relevant ADRs, current manifest.rs, and architecture_manifest tests.", "Identify whether the requested fields are implemented in current code or target/future contract only.", "Update the smallest manifest definitions, fixtures, or tests needed for the slice.", "Preserve schema IDs and versions unless the change explicitly requires a new version.", "Run manifest validation tests and Rust quality gates when feasible.", "Record generated binding, capability doc, RESOURCE_CAPABILITIES.md, resource-capabilities.json, PPP task, or central route-map synchronization needs without claiming unavailable generation ran."] }
       ]
     },
     {
@@ -99,7 +99,7 @@
       "blocks": [
         { "type": "acceptance", "criteria": [
           { "id": "contract-valid", "text": "Manifest validation passes for the changed contract and fails with named errors for relevant invalid fixtures.", "required": true, "kind": "test" },
-          { "id": "sync-accounted", "text": "Docs/generated-artifact/skill synchronization is completed or explicitly recorded as not yet implemented or needing regeneration.", "required": true, "kind": "review" },
+          { "id": "sync-accounted", "text": "Docs/generated-artifact/PPP-task synchronization is completed or explicitly recorded as not yet implemented or needing regeneration.", "required": true, "kind": "review" },
           { "id": "target-vs-current", "text": "The final note distinguishes current implemented manifest checks from target/future checks.", "required": true, "kind": "review" }
         ] }
       ]

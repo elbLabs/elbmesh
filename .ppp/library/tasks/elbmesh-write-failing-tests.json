@@ -107,6 +107,7 @@
             "Choose the smallest scenario shape that proves the intended behavior or boundary rule.",
             "Write tests that express Given Events or journal state, When an Action/Reaction/Projection/Query runs, Then Events, Receipts, typed errors, journals, Views, or manifest findings are asserted.",
             "Prefer typed ActionFailure codes, ManifestValidationError codes, schema versions, metadata, Receipts, and journal record variants over string-only assertions.",
+            "Do not change architecture decisions inside test fixtures; report mismatches to the planning workflow instead.",
             "Run the targeted test command and confirm the failure is expected. If a test cannot be automated yet, document the exact gap."
           ]
         }
@@ -122,6 +123,7 @@
           "criteria": [
             { "id": "failing-first", "text": "The targeted test command fails before production implementation for the intended behavior or boundary gap.", "required": true, "kind": "test" },
             { "id": "terminology", "text": "Tests use Elbmesh Resource, Action, Event, Reaction, External Operation, View, Query, Policy, journal, manifest, or execution trace terminology consistently.", "required": true, "kind": "review" },
+            { "id": "no-fixture-decisions", "text": "Test fixtures do not change architecture decisions or mix execution failures into Resource event streams.", "required": true, "kind": "review" },
             { "id": "no-production", "text": "No production behavior is implemented beyond minimal scaffolding needed for compiling the failing tests.", "required": true, "kind": "review" }
           ]
         }

@@ -254,38 +254,39 @@ resource-capabilities.json
 
 Both must include a manifest hash and generator version to keep them in sync.
 
-### 12. Agent Skills And Architecture Checks
+### 12. Agent Workflow Task Routes And Architecture Checks
 
 Make the repository agentically usable.
 
-Canonical skill catalog:
+Canonical workflow route catalog:
 
 ```text
 docs/AGENT_SKILLS.md
 ```
 
-Skills to support:
+PPP task routes to support:
 
 ```text
-elbmesh-driver
-elbmesh-orchestrator
-elbmesh-test-writer
-elbmesh-implementer
-elbmesh-reviewer
-elbmesh-mr-reviewer
-elbmesh-doc-maintainer
-elbmesh-architecture-checker
-elbmesh-flow-explainer
-elbmesh-manifest-editor
+task.elbmesh-plan-implementation-slice
+task.elbmesh-coordinate-phase-work
+task.elbmesh-write-failing-tests
+task.elbmesh-implement-runtime-slice
+task.elbmesh-review-change
+task.elbmesh-review-mr-readiness
+task.elbmesh-maintain-docs
+task.elbmesh-check-architecture-boundaries
+task.elbmesh-explain-action-event-flow
+task.elbmesh-update-architecture-manifest
 ```
 
-Concrete project-local opencode skills:
+Concrete project PPP routing files:
 
 ```text
-.opencode/skills/*/SKILL.md
+.opencode/skills/ppp/SKILL.md
+.ppp/library/tasks/elbmesh-*.json
 ```
 
-Until generation exists, the catalog and concrete skill files must be updated together. Later, the skill files should be generated from or checked against the manifest/docs.
+Workflow-specific `elbmesh-*` OpenCode skills were migrated to PPP task bundles and removed. Update PPP tasks/items first, then keep the central PPP route map and this catalog aligned.
 
 The architecture checker should eventually become:
 

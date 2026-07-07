@@ -2,5 +2,5 @@
   "id": "tag.layer",
   "label": "Layer",
   "valueType": "select",
-  "options": ["http", "application", "domain", "infrastructure", "platform", "cross-cutting"]
+  "options": ["domain", "cross-cutting"]
 }

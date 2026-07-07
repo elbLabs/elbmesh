@@ -1,8 +1,8 @@
-# Agent Skills
+# Agent Workflow Task Routes
 
-Elbmesh should be agentically usable. Agents should not infer the architecture from source files alone. They should use explicit skills, docs, task cards, tests, and architecture checks.
+Elbmesh should be agentically usable. Agents should not infer the architecture from source files alone. They should use explicit PPP task routes, docs, task cards, tests, and architecture checks.
 
-This file is the canonical skill catalog. Concrete project-local opencode skills live under `.opencode/skills/` and must stay aligned with this catalog until generation/checking exists.
+This file is the human-readable workflow role catalog. Canonical executable guidance lives in `.ppp/library/tasks/*.json`; `.opencode/skills/ppp/SKILL.md` contains the PPP route map.
 
 ## Skill Contract
 
@@ -39,9 +39,9 @@ resource-capabilities.json
 architecture.manifest.json
 ```
 
-## Core Skill Set
+## Core Task Routes
 
-### elbmesh-orchestrator
+### `task.elbmesh-coordinate-phase-work`
 
 Purpose: own phases, GitHub Issue task cards, PR/MR queue, dependencies, and multi-agent sequencing.
 
@@ -82,7 +82,7 @@ No unplanned refactors.
 No silent architecture decisions when human input is required.
 ```
 
-### elbmesh-driver
+### `task.elbmesh-plan-implementation-slice`
 
 Purpose: define the next implementation slice and coordinate the test-first loop.
 
@@ -113,7 +113,7 @@ No hidden architecture changes.
 One active implementation direction.
 ```
 
-### elbmesh-test-writer
+### `task.elbmesh-write-failing-tests`
 
 Purpose: write failing tests before implementation.
 
@@ -152,7 +152,7 @@ Assert only string errors when typed errors are available.
 Hide missing architecture decisions inside test fixtures.
 ```
 
-### elbmesh-implementer
+### `task.elbmesh-implement-runtime-slice`
 
 Purpose: implement the smallest production change that satisfies failing tests.
 
@@ -184,7 +184,7 @@ Resource event streams contain only Resource Events.
 No unplanned refactors or speculative abstractions.
 ```
 
-### elbmesh-reviewer
+### `task.elbmesh-review-change`
 
 Purpose: review changes for correctness, architecture drift, and missing tests.
 
@@ -218,7 +218,7 @@ View rebuildability.
 Docs/index updates.
 ```
 
-### elbmesh-mr-reviewer
+### `task.elbmesh-review-mr-readiness`
 
 Purpose: review and merge phase-scoped MRs after quality gates pass.
 
@@ -252,7 +252,7 @@ No unplanned behavior or refactor is included.
 Docs and skills are updated when needed.
 ```
 
-### elbmesh-doc-maintainer
+### `task.elbmesh-maintain-docs`
 
 Purpose: keep docs, ADRs, plans, and generated docs aligned.
 
@@ -284,7 +284,7 @@ Generated docs are not edited manually once generation exists.
 Markdown and machine-readable docs must share manifest hash and generator version.
 ```
 
-### elbmesh-architecture-checker
+### `task.elbmesh-check-architecture-boundaries`
 
 Purpose: verify implementation against the architecture rules.
 
@@ -312,7 +312,7 @@ Schemas and generated docs are in sync with the manifest.
 
 This skill should eventually become the `elbmesh check-architecture` CLI command.
 
-### elbmesh-flow-explainer
+### `task.elbmesh-explain-action-event-flow`
 
 Purpose: explain how an Action or Event flows through the system.
 
@@ -339,7 +339,7 @@ Which Queries expose the result?
 
 This skill should eventually become the `elbmesh explain-flow` CLI command.
 
-### elbmesh-manifest-editor
+### `task.elbmesh-update-architecture-manifest`
 
 Purpose: safely update the architecture manifest and generated contract surfaces.
 
@@ -369,26 +369,18 @@ Declared External Operations.
 Generated docs stay in sync.
 ```
 
-## Skill Packaging
+## PPP Task Packaging
 
-Project-local opencode skill files:
+Project workflow routes:
 
 ```text
-.opencode/skills/elbmesh-driver/SKILL.md
-.opencode/skills/elbmesh-orchestrator/SKILL.md
-.opencode/skills/elbmesh-test-writer/SKILL.md
-.opencode/skills/elbmesh-implementer/SKILL.md
-.opencode/skills/elbmesh-reviewer/SKILL.md
-.opencode/skills/elbmesh-mr-reviewer/SKILL.md
-.opencode/skills/elbmesh-doc-maintainer/SKILL.md
-.opencode/skills/elbmesh-architecture-checker/SKILL.md
-.opencode/skills/elbmesh-flow-explainer/SKILL.md
-.opencode/skills/elbmesh-manifest-editor/SKILL.md
+.opencode/skills/ppp/SKILL.md
+.ppp/library/tasks/elbmesh-*.json
 ```
 
-Do not hand-maintain generated skill files once generation exists.
+The former project `elbmesh-*` OpenCode skills were migrated to PPP task bundles and removed. Do not recreate wrapper skills; route through `ppp_assemble_task_bundle` instead.
 
-Until generation exists, update this file and the matching `.opencode/skills/*/SKILL.md` file together.
+When workflow guidance changes, update the relevant `.ppp/library/tasks/*.json` file first, then keep this catalog and the central PPP route map aligned.
 
 ## Definition Of Agentically Usable
 

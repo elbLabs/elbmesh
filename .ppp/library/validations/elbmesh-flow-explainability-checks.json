@@ -26,7 +26,7 @@
       ] }
     ] },
     { "id": "references", "type": "references", "title": "Source References", "blocks": [
-      { "type": "file-ref", "path": ".opencode/skills/elbmesh-flow-explainer/SKILL.md", "description": "Agent-facing flow explanation questions and preservation rule." },
+      { "type": "file-ref", "path": ".ppp/library/tasks/elbmesh-explain-action-event-flow.json", "description": "Agent-facing flow explanation questions and preservation rule." },
       { "type": "file-ref", "path": "docs/GOAL.md", "description": "Target explain-flow CLI behavior." },
       { "type": "file-ref", "path": "docs/EXECUTION_TRACE_MODEL.md", "description": "Execution trace logical entries, gaps, overlays, and visualization targets." }
     ] }

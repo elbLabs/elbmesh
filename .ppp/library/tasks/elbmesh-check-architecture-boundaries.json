@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "id": "6c4a1f52-8b2d-4d43-9b2e-3a7f5d9c1e20",
+  "slug": "task.elbmesh-check-architecture-boundaries",
+  "name": "Elbmesh Check Architecture Boundaries",
+  "title": "Check Elbmesh Architecture Boundaries",
+  "status": "ready",
+  "version": "1.0.0",
+  "summary": "Verify an Elbmesh change against Resource, Action, Event, Reaction, External Operation, View, Query, journal, manifest, schema, and docs synchronization rules.",
+  "description": "Use this task before completion or review when a change needs an explicit architecture pass/fail summary and missing-check report.",
+  "tags": [
+    { "tagId": "tag.language", "value": "rust" },
+    { "tagId": "tag.task-intent", "value": "validate-implementation" },
+    { "tagId": "tag.quality", "value": "boundaries" },
+    { "tagId": "tag.topic", "value": "event-sourcing" }
+  ],
+  "metadata": { "reusable": true, "scope": "elbmesh" },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["changeSummary", "changedPaths"],
+    "properties": {
+      "changeSummary": { "type": "string", "minLength": 1 },
+      "changedPaths": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+      "verificationEvidence": { "type": "string" }
+    }
+  },
+  "context": {
+    "ppp": {
+      "requiredSlugs": [
+        "principle.elbmesh-explicit-runtime-boundaries",
+        "architecture.elbmesh-event-sourced-resource-runtime",
+        "architecture.elbmesh-execution-journals",
+        "architecture.elbmesh-reaction-workflow-graph",
+        "architecture.elbmesh-views-and-declared-queries",
+        "architecture.elbmesh-architecture-manifest-contract",
+        "pattern.elbmesh-declared-external-operation",
+        "validation.elbmesh-architecture-boundary-checks",
+        "validation.elbmesh-manifest-contract-checks"
+      ],
+      "includeRelated": true,
+      "includeBody": true,
+      "sectionTypes": ["guidance", "rules", "constraints", "checks", "anti-patterns", "references", "notes"],
+      "blockTypes": ["markdown", "list", "checklist", "file-ref", "ppp-ref"]
+    }
+  },
+  "outputs": [
+    { "id": "pass-fail-summary", "type": "documentation", "title": "Pass/fail summary", "required": true },
+    { "id": "findings", "type": "documentation", "title": "Findings ordered by severity", "required": true },
+    { "id": "missing-checks", "type": "documentation", "title": "Missing automated checks", "required": true }
+  ],
+  "validations": [
+    {
+      "id": "architecture-boundary-review",
+      "type": "agent",
+      "title": "Architecture boundary review",
+      "required": true,
+      "when": "after-task",
+      "context": { "ppp": { "requiredSlugs": ["validation.elbmesh-architecture-boundary-checks"], "includeBody": true } },
+      "passCriteria": [
+        "The output starts with pass/fail status and findings ordered by severity.",
+        "Every relevant Action, Event, Reaction, External Operation, View, Query, journal, and manifest boundary is checked.",
+        "Missing automated checks and required docs/tests updates are listed explicitly."
+      ]
+    }
+  ],
+  "sections": [
+    {
+      "id": "requirements",
+      "type": "requirements",
+      "title": "Check Inputs",
+      "blocks": [
+        { "type": "markdown", "template": true, "markdown": "Check architecture boundaries for: {{ task.input.changeSummary }}" },
+        { "type": "list", "template": true, "items": ["Changed paths: {{ task.input.changedPaths }}", "Verification evidence: {{ task.input.verificationEvidence }}"] }
+      ]
+    },
+    {
+      "id": "instructions",
+      "type": "instructions",
+      "title": "Instructions",
+      "blocks": [
+        {
+          "type": "list",
+          "ordered": true,
+          "items": [
+            "Read docs/GOAL.md, docs/GLOSSARY.md, docs/DEVELOPMENT_WORKFLOW.md, docs/PHASED_DELIVERY_PLAN.md, docs/AGENT_SKILLS.md, relevant ADRs, changed files, and PPP boundary guidance.",
+            "Check each Action targets exactly one Resource and each Event belongs to exactly one Resource stream.",
+            "Check Action handler uniqueness, Event apply/replay coverage, deterministic replay, and absence of external calls from replay/apply code where those surfaces are present.",
+            "Check execution failures go to typed errors or journals unless explicitly modeled as domain Events.",
+            "Check Reactions invoke Actions, Views derive from Events and are rebuildable, and external calls use declared External Operations.",
+            "Check schemas, capability docs, PPP task guidance, and the central PPP route map stay in sync with manifest/docs changes."
+          ]
+        }
+      ]
+    },
+    {
+      "id": "output-shape",
+      "type": "outputs",
+      "title": "Output Shape",
+      "blocks": [
+        { "type": "list", "items": ["Pass/fail summary", "Findings ordered by severity", "Missing automated checks", "Docs or tests that must be updated"] }
+      ]
+    }
+  ]
+}

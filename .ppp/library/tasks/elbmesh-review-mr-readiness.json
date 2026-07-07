@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "id": "e8f12a34-6b9c-4d70-8a2f-5c1e3d7b0a91",
+  "slug": "task.elbmesh-review-mr-readiness",
+  "name": "Elbmesh Review MR Readiness",
+  "title": "Review Elbmesh MR Readiness",
+  "status": "ready",
+  "version": "1.0.0",
+  "summary": "Review a phase-scoped Elbmesh PR/MR against its GitHub Issue, tests, Rust quality gates, named error rules, documentation, and architecture boundaries before merge.",
+  "description": "Use this task for final merge/change-request decisions. Use the general review-change task for non-final code review.",
+  "tags": [
+    { "tagId": "tag.language", "value": "rust" },
+    { "tagId": "tag.task-intent", "value": "review" },
+    { "tagId": "tag.quality", "value": "boundaries" },
+    { "tagId": "tag.quality", "value": "testability" }
+  ],
+  "metadata": { "reusable": true, "scope": "elbmesh" },
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["mrSummary", "issueReference", "changedPaths", "verificationEvidence"],
+    "properties": {
+      "mrSummary": { "type": "string", "minLength": 1 },
+      "issueReference": { "type": "string", "minLength": 1 },
+      "changedPaths": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+      "verificationEvidence": { "type": "string", "minLength": 1 }
+    }
+  },
+  "context": {
+    "ppp": {
+      "requiredSlugs": [
+        "principle.elbmesh-explicit-runtime-boundaries",
+        "architecture.elbmesh-event-sourced-resource-runtime",
+        "architecture.elbmesh-architecture-manifest-contract",
+        "validation.elbmesh-architecture-boundary-checks",
+        "validation.elbmesh-manifest-contract-checks",
+        "validation.elbmesh-rust-quality-gates",
+        "pattern.elbmesh-given-when-then-scenario-tests"
+      ],
+      "includeRelated": true,
+      "includeBody": true,
+      "sectionTypes": ["guidance", "rules", "constraints", "checks", "anti-patterns", "references", "notes"],
+      "blockTypes": ["markdown", "list", "checklist", "file-ref", "ppp-ref"]
+    }
+  },
+  "outputs": [
+    { "id": "findings", "type": "documentation", "title": "Findings ordered by severity", "required": true },
+    { "id": "quality-gate-status", "type": "documentation", "title": "Quality gate status", "required": true },
+    { "id": "merge-decision", "type": "documentation", "title": "Merge or change-request decision", "required": true },
+    { "id": "follow-ups", "type": "documentation", "title": "Required follow-up tasks and residual risks", "required": true }
+  ],
+  "validations": [
+    {
+      "id": "merge-readiness-review",
+      "type": "agent",
+      "title": "Merge readiness review",
+      "required": true,
+      "when": "after-task",
+      "context": { "ppp": { "requiredSlugs": ["validation.elbmesh-architecture-boundary-checks", "validation.elbmesh-rust-quality-gates"], "includeBody": true } },
+      "passCriteria": [
+        "The MR matches the active phase and GitHub Issue, and links or closes its Issue where applicable.",
+        "Tests exist for every changed behavior and were written before implementation or the exception is explained.",
+        "Formatting, clippy, tests, named framework/runtime errors, and ActionFailure domain errors are checked.",
+        "Resource/Action/Event/Reaction/View/External Operation boundaries and docs/PPP guidance updates are checked.",
+        "The decision is merge only when all gates pass; otherwise request changes."
+      ]
+    }
+  ],
+  "sections": [
+    {
+      "id": "requirements",
+      "type": "requirements",
+      "title": "MR Inputs",
+      "blocks": [
+        { "type": "markdown", "template": true, "markdown": "Review MR readiness for: {{ task.input.mrSummary }}" },
+        { "type": "list", "template": true, "items": ["Issue: {{ task.input.issueReference }}", "Changed paths: {{ task.input.changedPaths }}", "Verification evidence: {{ task.input.verificationEvidence }}"] }
+      ]
+    },
+    {
+      "id": "instructions",
+      "type": "instructions",
+      "title": "Instructions",
+      "blocks": [
+        {
+          "type": "list",
+          "ordered": true,
+          "items": [
+            "Read docs/GOAL.md, docs/GLOSSARY.md, docs/DEVELOPMENT_WORKFLOW.md, docs/PHASED_DELIVERY_PLAN.md, docs/AGENT_SKILLS.md, docs/IMPLEMENTATION_PLAN.md, relevant ADRs, the Issue, MR diff, tests, and verification evidence.",
+            "Report findings first, ordered by severity, then quality gate status, merge/change-request decision, follow-up tasks, and residual risks.",
+            "Check the MR matches its active phase and GitHub Issue, links or closes the Issue, and contains no unplanned behavior or unrelated refactors.",
+            "Check tests for every changed behavior, Rust quality gates, named error types, and ActionFailure domain errors where relevant.",
+            "Reject merge if any quality gate fails, scope is unplanned, docs are missing, or architecture drift is unresolved."
+          ]
+        }
+      ]
+    }
+  ]
+}
