@@ -26,7 +26,7 @@ async fn offer_accepted_reaction_executes_create_sales_order_through_action_exec
     let trigger = offer_accepted_recorded_event("offer-1");
 
     let receipt = runtime
-        .execute(
+        .execute_with_metadata(
             &trigger,
             &OfferAcceptedCreatesSalesOrder,
             reaction_action_metadata("create-sales-order-action-1"),
@@ -76,7 +76,7 @@ async fn matching_reaction_records_triggered_and_completed_journal_records() {
     let trigger = offer_accepted_recorded_event("offer-1");
 
     let receipt = runtime
-        .execute(
+        .execute_with_metadata(
             &trigger,
             &OfferAcceptedCreatesSalesOrder,
             reaction_action_metadata("create-sales-order-action-1"),
@@ -131,6 +131,90 @@ async fn matching_reaction_records_triggered_and_completed_journal_records() {
 }
 
 #[tokio::test]
+async fn default_reaction_execution_uses_deterministic_action_id() {
+    let reaction_journal = InMemoryReactionJournal::new();
+    let runtime = ReactionRuntime::new(InMemoryEventStore::new(), reaction_journal.clone());
+    let trigger = offer_accepted_recorded_event("offer-1");
+    let expected_action_id =
+        deterministic_reaction_action_id::<OfferAcceptedCreatesSalesOrder>(&trigger);
+
+    let receipt = runtime
+        .execute(&trigger, &OfferAcceptedCreatesSalesOrder)
+        .await
+        .expect("reaction should execute")
+        .expect("matching event should trigger reaction");
+
+    assert_eq!(receipt.action_receipt.action_id, expected_action_id);
+    assert_sales_order_created(
+        runtime.event_store(),
+        "sales-order-for-offer-1",
+        &expected_action_id,
+    )
+    .await;
+    assert_reaction_journal_records(
+        &reaction_journal,
+        &receipt.reaction_id,
+        "offer_accepted_to_create_sales_order",
+        &expected_action_id,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn same_reaction_retry_uses_same_deterministic_action_id() {
+    let trigger = offer_accepted_recorded_event("offer-1");
+    let first_runtime =
+        ReactionRuntime::new(InMemoryEventStore::new(), InMemoryReactionJournal::new());
+    let second_runtime =
+        ReactionRuntime::new(InMemoryEventStore::new(), InMemoryReactionJournal::new());
+
+    let first_receipt = first_runtime
+        .execute(&trigger, &OfferAcceptedCreatesSalesOrder)
+        .await
+        .expect("first reaction should execute")
+        .expect("matching event should trigger first reaction");
+    let second_receipt = second_runtime
+        .execute(&trigger, &OfferAcceptedCreatesSalesOrder)
+        .await
+        .expect("retry reaction should execute")
+        .expect("matching event should trigger retry reaction");
+
+    assert_eq!(
+        first_receipt.action_receipt.action_id,
+        second_receipt.action_receipt.action_id
+    );
+}
+
+#[test]
+fn deterministic_reaction_action_id_distinguishes_reaction_type_and_trigger_event() {
+    let trigger = offer_accepted_recorded_event("offer-1");
+    let mut later_trigger = offer_accepted_recorded_event("offer-2");
+    later_trigger.metadata.message_id = "offer-accepted-event-2".to_string();
+
+    let action_id = deterministic_reaction_action_id::<OfferAcceptedCreatesSalesOrder>(&trigger);
+    let follow_up_action_id =
+        deterministic_reaction_action_id::<OfferAcceptedCreatesFollowUpSalesOrder>(&trigger);
+    let later_action_id =
+        deterministic_reaction_action_id::<OfferAcceptedCreatesSalesOrder>(&later_trigger);
+
+    assert_ne!(action_id, follow_up_action_id);
+    assert_ne!(action_id, later_action_id);
+}
+
+#[test]
+fn deterministic_reaction_action_id_uses_structured_identity_not_delimiters() {
+    let mut left_trigger = offer_accepted_recorded_event("offer-1");
+    left_trigger.metadata.message_id = "c".to_string();
+    let mut right_trigger = offer_accepted_recorded_event("offer-1");
+    right_trigger.metadata.message_id = "b:c".to_string();
+
+    let left_action_id = deterministic_reaction_action_id::<ColonReactionType>(&left_trigger);
+    let right_action_id = deterministic_reaction_action_id::<ColonTriggerEventId>(&right_trigger);
+
+    assert_ne!(left_action_id, right_action_id);
+}
+
+#[tokio::test]
 async fn non_matching_event_is_ignored_without_resource_events_or_reaction_journal_records() {
     let reaction_journal = InMemoryReactionJournal::new();
     let runtime = ReactionRuntime::new(InMemoryEventStore::new(), reaction_journal.clone());
@@ -141,7 +225,7 @@ async fn non_matching_event_is_ignored_without_resource_events_or_reaction_journ
         >(&trigger);
 
     let receipt = runtime
-        .execute(
+        .execute_with_metadata(
             &trigger,
             &OfferAcceptedCreatesSalesOrder,
             reaction_action_metadata("create-sales-order-action-1"),
@@ -171,7 +255,7 @@ async fn matching_event_type_from_non_resource_stream_is_ignored() {
         >(&trigger);
 
     let receipt = runtime
-        .execute(
+        .execute_with_metadata(
             &trigger,
             &OfferAcceptedCreatesSalesOrder,
             reaction_action_metadata("create-sales-order-action-1"),
@@ -542,6 +626,46 @@ impl Reaction for OfferAcceptedCreatesFollowUpSalesOrder {
     }
 }
 
+struct ColonReactionType;
+
+#[async_trait]
+impl Reaction for ColonReactionType {
+    type Trigger = OfferAcceptedV1;
+    type Resource = SalesOrder;
+    type Action = CreateSalesOrderV1;
+
+    const REACTION_TYPE: &'static str = "a:b";
+    const SCHEMA_ID: &'static str = "reaction.colon_reaction_type.v1";
+    const SCHEMA_VERSION: u32 = 1;
+
+    async fn react(&self, event: Self::Trigger) -> Self::Action {
+        CreateSalesOrderV1 {
+            sales_order_id: format!("colon-reaction-type-for-{}", event.offer_id),
+            offer_id: event.offer_id,
+        }
+    }
+}
+
+struct ColonTriggerEventId;
+
+#[async_trait]
+impl Reaction for ColonTriggerEventId {
+    type Trigger = OfferAcceptedV1;
+    type Resource = SalesOrder;
+    type Action = CreateSalesOrderV1;
+
+    const REACTION_TYPE: &'static str = "a";
+    const SCHEMA_ID: &'static str = "reaction.colon_trigger_event_id.v1";
+    const SCHEMA_VERSION: u32 = 1;
+
+    async fn react(&self, event: Self::Trigger) -> Self::Action {
+        CreateSalesOrderV1 {
+            sales_order_id: format!("colon-trigger-event-id-for-{}", event.offer_id),
+            offer_id: event.offer_id,
+        }
+    }
+}
+
 async fn assert_sales_order_created(
     event_store: &InMemoryEventStore,
     sales_order_id: &str,
@@ -688,5 +812,14 @@ fn reaction_action_metadata(action_id: &str) -> ActionMetadata {
         "correlation-offer-accepted",
         "offer-accepted-event-1",
         "reaction-runtime",
+    )
+}
+
+fn deterministic_reaction_action_id<Rxn>(trigger: &RecordedEvent) -> String
+where
+    Rxn: Reaction,
+{
+    ReactionRuntime::<InMemoryEventStore, InMemoryReactionJournal>::reaction_action_id::<Rxn>(
+        trigger,
     )
 }

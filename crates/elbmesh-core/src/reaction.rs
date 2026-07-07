@@ -91,10 +91,63 @@ where
     where
         Rxn: Reaction,
     {
-        format!("{}:{}", Rxn::REACTION_TYPE, trigger.metadata.message_id)
+        format!(
+            "reaction:{}",
+            deterministic_identity(&[
+                ("reaction_type", Rxn::REACTION_TYPE),
+                ("trigger_event_id", &trigger.metadata.message_id),
+            ])
+        )
+    }
+
+    pub fn reaction_action_id<Rxn>(trigger: &RecordedEvent) -> String
+    where
+        Rxn: Reaction,
+    {
+        format!(
+            "reaction_action:{}",
+            deterministic_identity(&[
+                ("reaction_type", Rxn::REACTION_TYPE),
+                ("trigger_event_id", &trigger.metadata.message_id),
+                ("action_type", <Rxn::Action as ActionTrait>::ACTION_TYPE),
+            ])
+        )
+    }
+
+    pub fn reaction_action_metadata<Rxn>(trigger: &RecordedEvent) -> ActionMetadata
+    where
+        Rxn: Reaction,
+    {
+        ActionMetadata::with_ids(
+            Self::reaction_action_id::<Rxn>(trigger),
+            trigger.metadata.correlation_id.clone(),
+            trigger.metadata.message_id.clone(),
+            trigger.metadata.actor_id.clone(),
+        )
     }
 
     pub async fn execute<Rxn>(
+        &self,
+        trigger: &RecordedEvent,
+        reaction: &Rxn,
+    ) -> Result<
+        Option<ReactionReceipt>,
+        ReactionExecutionError<
+            <<Rxn as Reaction>::Resource as Handle<<Rxn as Reaction>::Action>>::Error,
+        >,
+    >
+    where
+        Rxn: Reaction,
+    {
+        self.execute_with_metadata(
+            trigger,
+            reaction,
+            Self::reaction_action_metadata::<Rxn>(trigger),
+        )
+        .await
+    }
+
+    pub async fn execute_with_metadata<Rxn>(
         &self,
         trigger: &RecordedEvent,
         reaction: &Rxn,
@@ -219,7 +272,7 @@ where
         let action_metadata = (self.action_metadata)(trigger);
 
         runtime
-            .execute(trigger, &self.reaction, action_metadata)
+            .execute_with_metadata(trigger, &self.reaction, action_metadata)
             .await
             .map_err(reaction_dispatch_failure::<Rxn>)
     }
@@ -491,6 +544,10 @@ where
         && trigger.metadata.schema_version == E::SCHEMA_VERSION
         && trigger.metadata.resource_type == E::Resource::RESOURCE_TYPE
         && trigger.metadata.stream_type == StreamType::Resource
+}
+
+fn deterministic_identity(parts: &[(&str, &str)]) -> String {
+    serde_json::to_string(parts).expect("deterministic identity parts should serialize")
 }
 
 fn reaction_journal_metadata(
