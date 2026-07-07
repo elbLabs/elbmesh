@@ -167,6 +167,8 @@ fn reaction_triggered_record(reaction_id: &str, offer_id: &str) -> ReactionJourn
             offer_id,
         ),
         reaction_type: "offer_accepted_to_create_sales_order".to_string(),
+        reaction_schema_id: "reaction.offer_accepted_to_create_sales_order.v1".to_string(),
+        reaction_schema_version: 1,
         trigger_event_type: "offer_accepted".to_string(),
         trigger_event_id: "offer-accepted-event-1".to_string(),
     }
@@ -181,7 +183,7 @@ fn reaction_completed_record(reaction_id: &str, offer_id: &str) -> ReactionJourn
             reaction_id,
             offer_id,
         ),
-        triggered_action_ids: vec!["create-sales-order-action-1".to_string()],
+        triggered_action_id: "create-sales-order-action-1".to_string(),
     }
 }
 
@@ -218,12 +220,19 @@ fn assert_reaction_triggered_record(
             reaction_id: actual_reaction_id,
             metadata,
             reaction_type,
+            reaction_schema_id,
+            reaction_schema_version,
             trigger_event_type,
             trigger_event_id,
         } => {
             assert_eq!(actual_reaction_id, reaction_id);
             assert_reaction_record_metadata(metadata, "reaction_triggered", reaction_id, offer_id);
             assert_eq!(reaction_type, "offer_accepted_to_create_sales_order");
+            assert_eq!(
+                reaction_schema_id,
+                "reaction.offer_accepted_to_create_sales_order.v1"
+            );
+            assert_eq!(*reaction_schema_version, 1);
             assert_eq!(trigger_event_type, "offer_accepted");
             assert_eq!(trigger_event_id, "offer-accepted-event-1");
         }
@@ -240,11 +249,11 @@ fn assert_reaction_completed_record(
         ReactionJournalRecord::ReactionCompleted {
             reaction_id: actual_reaction_id,
             metadata,
-            triggered_action_ids,
+            triggered_action_id,
         } => {
             assert_eq!(actual_reaction_id, reaction_id);
             assert_reaction_record_metadata(metadata, "reaction_completed", reaction_id, offer_id);
-            assert_eq!(triggered_action_ids, &["create-sales-order-action-1"]);
+            assert_eq!(triggered_action_id, "create-sales-order-action-1");
         }
         other => panic!("expected ReactionCompleted record, got {other:?}"),
     }
