@@ -5,6 +5,7 @@ mod action_journal;
 mod error;
 mod manifest;
 mod message;
+mod reaction_journal;
 mod runtime;
 mod store;
 mod testing;
@@ -27,6 +28,10 @@ pub use manifest::{
 pub use message::{
     ActionDecision, ActionMetadata, ActionReceipt, ActionStatus, EmittedEvent, MessageMetadata,
     NewEvent, RecordedEvent, ResourceStream, StreamType,
+};
+pub use reaction_journal::{
+    InMemoryReactionJournal, ReactionJournal, ReactionJournalError, ReactionJournalRecord,
+    ReactionJournalStream,
 };
 pub use runtime::{ActionContext, ActionExecutor};
 pub use store::{AppendResult, EventStore, ExpectedVersion, InMemoryEventStore};
