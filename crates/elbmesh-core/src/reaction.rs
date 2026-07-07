@@ -1,11 +1,13 @@
 use async_trait::async_trait;
 use chrono::Utc;
+use serde_json::{json, Value};
 use thiserror::Error;
 
 use crate::{
-    Action as ActionTrait, ActionExecutor, ActionFailure, ActionMetadata, ActionReceipt, Event,
-    EventStore, ExecutionError, Handle, MessageMetadata, ReactionJournal, ReactionJournalError,
-    ReactionJournalRecord, ReactionJournalStream, RecordedEvent, Resource, StreamType,
+    Action as ActionTrait, ActionError, ActionExecutor, ActionFailure, ActionJournalError,
+    ActionMetadata, ActionReceipt, Event, EventStore, EventStoreError, ExecutionError, Handle,
+    HandlerError, MessageMetadata, ReactionJournal, ReactionJournalError, ReactionJournalRecord,
+    ReactionJournalStream, RecordedEvent, Resource, ResourceError, StreamType,
 };
 
 #[async_trait]
@@ -46,6 +48,22 @@ where
 
     #[error(transparent)]
     Action(#[from] ExecutionError<E>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReactionDispatchFailure {
+    pub reaction_type: String,
+    pub failure_code: String,
+    pub failure_details: Value,
+}
+
+#[derive(Debug, Error, PartialEq)]
+pub enum ReactionDispatchError {
+    #[error("reaction dispatch failed for one or more handlers")]
+    HandlerFailures {
+        receipts: Vec<ReactionReceipt>,
+        failures: Vec<ReactionDispatchFailure>,
+    },
 }
 
 pub struct ReactionRuntime<S, J> {
@@ -151,6 +169,316 @@ where
             reaction_id,
             action_receipt,
         }))
+    }
+}
+
+#[async_trait]
+trait EventReactionHandler<S, J>: Send + Sync + 'static
+where
+    S: EventStore,
+    J: ReactionJournal,
+{
+    async fn handle(
+        &self,
+        runtime: &ReactionRuntime<S, J>,
+        trigger: &RecordedEvent,
+    ) -> Result<Option<ReactionReceipt>, ReactionDispatchFailure>;
+}
+
+pub struct TypedReactionHandler<Rxn, F> {
+    reaction: Rxn,
+    action_metadata: F,
+}
+
+impl<Rxn, F> TypedReactionHandler<Rxn, F> {
+    pub fn new(reaction: Rxn, action_metadata: F) -> Self {
+        Self {
+            reaction,
+            action_metadata,
+        }
+    }
+}
+
+#[async_trait]
+impl<S, J, Rxn, F> EventReactionHandler<S, J> for TypedReactionHandler<Rxn, F>
+where
+    S: EventStore,
+    J: ReactionJournal,
+    Rxn: Reaction,
+    F: for<'a> Fn(&'a RecordedEvent) -> ActionMetadata + Send + Sync + 'static,
+{
+    async fn handle(
+        &self,
+        runtime: &ReactionRuntime<S, J>,
+        trigger: &RecordedEvent,
+    ) -> Result<Option<ReactionReceipt>, ReactionDispatchFailure> {
+        if !matches_trigger::<Rxn::Trigger>(trigger) {
+            return Ok(None);
+        }
+
+        let action_metadata = (self.action_metadata)(trigger);
+
+        runtime
+            .execute(trigger, &self.reaction, action_metadata)
+            .await
+            .map_err(reaction_dispatch_failure::<Rxn>)
+    }
+}
+
+pub struct ReactionDispatcher<S, J> {
+    runtime: ReactionRuntime<S, J>,
+    handlers: Vec<Box<dyn EventReactionHandler<S, J>>>,
+}
+
+impl<S, J> ReactionDispatcher<S, J>
+where
+    S: EventStore,
+    J: ReactionJournal,
+{
+    pub fn new(runtime: ReactionRuntime<S, J>) -> Self {
+        Self {
+            runtime,
+            handlers: Vec::new(),
+        }
+    }
+
+    pub fn event_store(&self) -> &S {
+        self.runtime.event_store()
+    }
+
+    pub fn with_handler<Rxn, F>(mut self, handler: TypedReactionHandler<Rxn, F>) -> Self
+    where
+        Rxn: Reaction,
+        F: for<'a> Fn(&'a RecordedEvent) -> ActionMetadata + Send + Sync + 'static,
+    {
+        self.handlers.push(Box::new(handler));
+        self
+    }
+
+    pub async fn dispatch(
+        &self,
+        trigger: &RecordedEvent,
+    ) -> Result<Vec<ReactionReceipt>, ReactionDispatchError> {
+        let mut receipts = Vec::new();
+        let mut failures = Vec::new();
+
+        for handler in &self.handlers {
+            match handler.handle(&self.runtime, trigger).await {
+                Ok(Some(receipt)) => receipts.push(receipt),
+                Ok(None) => {}
+                Err(failure) => failures.push(failure),
+            }
+        }
+
+        if failures.is_empty() {
+            Ok(receipts)
+        } else {
+            Err(ReactionDispatchError::HandlerFailures { receipts, failures })
+        }
+    }
+}
+
+fn reaction_dispatch_failure<Rxn>(
+    error: ReactionExecutionError<
+        <<Rxn as Reaction>::Resource as Handle<<Rxn as Reaction>::Action>>::Error,
+    >,
+) -> ReactionDispatchFailure
+where
+    Rxn: Reaction,
+{
+    ReactionDispatchFailure {
+        reaction_type: Rxn::REACTION_TYPE.to_string(),
+        failure_code: reaction_execution_failure_code(&error).to_string(),
+        failure_details: reaction_execution_failure_details(&error),
+    }
+}
+
+fn reaction_execution_failure_code<E>(error: &ReactionExecutionError<E>) -> &'static str
+where
+    E: ActionFailure,
+{
+    match error {
+        ReactionExecutionError::TriggerEventDeserialization { .. } => {
+            "reaction.trigger_event_deserialization"
+        }
+        ReactionExecutionError::ReactionJournal(_) => "reaction.journal_error",
+        ReactionExecutionError::Action(ExecutionError::Handler(HandlerError::Domain { error })) => {
+            error.code()
+        }
+        ReactionExecutionError::Action(ExecutionError::Handler(HandlerError::Runtime(error))) => {
+            error.code()
+        }
+        ReactionExecutionError::Action(ExecutionError::Resource(_)) => {
+            "reaction.action_resource_error"
+        }
+        ReactionExecutionError::Action(ExecutionError::EventStore(_)) => {
+            "reaction.action_event_store_error"
+        }
+        ReactionExecutionError::Action(ExecutionError::ActionJournal(_)) => {
+            "reaction.action_journal_error"
+        }
+    }
+}
+
+fn reaction_execution_failure_details<E>(error: &ReactionExecutionError<E>) -> Value
+where
+    E: ActionFailure,
+{
+    match error {
+        ReactionExecutionError::TriggerEventDeserialization {
+            message_type,
+            schema_version,
+            ..
+        } => json!({
+            "message_type": message_type,
+            "schema_version": schema_version,
+        }),
+        ReactionExecutionError::ReactionJournal(error) => reaction_journal_error_details(error),
+        ReactionExecutionError::Action(ExecutionError::Handler(HandlerError::Domain { error })) => {
+            error.details()
+        }
+        ReactionExecutionError::Action(ExecutionError::Handler(HandlerError::Runtime(error))) => {
+            action_error_details(error)
+        }
+        ReactionExecutionError::Action(ExecutionError::Resource(error)) => {
+            resource_error_details(error)
+        }
+        ReactionExecutionError::Action(ExecutionError::EventStore(error)) => {
+            event_store_error_details(error)
+        }
+        ReactionExecutionError::Action(ExecutionError::ActionJournal(error)) => {
+            action_journal_error_details(error)
+        }
+    }
+}
+
+fn action_error_details(error: &ActionError) -> Value {
+    match error {
+        ActionError::Rejected { reason } => json!({
+            "error_type": "ActionError",
+            "error_variant": "Rejected",
+            "reason": reason,
+        }),
+        ActionError::Validation { reason } => json!({
+            "error_type": "ActionError",
+            "error_variant": "Validation",
+            "reason": reason,
+        }),
+        ActionError::ExternalOperation { reason } => json!({
+            "error_type": "ActionError",
+            "error_variant": "ExternalOperation",
+            "reason": reason,
+        }),
+        ActionError::StateTransition { reason } => json!({
+            "error_type": "ActionError",
+            "error_variant": "StateTransition",
+            "reason": reason,
+        }),
+        ActionError::Serialization(reason) => json!({
+            "error_type": "ActionError",
+            "error_variant": "Serialization",
+            "reason": reason,
+        }),
+        ActionError::WrongResource { expected, actual } => json!({
+            "error_type": "ActionError",
+            "error_variant": "WrongResource",
+            "expected": expected,
+            "actual": actual,
+        }),
+        ActionError::Other(reason) => json!({
+            "error_type": "ActionError",
+            "error_variant": "Other",
+            "reason": reason,
+        }),
+    }
+}
+
+fn resource_error_details(error: &ResourceError) -> Value {
+    match error {
+        ResourceError::UnsupportedEvent {
+            resource_type,
+            message_type,
+            schema_version,
+        } => json!({
+            "error_type": "ResourceError",
+            "error_variant": "UnsupportedEvent",
+            "resource_type": resource_type,
+            "message_type": message_type,
+            "schema_version": schema_version,
+        }),
+        ResourceError::Deserialization {
+            message_type,
+            schema_version,
+            source,
+        } => json!({
+            "error_type": "ResourceError",
+            "error_variant": "Deserialization",
+            "message_type": message_type,
+            "schema_version": schema_version,
+            "source": source.to_string(),
+        }),
+        ResourceError::Apply(reason) => json!({
+            "error_type": "ResourceError",
+            "error_variant": "Apply",
+            "reason": reason,
+        }),
+    }
+}
+
+fn event_store_error_details(error: &EventStoreError) -> Value {
+    match error {
+        EventStoreError::ConcurrencyConflict {
+            stream,
+            expected,
+            actual,
+        } => json!({
+            "error_type": "EventStoreError",
+            "error_variant": "ConcurrencyConflict",
+            "stream": stream,
+            "expected": expected,
+            "actual": actual,
+        }),
+        EventStoreError::Other(reason) => json!({
+            "error_type": "EventStoreError",
+            "error_variant": "Other",
+            "reason": reason,
+        }),
+    }
+}
+
+fn action_journal_error_details(error: &ActionJournalError) -> Value {
+    match error {
+        ActionJournalError::WrongActionStream {
+            expected_action_id,
+            actual_action_id,
+        } => json!({
+            "error_type": "ActionJournalError",
+            "error_variant": "WrongActionStream",
+            "expected_action_id": expected_action_id,
+            "actual_action_id": actual_action_id,
+        }),
+        ActionJournalError::StoragePoisoned => json!({
+            "error_type": "ActionJournalError",
+            "error_variant": "StoragePoisoned",
+        }),
+    }
+}
+
+fn reaction_journal_error_details(error: &ReactionJournalError) -> Value {
+    match error {
+        ReactionJournalError::WrongReactionStream {
+            expected_reaction_id,
+            actual_reaction_id,
+        } => json!({
+            "error_type": "ReactionJournalError",
+            "error_variant": "WrongReactionStream",
+            "expected_reaction_id": expected_reaction_id,
+            "actual_reaction_id": actual_reaction_id,
+        }),
+        ReactionJournalError::StoragePoisoned => json!({
+            "error_type": "ReactionJournalError",
+            "error_variant": "StoragePoisoned",
+        }),
     }
 }
 

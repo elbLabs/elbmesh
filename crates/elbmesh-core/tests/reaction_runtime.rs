@@ -2,15 +2,22 @@ use async_trait::async_trait;
 
 use elbmesh_core::{
     apply_recorded_event, Action, ActionContext, ActionDecision, ActionFailure, ActionMetadata,
-    Apply, Event, EventStore, Handle, HandlerError, InMemoryEventStore, InMemoryReactionJournal,
-    Reaction, ReactionJournal, ReactionJournalRecord, ReactionJournalStream, ReactionRuntime,
-    RecordedEvent, Resource, ResourceError, ResourceStream, StreamType,
+    Apply, Event, EventStore, ExpectedVersion, Handle, HandlerError, InMemoryEventStore,
+    InMemoryReactionJournal, NewEvent, Reaction, ReactionDispatchError, ReactionDispatcher,
+    ReactionJournal, ReactionJournalRecord, ReactionJournalStream, ReactionRuntime, RecordedEvent,
+    Resource, ResourceError, ResourceStream, StreamType, TypedReactionHandler,
 };
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use std::fmt;
+use std::{
+    fmt,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+};
 
 #[tokio::test]
 async fn offer_accepted_reaction_executes_create_sales_order_through_action_executor() {
@@ -182,6 +189,171 @@ async fn matching_event_type_from_non_resource_stream_is_ignored() {
     assert!(records.is_empty());
 }
 
+#[tokio::test]
+async fn one_event_dispatches_to_multiple_matching_reaction_handlers() {
+    let reaction_journal = InMemoryReactionJournal::new();
+    let dispatcher = ReactionDispatcher::new(ReactionRuntime::new(
+        InMemoryEventStore::new(),
+        reaction_journal.clone(),
+    ))
+    .with_handler(TypedReactionHandler::new(
+        OfferAcceptedCreatesSalesOrder,
+        |_: &RecordedEvent| reaction_action_metadata("create-sales-order-action-1"),
+    ))
+    .with_handler(TypedReactionHandler::new(
+        OfferAcceptedCreatesFollowUpSalesOrder,
+        |_: &RecordedEvent| reaction_action_metadata("create-follow-up-sales-order-action-1"),
+    ));
+    let trigger = offer_accepted_recorded_event("offer-1");
+
+    let receipts = dispatcher
+        .dispatch(&trigger)
+        .await
+        .expect("dispatch should succeed");
+
+    assert_eq!(receipts.len(), 2);
+    assert_eq!(
+        receipts[0].action_receipt.action_id,
+        "create-sales-order-action-1"
+    );
+    assert_eq!(
+        receipts[1].action_receipt.action_id,
+        "create-follow-up-sales-order-action-1"
+    );
+
+    assert_sales_order_created(
+        dispatcher.event_store(),
+        "sales-order-for-offer-1",
+        "create-sales-order-action-1",
+    )
+    .await;
+    assert_sales_order_created(
+        dispatcher.event_store(),
+        "follow-up-sales-order-for-offer-1",
+        "create-follow-up-sales-order-action-1",
+    )
+    .await;
+
+    assert_reaction_journal_records(
+        &reaction_journal,
+        &receipts[0].reaction_id,
+        "offer_accepted_to_create_sales_order",
+        "create-sales-order-action-1",
+    )
+    .await;
+    assert_reaction_journal_records(
+        &reaction_journal,
+        &receipts[1].reaction_id,
+        "offer_accepted_to_create_follow_up_sales_order",
+        "create-follow-up-sales-order-action-1",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn multiple_reaction_dispatch_ignores_non_matching_event_without_side_effects() {
+    let reaction_journal = InMemoryReactionJournal::new();
+    let metadata_calls = Arc::new(AtomicUsize::new(0));
+    let primary_metadata_calls = metadata_calls.clone();
+    let follow_up_metadata_calls = metadata_calls.clone();
+    let dispatcher = ReactionDispatcher::new(ReactionRuntime::new(
+        InMemoryEventStore::new(),
+        reaction_journal.clone(),
+    ))
+    .with_handler(TypedReactionHandler::new(
+        OfferAcceptedCreatesSalesOrder,
+        move |_: &RecordedEvent| {
+            primary_metadata_calls.fetch_add(1, Ordering::SeqCst);
+            reaction_action_metadata("create-sales-order-action-1")
+        },
+    ))
+    .with_handler(TypedReactionHandler::new(
+        OfferAcceptedCreatesFollowUpSalesOrder,
+        move |_: &RecordedEvent| {
+            follow_up_metadata_calls.fetch_add(1, Ordering::SeqCst);
+            reaction_action_metadata("create-follow-up-sales-order-action-1")
+        },
+    ));
+    let trigger = offer_created_recorded_event("offer-1");
+
+    let receipts = dispatcher
+        .dispatch(&trigger)
+        .await
+        .expect("dispatch should ignore non-matching events");
+
+    assert!(receipts.is_empty());
+    assert!(dispatcher.event_store().all_events().is_empty());
+    assert_eq!(metadata_calls.load(Ordering::SeqCst), 0);
+
+    let primary_reaction_id =
+        ReactionRuntime::<InMemoryEventStore, InMemoryReactionJournal>::reaction_id::<
+            OfferAcceptedCreatesSalesOrder,
+        >(&trigger);
+    let follow_up_reaction_id =
+        ReactionRuntime::<InMemoryEventStore, InMemoryReactionJournal>::reaction_id::<
+            OfferAcceptedCreatesFollowUpSalesOrder,
+        >(&trigger);
+
+    assert!(reaction_journal
+        .load(&ReactionJournalStream::for_reaction(primary_reaction_id))
+        .await
+        .expect("load primary reaction journal")
+        .is_empty());
+    assert!(reaction_journal
+        .load(&ReactionJournalStream::for_reaction(follow_up_reaction_id))
+        .await
+        .expect("load follow-up reaction journal")
+        .is_empty());
+}
+
+#[tokio::test]
+async fn multiple_reaction_dispatch_continues_after_one_handler_fails() {
+    let event_store = InMemoryEventStore::new();
+    append_existing_sales_order(&event_store, "sales-order-for-offer-1", "offer-1").await;
+    let reaction_journal = InMemoryReactionJournal::new();
+    let dispatcher =
+        ReactionDispatcher::new(ReactionRuntime::new(event_store.clone(), reaction_journal))
+            .with_handler(TypedReactionHandler::new(
+                OfferAcceptedCreatesSalesOrder,
+                |_: &RecordedEvent| reaction_action_metadata("create-sales-order-action-1"),
+            ))
+            .with_handler(TypedReactionHandler::new(
+                OfferAcceptedCreatesFollowUpSalesOrder,
+                |_: &RecordedEvent| {
+                    reaction_action_metadata("create-follow-up-sales-order-action-1")
+                },
+            ));
+    let trigger = offer_accepted_recorded_event("offer-1");
+
+    let err = dispatcher
+        .dispatch(&trigger)
+        .await
+        .expect_err("one handler should fail and dispatch should report it");
+
+    match err {
+        ReactionDispatchError::HandlerFailures { receipts, failures } => {
+            assert_eq!(receipts.len(), 1);
+            assert_eq!(
+                receipts[0].action_receipt.action_id,
+                "create-follow-up-sales-order-action-1"
+            );
+            assert_eq!(failures.len(), 1);
+            assert_eq!(
+                failures[0].reaction_type,
+                "offer_accepted_to_create_sales_order"
+            );
+            assert_eq!(failures[0].failure_code, "sales_order.already_exists");
+        }
+    }
+
+    assert_sales_order_created(
+        &event_store,
+        "follow-up-sales-order-for-offer-1",
+        "create-follow-up-sales-order-action-1",
+    )
+    .await;
+}
+
 #[derive(Debug, Default, Clone)]
 struct Offer;
 
@@ -350,6 +522,72 @@ impl Reaction for OfferAcceptedCreatesSalesOrder {
     }
 }
 
+struct OfferAcceptedCreatesFollowUpSalesOrder;
+
+#[async_trait]
+impl Reaction for OfferAcceptedCreatesFollowUpSalesOrder {
+    type Trigger = OfferAcceptedV1;
+    type Resource = SalesOrder;
+    type Action = CreateSalesOrderV1;
+
+    const REACTION_TYPE: &'static str = "offer_accepted_to_create_follow_up_sales_order";
+    const SCHEMA_ID: &'static str = "reaction.offer_accepted_to_create_follow_up_sales_order.v1";
+    const SCHEMA_VERSION: u32 = 1;
+
+    async fn react(&self, event: Self::Trigger) -> Self::Action {
+        CreateSalesOrderV1 {
+            sales_order_id: format!("follow-up-sales-order-for-{}", event.offer_id),
+            offer_id: event.offer_id,
+        }
+    }
+}
+
+async fn assert_sales_order_created(
+    event_store: &InMemoryEventStore,
+    sales_order_id: &str,
+    action_id: &str,
+) {
+    let stream = ResourceStream::new("sales_order", sales_order_id);
+    let events = event_store
+        .load(&stream)
+        .await
+        .expect("load sales order events");
+
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].metadata.message_type, "sales_order_created");
+    assert_eq!(events[0].metadata.action_id, action_id);
+    assert_eq!(events[0].payload["sales_order_id"], sales_order_id);
+}
+
+async fn assert_reaction_journal_records(
+    reaction_journal: &InMemoryReactionJournal,
+    reaction_id: &str,
+    reaction_type: &str,
+    triggered_action_id: &str,
+) {
+    let records = reaction_journal
+        .load(&ReactionJournalStream::for_reaction(reaction_id))
+        .await
+        .expect("load reaction journal records");
+
+    assert_eq!(records.len(), 2);
+    match &records[0] {
+        ReactionJournalRecord::ReactionTriggered {
+            reaction_type: actual_reaction_type,
+            ..
+        } => assert_eq!(actual_reaction_type, reaction_type),
+        other => panic!("expected ReactionTriggered record, got {other:?}"),
+    }
+
+    match &records[1] {
+        ReactionJournalRecord::ReactionCompleted {
+            triggered_action_id: actual_action_id,
+            ..
+        } => assert_eq!(actual_action_id, triggered_action_id),
+        other => panic!("expected ReactionCompleted record, got {other:?}"),
+    }
+}
+
 fn offer_accepted_recorded_event(offer_id: &str) -> RecordedEvent {
     RecordedEvent {
         stream: ResourceStream::new("offer", offer_id),
@@ -377,6 +615,46 @@ fn offer_created_recorded_event(offer_id: &str) -> RecordedEvent {
             offer_id,
         ),
         payload: json!({ "offer_id": offer_id, "title": "Initial offer" }),
+    }
+}
+
+async fn append_existing_sales_order(
+    event_store: &InMemoryEventStore,
+    sales_order_id: &str,
+    offer_id: &str,
+) {
+    let stream = ResourceStream::new("sales_order", sales_order_id);
+    event_store
+        .append(
+            &stream,
+            ExpectedVersion::NoStream,
+            vec![NewEvent {
+                metadata: sales_order_event_metadata(sales_order_id),
+                payload: json!({
+                    "sales_order_id": sales_order_id,
+                    "offer_id": offer_id,
+                }),
+            }],
+        )
+        .await
+        .expect("append existing sales order");
+}
+
+fn sales_order_event_metadata(sales_order_id: &str) -> elbmesh_core::MessageMetadata {
+    elbmesh_core::MessageMetadata {
+        message_id: format!("existing-sales-order-{sales_order_id}"),
+        message_type: "sales_order_created".to_string(),
+        message_version: 1,
+        resource_type: "sales_order".to_string(),
+        resource_id: sales_order_id.to_string(),
+        stream_type: StreamType::Resource,
+        correlation_id: "correlation-existing-sales-order".to_string(),
+        causation_id: "existing-sales-order-action".to_string(),
+        action_id: "existing-sales-order-action".to_string(),
+        actor_id: "actor-123".to_string(),
+        occurred_at: "2026-07-07T00:00:00Z".to_string(),
+        schema_id: "event.sales_order_created.v1".to_string(),
+        schema_version: 1,
     }
 }
 
