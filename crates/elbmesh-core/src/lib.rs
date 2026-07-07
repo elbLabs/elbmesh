@@ -48,4 +48,6 @@ pub use runtime::{ActionContext, ActionExecutor};
 pub use store::{AppendResult, EventStore, ExpectedVersion, InMemoryEventStore};
 pub use testing::ActionScenario;
 pub use traits::{apply_recorded_event, Action, Apply, Event, Handle, Resource};
-pub use view_store::{InMemoryViewStore, ViewDocument, ViewKey, ViewStore, ViewStoreError};
+pub use view_store::{
+    InMemoryViewStore, ViewDocument, ViewIndexEntry, ViewKey, ViewStore, ViewStoreError,
+};
