@@ -1,12 +1,17 @@
-use elbmesh_core::{ActionScenario, ArchitectureCheckStatus};
+use elbmesh_core::{
+    ActionExecutor, ActionMetadata, ActionScenario, ArchitectureCheckStatus, EventStore,
+    InMemoryEventStore, InMemoryReactionJournal, ReactionDispatcher, ReactionJournal,
+    ReactionJournalRecord, ReactionJournalStream, ReactionRuntime, RecordedEvent, ResourceStream,
+    StreamType, TypedReactionHandler,
+};
 
 use serde_json::Value;
 
 use reference_flow::{
     AcceptOfferV1, CreateInvoiceV1, CreateOfferV1, CreateOrderConfirmationV1, CreateSalesOrderV1,
-    Invoice, InvoiceCreatedV1, InvoiceError, Offer, OfferAcceptedV1, OfferCreatedV1, OfferError,
-    OrderConfirmation, OrderConfirmationCreatedV1, OrderConfirmationError, SalesOrder,
-    SalesOrderCreatedV1, SalesOrderError,
+    Invoice, InvoiceCreatedV1, InvoiceError, Offer, OfferAcceptedCreatesSalesOrder,
+    OfferAcceptedV1, OfferCreatedV1, OfferError, OrderConfirmation, OrderConfirmationCreatedV1,
+    OrderConfirmationError, SalesOrder, SalesOrderCreatedV1, SalesOrderError,
 };
 
 mod reference_flow {
@@ -16,7 +21,7 @@ mod reference_flow {
     use elbmesh_core::{
         apply_recorded_event, Action, ActionContext, ActionDecision, ActionDefinition,
         ActionFailure, Apply, ArchitectureManifest, Event, EventDefinition, Handle, HandlerError,
-        Resource, ResourceDefinition, ResourceError,
+        Reaction, ReactionDefinition, Resource, ResourceDefinition, ResourceError,
     };
     use serde::{Deserialize, Serialize};
     use serde_json::json;
@@ -125,7 +130,13 @@ mod reference_flow {
                     schema_version: InvoiceCreatedV1::SCHEMA_VERSION,
                 },
             ],
-            reactions: Vec::new(),
+            reactions: vec![ReactionDefinition {
+                reaction_type: OfferAcceptedCreatesSalesOrder::REACTION_TYPE.to_string(),
+                trigger_event_type: OfferAcceptedV1::EVENT_TYPE.to_string(),
+                target_action_type: CreateSalesOrderV1::ACTION_TYPE.to_string(),
+                schema_id: OfferAcceptedCreatesSalesOrder::SCHEMA_ID.to_string(),
+                schema_version: OfferAcceptedCreatesSalesOrder::SCHEMA_VERSION,
+            }],
             views: Vec::new(),
             queries: Vec::new(),
             external_operations: Vec::new(),
@@ -466,6 +477,26 @@ mod reference_flow {
         }
     }
 
+    pub struct OfferAcceptedCreatesSalesOrder;
+
+    #[async_trait]
+    impl Reaction for OfferAcceptedCreatesSalesOrder {
+        type Trigger = OfferAcceptedV1;
+        type Resource = SalesOrder;
+        type Action = CreateSalesOrderV1;
+
+        const REACTION_TYPE: &'static str = "offer_accepted_to_create_sales_order";
+        const SCHEMA_ID: &'static str = "reaction.offer_accepted_to_create_sales_order.v1";
+        const SCHEMA_VERSION: u32 = 1;
+
+        async fn react(&self, event: Self::Trigger) -> Self::Action {
+            CreateSalesOrderV1 {
+                sales_order_id: format!("sales-order-for-{}", event.offer_id),
+                offer_id: event.offer_id,
+            }
+        }
+    }
+
     #[derive(Debug, Default, Clone)]
     pub struct OrderConfirmation {
         id: Option<String>,
@@ -752,6 +783,129 @@ async fn accept_offer_after_create_emits_offer_accepted() {
 }
 
 #[tokio::test]
+async fn dispatching_offer_accepted_creates_sales_order_through_reference_flow_reaction() {
+    let event_store = InMemoryEventStore::new();
+    let action_executor = ActionExecutor::new(event_store.clone());
+
+    action_executor
+        .execute::<Offer, CreateOfferV1>(
+            CreateOfferV1 {
+                offer_id: "offer-1".to_string(),
+                title: "Initial offer".to_string(),
+            },
+            action_metadata("create-offer-action-1"),
+        )
+        .await
+        .expect("create offer should succeed");
+    action_executor
+        .execute::<Offer, AcceptOfferV1>(
+            AcceptOfferV1 {
+                offer_id: "offer-1".to_string(),
+            },
+            action_metadata("accept-offer-action-1"),
+        )
+        .await
+        .expect("accept offer should succeed");
+
+    let offer_events = event_store
+        .load(&ResourceStream::new("offer", "offer-1"))
+        .await
+        .expect("load offer events");
+    let trigger = offer_events
+        .iter()
+        .find(|event| event.metadata.message_type == "offer_accepted")
+        .expect("offer accepted event should exist")
+        .clone();
+    let expected_action_id =
+        ReactionRuntime::<InMemoryEventStore, InMemoryReactionJournal>::reaction_action_id::<
+            OfferAcceptedCreatesSalesOrder,
+        >(&trigger);
+
+    let reaction_journal = InMemoryReactionJournal::new();
+    let dispatcher =
+        ReactionDispatcher::new(ReactionRuntime::new(
+            event_store.clone(),
+            reaction_journal.clone(),
+        ))
+        .with_handler(TypedReactionHandler::new(
+            OfferAcceptedCreatesSalesOrder,
+            |trigger: &RecordedEvent| {
+                ReactionRuntime::<InMemoryEventStore, InMemoryReactionJournal>::
+                reaction_action_metadata::<OfferAcceptedCreatesSalesOrder>(trigger)
+            },
+        ));
+
+    let receipts = dispatcher
+        .dispatch(&trigger)
+        .await
+        .expect("dispatch should succeed");
+
+    assert_eq!(receipts.len(), 1);
+    assert_eq!(receipts[0].action_receipt.action_id, expected_action_id);
+
+    let sales_order_events = dispatcher
+        .event_store()
+        .load(&ResourceStream::new(
+            "sales_order",
+            "sales-order-for-offer-1",
+        ))
+        .await
+        .expect("load sales order events");
+    assert_eq!(sales_order_events.len(), 1);
+    assert_eq!(
+        sales_order_events[0].metadata.message_type,
+        "sales_order_created"
+    );
+    assert_eq!(
+        sales_order_events[0].metadata.stream_type,
+        StreamType::Resource
+    );
+    assert_eq!(sales_order_events[0].metadata.action_id, expected_action_id);
+    assert_eq!(
+        sales_order_events[0].payload["sales_order_id"],
+        "sales-order-for-offer-1"
+    );
+    assert_eq!(sales_order_events[0].payload["offer_id"], "offer-1");
+    assert!(dispatcher
+        .event_store()
+        .all_events()
+        .iter()
+        .all(|event| event.metadata.stream_type == StreamType::Resource));
+
+    let reaction_records = reaction_journal
+        .load(&ReactionJournalStream::for_reaction(
+            receipts[0].reaction_id.clone(),
+        ))
+        .await
+        .expect("load reaction journal records");
+    assert_eq!(reaction_records.len(), 2);
+    match &reaction_records[0] {
+        ReactionJournalRecord::ReactionTriggered {
+            metadata,
+            reaction_type,
+            trigger_event_type,
+            ..
+        } => {
+            assert_eq!(metadata.stream_type, StreamType::Reaction);
+            assert_eq!(reaction_type, "offer_accepted_to_create_sales_order");
+            assert_eq!(trigger_event_type, "offer_accepted");
+        }
+        other => panic!("expected ReactionTriggered record, got {other:?}"),
+    }
+    match &reaction_records[1] {
+        ReactionJournalRecord::ReactionCompleted {
+            metadata,
+            triggered_action_id,
+            ..
+        } => {
+            assert_eq!(metadata.stream_type, StreamType::Reaction);
+            assert_eq!(triggered_action_id, &expected_action_id);
+        }
+        other => panic!("expected ReactionCompleted record, got {other:?}"),
+    }
+}
+
+#[tokio::test]
 async fn create_offer_twice_returns_typed_already_exists_error() {
     ActionScenario::<Offer>::new()
         .given(vec![OfferCreatedV1 {
@@ -940,6 +1094,18 @@ fn reference_flow_manifest_json_names_resources_actions_and_events() {
         ],
         json_field_values(&manifest_json, "events", "event_type")
     );
+    assert_eq!(
+        vec!["offer_accepted_to_create_sales_order"],
+        json_field_values(&manifest_json, "reactions", "reaction_type")
+    );
+    assert_eq!(
+        vec!["offer_accepted"],
+        json_field_values(&manifest_json, "reactions", "trigger_event_type")
+    );
+    assert_eq!(
+        vec!["create_sales_order"],
+        json_field_values(&manifest_json, "reactions", "target_action_type")
+    );
 }
 
 fn json_field_values(manifest_json: &Value, array_key: &str, field_key: &str) -> Vec<String> {
@@ -954,4 +1120,13 @@ fn json_field_values(manifest_json: &Value, array_key: &str, field_key: &str) ->
                 .to_string()
         })
         .collect()
+}
+
+fn action_metadata(action_id: &str) -> ActionMetadata {
+    ActionMetadata::with_ids(
+        action_id,
+        "reference-flow-correlation",
+        "reference-flow-causation",
+        "reference-flow-test",
+    )
 }
