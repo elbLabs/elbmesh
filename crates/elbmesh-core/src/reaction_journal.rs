@@ -26,13 +26,15 @@ pub enum ReactionJournalRecord {
         reaction_id: String,
         metadata: MessageMetadata,
         reaction_type: String,
+        reaction_schema_id: String,
+        reaction_schema_version: u32,
         trigger_event_type: String,
         trigger_event_id: String,
     },
     ReactionCompleted {
         reaction_id: String,
         metadata: MessageMetadata,
-        triggered_action_ids: Vec<String>,
+        triggered_action_id: String,
     },
 }
 
