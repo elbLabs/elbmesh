@@ -13,8 +13,9 @@ This documentation captures the current design decisions from the domain-modelli
 7. [Runtime Debt And Failure Modes](RUNTIME_DEBT_AND_FAILURE_MODES.md)
 8. [Execution Trace Model](EXECUTION_TRACE_MODEL.md)
 9. [Offer Demonstration And Visualization Run Plan](OFFER_DEMONSTRATION_RUN_PLAN.md)
-10. [Implementation Plan](IMPLEMENTATION_PLAN.md)
-11. [Architecture Decision Records](adr/)
+10. [Phase 4 Reference Flow Checkpoint](PHASE_4_REFERENCE_FLOW_CHECKPOINT.md)
+11. [Implementation Plan](IMPLEMENTATION_PLAN.md)
+12. [Architecture Decision Records](adr/)
 
 ## ADR Index
 
