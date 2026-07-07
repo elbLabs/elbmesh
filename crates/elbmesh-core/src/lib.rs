@@ -6,6 +6,7 @@ mod error;
 mod manifest;
 mod message;
 mod projection;
+mod query;
 mod reaction;
 mod reaction_journal;
 mod runtime;
@@ -36,6 +37,7 @@ pub use projection::{
     Projection, ProjectionDispatchError, ProjectionDispatchFailure, ProjectionDispatchReport,
     ProjectionDispatcher, ProjectionExecutionError, ProjectionRuntime, TypedProjectionHandler,
 };
+pub use query::{QueryError, QueryExecutor};
 pub use reaction::{
     Reaction, ReactionDispatchError, ReactionDispatchFailure, ReactionDispatcher,
     ReactionExecutionError, ReactionReceipt, ReactionRuntime, TypedReactionHandler,

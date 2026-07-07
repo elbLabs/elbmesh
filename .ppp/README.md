@@ -8,10 +8,14 @@ This directory contains the project PPP library and schemas. The OpenCode plugin
 2. `.ppp/schemas` contains the JSON Schemas used to validate PPP library content.
 3. `ppp.config.json` binds this repository to its PPP library and schema paths.
 4. `ppp.repo-config.json` maps repository paths to relevant PPP guidance, tasks, validations, and dependencies.
+5. `ppp.workflows.json` defines intent-first workflow routing. The current MVP work type is `feature`.
+6. `.ppp/task-cards/` stores locally persisted workflow task cards when explicitly requested.
 
 ## Implemented Tools
 
-The project plugin can list and assemble tasks, validate PPP files, resolve repo configs and repo context, and run command validations. `ppp_generate_opencode_pack` is not implemented in this project plugin and returns a clear out-of-scope result instead of generating files.
+The project plugin can list and assemble tasks, validate PPP files and workflows, resolve repo configs and repo context, assemble workflow task cards, and run command validations. `ppp_generate_opencode_pack` is not implemented in this project plugin and returns a clear out-of-scope result instead of generating files.
+
+Workflow routing starts from intent/work type in `ppp.workflows.json`; path context remains secondary enrichment and safety context. Use `ppp_validate_workflows`, `ppp_list_work_types`, and `ppp_assemble_workflow` for the MVP route. `ppp_assemble_workflow` returns a Markdown task card by default and writes it under `.ppp/task-cards/` only when called with `persistTaskCard: true`.
 
 ## OpenCode Skill Migration
 
@@ -36,13 +40,14 @@ Notable behavior:
 5. Liquid rendering rejects unsupported tags, dynamic paths, invalid roots, unknown variables, unknown filters, and non-JSON output values.
 6. Task bundles include `outputSchema`, top-level `overlays`, expected-output prompt instructions, PPP content rendering, validation prompt sections, source-file provenance, PPP content hashes, assembly provenance, and bundle content hashes.
 7. `ppp_resolve_repo_context` performs safe path/dependency input checks and preserves mapping, task reference, validation reference, dependency, related item, and PPP content behavior.
+8. `ppp_assemble_workflow` validates `ppp.workflows.json`, assembles phase hints for workflow tasks, and can persist generated task cards as Markdown files under `.ppp/task-cards/` when explicitly requested.
 
 ## Test Commands
 
 Run these after editing the plugin:
 
 ```bash
-node --experimental-strip-types --check ".opencode/plugins/ppp.ts"
+bun --check ".opencode/plugins/ppp.ts"
 ```
 
 Install or refresh plugin dependencies from the config directory:
@@ -61,6 +66,7 @@ Smoke test AJV validation and Liquid rendering:
 
 ```bash
 node --experimental-strip-types --input-type=module -e 'const plugin=(await import("./.opencode/plugins/ppp.ts")).default; const instance=await plugin({directory:process.cwd()}); console.log(await instance.tool.ppp_validate_library.execute({}));'
+node --experimental-strip-types --input-type=module -e 'const plugin=(await import("./.opencode/plugins/ppp.ts")).default; const instance=await plugin({directory:process.cwd()}); console.log(await instance.tool.ppp_assemble_workflow.execute({workType:"feature",intake:{goal:"Smoke test persisted task card"},persistTaskCard:true}));'
 node --experimental-strip-types --input-type=module -e 'const plugin=(await import("./.opencode/plugins/ppp.ts")).default; const instance=await plugin({directory:process.cwd()}); console.log(await instance.tool.ppp_assemble_task_bundle.execute({taskId:"task.elbmesh-explain-action-event-flow",input:{flowSubject:"PlaceOrder",subjectKind:"action",paths:["crates/elbmesh-core/src/lib.rs"],depth:"summary",includeCurrentVsTarget:true},includePrompt:true,includeJson:false}));'
 node --experimental-strip-types --input-type=module -e 'const plugin=(await import("./.opencode/plugins/ppp.ts")).default; const instance=await plugin({directory:process.cwd()}); console.log(await instance.tool.ppp_resolve_repo_context.execute({paths:["crates/elbmesh-core/src/reaction.rs"],includeJson:false}));'
 ```

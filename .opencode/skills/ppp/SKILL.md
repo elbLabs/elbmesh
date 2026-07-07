@@ -17,6 +17,9 @@ The `.ppp/` library, `ppp.repo-config.json`, `ppp.config.json`, and `.opencode/p
 
 - `ppp_status` to verify PPP library/schema status.
 - `ppp_validate_library` to validate PPP files.
+- `ppp_validate_workflows` to validate intent-first work-type routing in `ppp.workflows.json`.
+- `ppp_list_work_types` to list available workflow work types and phases.
+- `ppp_assemble_workflow` to assemble a workflow task card and phase task-bundle call hints. Pass `persistTaskCard: true` only when a local Markdown task card should be written.
 - `ppp_list_tasks` to discover reusable tasks in the project library.
 - `ppp_get_task_bundle` to resolve a task bundle by id or slug without custom inputs.
 - `ppp_assemble_task_bundle` to resolve a task bundle with inputs, overlays, workflow/job data, rendered prompts, and optional JSON.
@@ -32,10 +35,16 @@ Use `includePrompt: true` when the agent needs rendered task instructions. Use `
 ## Default Workflow
 
 1. Run or trust a fresh `ppp_status` and `ppp_validate_library` before substantial PPP-guided work.
-2. Use `ppp_resolve_repo_context` with relevant `paths` or `changedFiles` to collect repo-specific PPP context.
-3. Select the closest task with `ppp_list_tasks` or the route map below.
-4. Use `ppp_assemble_task_bundle` with task inputs and follow the rendered prompt, expected output, PPP content, and validation guidance.
+2. For new work, route intent first with `ppp_validate_workflows`, `ppp_list_work_types`, and `ppp_assemble_workflow` using the closest work type from `ppp.workflows.json`.
+3. Use `ppp_resolve_repo_context` with relevant `paths` or `changedFiles` as secondary enrichment and safety context, not as the primary router.
+4. Use the workflow phase hints or the route map below to call `ppp_assemble_task_bundle`, then follow the rendered prompt, expected output, PPP content, and validation guidance.
 5. Run task-relevant project checks plus `ppp_validate` or `ppp_precommit_validate` when validations are present.
+
+## Intent-First Workflow Routing
+
+`ppp.workflows.json` defines MVP work-type routing. The current implemented work type is `feature`, which assembles plan, test, implement, architecture-check, and review phases.
+
+`ppp_assemble_workflow` returns a Markdown `taskCard` and suggested `ppp_assemble_task_bundle` calls for the selected phases. By default it does not write files; when called with `persistTaskCard: true`, it persists the generated task card under `.ppp/task-cards/` and returns the file path.
 
 ## Dependency Context
 

@@ -26,7 +26,7 @@ const itemDirectories: Record<string, string> = {
 const DEFAULT_TIMEOUT_SECONDS = 120;
 const MAX_CAPTURE_BYTES = 16 * 1024;
 const PPP_LIBRARY_ROOT = "/home/tom/Projects/elbtech/ppp-library";
-const allowedTemplateRoots = new Set(["task", "overlay", "workflow", "job", "jobs"]);
+const allowedTemplateRoots = new Set(["task", "input", "overlay", "workflow", "job", "jobs", "intake", "paths", "inputPaths", "phase", "taskCard", "derived", "placeholders"]);
 const templateIdentifier = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 const liquid = new Liquid({
   strictVariables: true,
@@ -38,6 +38,7 @@ const liquid = new Liquid({
   memoryLimit: 16 * 1024 * 1024,
   cache: false,
 });
+liquid.registerFilter("json", (value: unknown) => JSON.stringify(toTemplateJsonValue(value)));
 const liquidRenderOptions = { strictVariables: true, ownPropertyOnly: true, renderLimit: 1_000, memoryLimit: 16 * 1024 * 1024, templateLimit: 10_000 };
 
 export default (async ({ directory }) => {
@@ -73,6 +74,75 @@ export default (async ({ directory }) => {
         async execute() {
           const validation = await validateLocalLibrary(directory);
           return JSON.stringify({ ok: validation.issues.every((issue) => issue.severity !== "error"), ...summarizeValidation(validation.issues), issues: validation.issues }, null, 2);
+        },
+      }),
+      ppp_validate_workflows: tool({
+        description: "Validate root-level PPP workflow routing configuration.",
+        args: {},
+        async execute() {
+          const validation = await validateWorkflows(directory);
+          return JSON.stringify({ ok: validation.issues.every((issue) => issue.severity !== "error"), ...summarizeValidation(validation.issues), issues: validation.issues }, null, 2);
+        },
+      }),
+      ppp_list_work_types: tool({
+        description: "List PPP workflow work types and their ordered phases.",
+        args: {},
+        async execute() {
+          const validation = await validateWorkflows(directory);
+          const workTypes = listWorkflowWorkTypes(validation.workflows);
+          return JSON.stringify({ ok: validation.issues.every((issue) => issue.severity !== "error"), workTypeCount: workTypes.length, workTypes, ...summarizeValidation(validation.issues), issues: validation.issues }, null, 2);
+        },
+      }),
+      ppp_assemble_workflow: tool({
+        description: "Assemble a PPP workflow task-card payload and task bundle call hints for a work type.",
+        args: {
+          workType: tool.schema.string().describe("PPP workflow work type id, such as feature."),
+          intake: tool.schema.any().optional(),
+          paths: tool.schema.any().optional(),
+          phaseId: tool.schema.string().optional(),
+          persistTaskCard: tool.schema.boolean().optional(),
+        },
+        async execute(args: any) {
+          const validation = await validateWorkflows(directory);
+          const validationSummary = summarizeValidation(validation.issues);
+          if (validationSummary.errorCount > 0) return JSON.stringify({ ok: false, ...validationSummary, issues: validation.issues }, null, 2);
+          const workTypeId = requiredString(args?.workType, "workType");
+          const workTypes = listWorkflowWorkTypes(validation.workflows);
+          const workType = workTypes.find((entry) => entry.id === workTypeId);
+          if (!workType) return JSON.stringify({ ok: false, message: `Unknown work type: ${workTypeId}`, workType: workTypeId, availableWorkTypes: workTypes.map((entry) => entry.id).filter(Boolean), ...validationSummary, issues: validation.issues }, null, 2);
+          const selectedPhase = typeof args?.phaseId === "string" && args.phaseId.trim() !== "" ? workType.phases.find((phase: any) => phase.id === args.phaseId) : undefined;
+          if (args?.phaseId !== undefined && !selectedPhase) return JSON.stringify({ ok: false, message: `Unknown phaseId for work type ${workTypeId}: ${args.phaseId}`, workType, availablePhaseIds: workType.phases.map((phase: any) => phase.id).filter(Boolean), ...validationSummary, issues: validation.issues }, null, 2);
+          const intake = normalizeWorkflowIntake(args?.intake);
+          const paths = normalizeWorkflowPaths(args?.paths);
+          const taskCard = renderWorkflowTaskCard(workType, intake, paths, args?.phaseId);
+          let persistedTaskCard: any;
+          if (args?.persistTaskCard === true) {
+            try {
+              persistedTaskCard = await persistWorkflowTaskCard(directory, workType, intake, taskCard);
+            } catch (error) {
+              const issue: PppValidationIssue = { filePath: ".ppp/task-cards", severity: "error", path: "/persistTaskCard", message: error instanceof Error ? error.message : String(error) };
+              return JSON.stringify({ ok: false, message: "Failed to persist PPP workflow task card", persistedTaskCard: undefined, ...validationSummary, issues: [...validation.issues, issue] }, null, 2);
+            }
+          }
+          const includedPhases = selectedPhase ? [selectedPhase] : workType.phases;
+          const pathContext = paths ? summarizeWorkflowPathContext(await resolveRepoContext(directory, { paths })) : undefined;
+          const workflowContext = { workType: workType.id, phaseId: selectedPhase?.id, phases: workType.phases.map((phase: any) => ({ id: phase.id, label: phase.label, task: phase.task, dependsOn: phase.dependsOn || [] })) };
+          const phaseTaskHints = includedPhases.map((phase: any) => createWorkflowPhaseTaskHint(phase, { intake, paths, workflow: workflowContext, taskCard, persistedTaskCard }));
+          const phaseInputIssues = await validateWorkflowPhaseHintInputs(directory, phaseTaskHints);
+          const issues = [...validation.issues, ...phaseInputIssues];
+          const summary = summarizeValidation(issues);
+          return JSON.stringify(compact({
+            ok: summary.errorCount === 0,
+            workType: { id: workType.id, label: workType.label, description: workType.description, phaseCount: workType.phases.length, phaseIds: workType.phases.map((phase: any) => phase.id).filter(Boolean) },
+            phases: includedPhases,
+            selectedPhase,
+            taskCard,
+            persistedTaskCard,
+            phaseTaskHints,
+            pathContext,
+            ...summary,
+            issues,
+          }), null, 2);
         },
       }),
       ppp_list_tasks: tool({
@@ -300,6 +370,331 @@ async function validateLocalLibrary(directory: string) {
   if (localRepoConfig !== undefined) validateJsonValue(localRepoConfig, localRepoConfigPath, "repo-config", issues, schemas);
   await validateCrossReferences(directory, library.root, localRepoConfigPath, localRepoConfig, issues);
   return { libraryRoot: library.root, librarySource: library.source, schemaRoot: schemas.root, schemaSource: schemas.source, selfContained: library.selfContained, issues };
+}
+
+async function validateWorkflows(directory: string) {
+  const binding = await readBinding(directory);
+  const repoDir = resolveInside(directory, binding.root || ".", "PPP root escapes repository");
+  const filePath = path.join(repoDir, "ppp.workflows.json");
+  const issues: PppValidationIssue[] = [];
+  const workflows = await readJsonFileForValidation(filePath, issues);
+  if (workflows === undefined) {
+    if (!issues.some((issue) => issue.filePath === filePath)) issues.push({ filePath, severity: "error", path: "", instancePath: "", message: "missing root-level ppp.workflows.json" });
+    return { filePath, workflows, issues };
+  }
+  const tasks = await readTasks(directory);
+  const taskRefs = new Set(tasks.flatMap((task) => [task.id, task.slug].filter((value): value is string => typeof value === "string")));
+  validateWorkflowConfig(workflows, filePath, taskRefs, issues);
+  return { filePath, workflows, issues };
+}
+
+function listWorkflowWorkTypes(workflows: unknown) {
+  if (!isRecord(workflows) || !Array.isArray(workflows.workTypes)) return [];
+  return workflows.workTypes.filter(isRecord).map((workType) => ({
+    id: typeof workType.id === "string" ? workType.id : undefined,
+    label: typeof workType.label === "string" ? workType.label : undefined,
+    description: typeof workType.description === "string" ? workType.description : undefined,
+    phases: Array.isArray(workType.phases) ? workType.phases.filter(isRecord).map((phase) => ({
+      id: typeof phase.id === "string" ? phase.id : undefined,
+      label: typeof phase.label === "string" ? phase.label : undefined,
+      task: typeof phase.task === "string" ? phase.task : undefined,
+      dependsOn: Array.isArray(phase.dependsOn) ? phase.dependsOn.filter((entry): entry is string => typeof entry === "string") : undefined,
+      inputMap: isRecord(phase.inputMap) ? phase.inputMap : undefined,
+    })) : [],
+  }));
+}
+
+function normalizeWorkflowIntake(value: unknown) {
+  if (value === undefined) return {};
+  if (!isRecord(value)) throwValidationError("Workflow intake must be an object", [{ path: "/intake", message: "must be an object" }]);
+  return value;
+}
+
+function normalizeWorkflowPaths(value: unknown) {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || !value.every((entry) => typeof entry === "string" && isSafeRepoPath(entry))) throwValidationError("Workflow paths are invalid", [{ path: "/paths", message: "must be an array of safe relative paths" }]);
+  return value;
+}
+
+function renderWorkflowTaskCard(workType: any, intake: Record<string, unknown>, paths: string[] | undefined, selectedPhaseId: unknown) {
+  const phases = workType.phases || [];
+  return markdown([
+    `# PPP ${workType.label || workType.id} Task Card`,
+    "",
+    "## Goal",
+    "",
+    workflowMarkdownValue(intake.goal),
+    "",
+    "## Context",
+    "",
+    workflowMarkdownValue(intake.context),
+    "",
+    "## Inputs",
+    "",
+    workflowMarkdownValue(intake.inputs),
+    "",
+    "## Candidate Paths",
+    "",
+    ...workflowMarkdownList(paths || normalizeStringArray(intake.candidatePaths) || []),
+    "",
+    "## Acceptance Criteria",
+    "",
+    ...workflowMarkdownList(normalizeStringArray(intake.acceptanceCriteria) || []),
+    "",
+    "## Non-Goals",
+    "",
+    ...workflowMarkdownList(normalizeStringArray(intake.nonGoals) || []),
+    "",
+    "## Verification Commands",
+    "",
+    ...workflowMarkdownList(normalizeStringArray(intake.verificationCommands) || []),
+    "",
+    "## PPP Workflow / Phases",
+    "",
+    ...phases.map((phase: any) => `- ${phase.id === selectedPhaseId ? "**Selected:** " : ""}${phase.id}: ${phase.label || phase.id} -> ${phase.task}${phase.dependsOn?.length ? ` (depends on: ${phase.dependsOn.join(", ")})` : ""}`),
+  ]);
+}
+
+async function persistWorkflowTaskCard(directory: string, workType: any, intake: Record<string, unknown>, taskCard: string) {
+  const binding = await readBinding(directory);
+  const repoDir = resolveInside(directory, binding.root || ".", "PPP root escapes repository");
+  const relativeDir = ".ppp/task-cards";
+  const targetDir = resolveInside(repoDir, relativeDir, "PPP task-card directory escapes repository");
+  await fs.mkdir(targetDir, { recursive: true });
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const goalPart = typeof intake.goal === "string" ? sanitizeTaskCardFilenamePart(intake.goal) : undefined;
+  const baseName = [sanitizeTaskCardFilenamePart(workType.id || "workflow"), timestamp, goalPart].filter(Boolean).join("-");
+  for (let index = 0; index < 100; index += 1) {
+    const suffix = index === 0 ? "" : `-${index + 1}`;
+    const fileName = `${baseName}${suffix}.md`;
+    const absolutePath = path.join(targetDir, fileName);
+    try {
+      await fs.writeFile(absolutePath, taskCard, { flag: "wx" });
+      return { path: `${relativeDir}/${fileName}` };
+    } catch (error: any) {
+      if (error?.code === "EEXIST") continue;
+      throw error;
+    }
+  }
+  throw new Error("Could not allocate a unique PPP task-card filename");
+}
+
+function sanitizeTaskCardFilenamePart(value: unknown) {
+  const sanitized = String(value).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48);
+  return sanitized || undefined;
+}
+
+function workflowMarkdownValue(value: unknown) {
+  if (typeof value === "string" && value.trim() !== "") return value;
+  if (value !== undefined) return ["```json", JSON.stringify(value, null, 2), "```"].join("\n");
+  return "_Not provided._";
+}
+
+function workflowMarkdownList(values: string[]) {
+  return values.length > 0 ? values.map((entry) => `- ${entry}`) : ["_Not provided._"];
+}
+
+function createWorkflowPhaseTaskHint(phase: any, context: { intake: Record<string, unknown>; paths?: string[]; workflow: any; taskCard: string; persistedTaskCard?: any }) {
+  const input = isRecord(phase.inputMap) ? resolveWorkflowInputMap(phase.inputMap, phase, context) : legacyWorkflowPhaseInput(context.intake);
+  return {
+    phaseId: phase.id,
+    label: phase.label,
+    task: phase.task,
+    suggestedCall: {
+      tool: "ppp_assemble_task_bundle",
+      args: {
+        taskId: phase.task,
+        input,
+        workflow: context.workflow,
+      },
+    },
+  };
+}
+
+function legacyWorkflowPhaseInput(intake: Record<string, unknown>) {
+  return {
+    goal: intake.goal ?? "<goal>",
+    context: intake.context ?? "<context>",
+    inputs: intake.inputs ?? {},
+    candidatePaths: normalizeStringArray(intake.candidatePaths) || "<candidate paths>",
+    acceptanceCriteria: normalizeStringArray(intake.acceptanceCriteria) || "<acceptance criteria>",
+    nonGoals: normalizeStringArray(intake.nonGoals) || "<non-goals>",
+    verificationCommands: normalizeStringArray(intake.verificationCommands) || "<verification commands>",
+  };
+}
+
+function resolveWorkflowInputMap(inputMap: Record<string, unknown>, phase: any, context: { intake: Record<string, unknown>; paths?: string[]; workflow: any; taskCard: string; persistedTaskCard?: any }) {
+  const renderContext = createWorkflowInputMapRenderContext(phase, context);
+  return Object.fromEntries(Object.entries(inputMap).map(([key, value]) => [key, renderWorkflowInputMapValue(value, renderContext)]));
+}
+
+function createWorkflowInputMapRenderContext(phase: any, context: { intake: Record<string, unknown>; paths?: string[]; workflow: any; taskCard: string; persistedTaskCard?: any }) {
+  const derivedPaths = context.paths || normalizeStringArray(context.intake.candidatePaths) || [];
+  const intake = {
+    goal: "<goal>",
+    context: "<context>",
+    inputs: {},
+    candidatePaths: derivedPaths,
+    acceptanceCriteria: ["<expected behavior from acceptance criteria>"],
+    nonGoals: [],
+    verificationCommands: [],
+    ...context.intake,
+  };
+  return {
+    intake,
+    paths: context.paths || [],
+    inputPaths: context.paths || [],
+    workflow: context.workflow,
+    phase,
+    taskCard: {
+      markdown: context.taskCard,
+      path: typeof context.persistedTaskCard?.path === "string" ? context.persistedTaskCard.path : "",
+    },
+    derived: {
+      sliceName: workflowSliceName(context.intake.goal),
+      paths: derivedPaths,
+      testCommand: normalizeStringArray(context.intake.verificationCommands)?.[0] || "<targeted test command>",
+      changeSummary: workflowStringOrPlaceholder(context.intake.goal, "<change summary>"),
+    },
+    placeholders: {
+      failingTestEvidence: "<failing test evidence from test phase>",
+      verificationEvidence: "<verification evidence from completed phase>",
+    },
+  };
+}
+
+function renderWorkflowInputMapValue(value: unknown, renderContext: any): unknown {
+  if (typeof value !== "string") return structuredClone(value);
+  const rendered = renderTemplateString(value, renderContext);
+  return parseRenderedWorkflowInputValue(rendered);
+}
+
+function parseRenderedWorkflowInputValue(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+function workflowSliceName(goal: unknown) {
+  const source = typeof goal === "string" && goal.trim() !== "" ? goal : "feature slice";
+  return source.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64) || "feature-slice";
+}
+
+function workflowStringOrPlaceholder(value: unknown, placeholder: string) {
+  return typeof value === "string" && value.trim() !== "" ? value : placeholder;
+}
+
+async function validateWorkflowPhaseHintInputs(directory: string, phaseTaskHints: any[]) {
+  const tasks = await readTasks(directory);
+  const taskByRef = new Map<string, any>();
+  for (const task of tasks) for (const reference of [task.id, task.slug]) if (typeof reference === "string") taskByRef.set(reference, task);
+  const issues: PppValidationIssue[] = [];
+  phaseTaskHints.forEach((hint, index) => {
+    const taskId = hint?.suggestedCall?.args?.taskId;
+    const task = typeof taskId === "string" ? taskByRef.get(taskId) : undefined;
+    if (!task) return;
+    for (const issue of validateValueAgainstSchema(hint?.suggestedCall?.args?.input, task.inputSchema, `/phaseTaskHints/${index}/suggestedCall/args/input`)) {
+      issues.push({ filePath: "ppp.workflows.json", severity: "error", path: issue.path, instancePath: issue.path, message: `phase task input for ${task.slug} ${issue.message}`, referenced: task.slug });
+    }
+  });
+  return issues;
+}
+
+function summarizeWorkflowPathContext(context: any) {
+  return {
+    repoKey: context.repoKey,
+    inputPaths: context.inputPaths,
+    matchedMappings: context.matchedMappings.map((mapping: any) => ({ id: mapping.id, matchedPaths: mapping.matchedPaths || [] })),
+    taskReferences: context.taskReferences,
+    validationReferences: context.validationReferences,
+    dependencies: context.dependencies,
+  };
+}
+
+function validateWorkflowConfig(value: unknown, filePath: string, taskRefs: Set<string>, issues: PppValidationIssue[]) {
+  if (!isRecord(value)) {
+    issues.push({ filePath, severity: "error", path: "", instancePath: "", message: "workflow config must be an object" });
+    return;
+  }
+  if (typeof value.schemaVersion !== "number" || !Number.isFinite(value.schemaVersion)) issues.push({ filePath, severity: "error", path: "/schemaVersion", instancePath: "/schemaVersion", message: "schemaVersion must be a number" });
+  if (!Array.isArray(value.workTypes) || value.workTypes.length === 0) {
+    issues.push({ filePath, severity: "error", path: "/workTypes", instancePath: "/workTypes", message: "workTypes must be a non-empty array" });
+    return;
+  }
+  const workTypeIds = new Set<string>();
+  value.workTypes.forEach((workType, workTypeIndex) => validateWorkType(workType, filePath, `/workTypes/${workTypeIndex}`, workTypeIds, taskRefs, issues));
+}
+
+function validateWorkType(value: unknown, filePath: string, basePath: string, workTypeIds: Set<string>, taskRefs: Set<string>, issues: PppValidationIssue[]) {
+  if (!isRecord(value)) {
+    issues.push({ filePath, severity: "error", path: basePath, instancePath: basePath, message: "work type must be an object" });
+    return;
+  }
+  const id = validateNonEmptyString(value.id, filePath, `${basePath}/id`, "work type id", issues);
+  validateNonEmptyString(value.label, filePath, `${basePath}/label`, "work type label", issues);
+  validateNonEmptyString(value.description, filePath, `${basePath}/description`, "work type description", issues);
+  if (id) {
+    if (workTypeIds.has(id)) issues.push({ filePath, severity: "error", path: `${basePath}/id`, instancePath: `${basePath}/id`, message: "duplicate work type id", referenced: id });
+    workTypeIds.add(id);
+  }
+  if (!Array.isArray(value.phases) || value.phases.length === 0) {
+    issues.push({ filePath, severity: "error", path: `${basePath}/phases`, instancePath: `${basePath}/phases`, message: "phases must be a non-empty array" });
+    return;
+  }
+  const phaseIds = new Set<string>();
+  value.phases.forEach((phase) => {
+    if (!isRecord(phase)) return;
+    const phaseId = typeof phase.id === "string" && phase.id.trim() !== "" ? phase.id : undefined;
+    if (phaseId) phaseIds.add(phaseId);
+  });
+  const seenPhaseIds = new Set<string>();
+  value.phases.forEach((phase, phaseIndex) => validateWorkflowPhase(phase, filePath, `${basePath}/phases/${phaseIndex}`, seenPhaseIds, phaseIds, taskRefs, issues));
+}
+
+function validateWorkflowPhase(value: unknown, filePath: string, basePath: string, seenPhaseIds: Set<string>, phaseIds: Set<string>, taskRefs: Set<string>, issues: PppValidationIssue[]) {
+  if (!isRecord(value)) {
+    issues.push({ filePath, severity: "error", path: basePath, instancePath: basePath, message: "phase must be an object" });
+    return;
+  }
+  const id = validateNonEmptyString(value.id, filePath, `${basePath}/id`, "phase id", issues);
+  validateNonEmptyString(value.label, filePath, `${basePath}/label`, "phase label", issues);
+  const task = validateNonEmptyString(value.task, filePath, `${basePath}/task`, "phase task", issues);
+  if (id) {
+    if (seenPhaseIds.has(id)) issues.push({ filePath, severity: "error", path: `${basePath}/id`, instancePath: `${basePath}/id`, message: "duplicate phase id", referenced: id });
+    seenPhaseIds.add(id);
+  }
+  if (task && !taskRefs.has(task)) issues.push({ filePath, severity: "error", path: `${basePath}/task`, instancePath: `${basePath}/task`, message: "unknown PPP task slug/id reference", referenced: task });
+  validateWorkflowInputMap(value.inputMap, filePath, `${basePath}/inputMap`, issues);
+  if (value.dependsOn !== undefined && !Array.isArray(value.dependsOn)) {
+    issues.push({ filePath, severity: "error", path: `${basePath}/dependsOn`, instancePath: `${basePath}/dependsOn`, message: "dependsOn must be an array of phase id strings" });
+    return;
+  }
+  (value.dependsOn || []).forEach((reference: unknown, referenceIndex: number) => {
+    const referencePath = `${basePath}/dependsOn/${referenceIndex}`;
+    if (typeof reference !== "string") issues.push({ filePath, severity: "error", path: referencePath, instancePath: referencePath, message: "dependsOn entries must be strings" });
+    else if (!phaseIds.has(reference)) issues.push({ filePath, severity: "error", path: referencePath, instancePath: referencePath, message: "unknown phase id dependency", referenced: reference });
+  });
+}
+
+function validateWorkflowInputMap(value: unknown, filePath: string, basePath: string, issues: PppValidationIssue[]) {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    issues.push({ filePath, severity: "error", path: basePath, instancePath: basePath, message: "inputMap must be an object" });
+    return;
+  }
+  for (const [key, entry] of Object.entries(value)) {
+    const keyPath = `${basePath}/${escapeJsonPointer(key)}`;
+    if (key.trim() === "") issues.push({ filePath, severity: "error", path: keyPath, instancePath: keyPath, message: "inputMap keys must be non-empty strings" });
+    if (typeof entry !== "string" || entry.trim() === "") issues.push({ filePath, severity: "error", path: keyPath, instancePath: keyPath, message: "inputMap values must be non-empty Liquid template strings" });
+  }
+}
+
+function validateNonEmptyString(value: unknown, filePath: string, pathName: string, label: string, issues: PppValidationIssue[]) {
+  if (typeof value === "string" && value.trim() !== "") return value;
+  issues.push({ filePath, severity: "error", path: pathName, instancePath: pathName, message: `${label} must be a non-empty string` });
+  return undefined;
 }
 
 async function validateJsonFiles(directory: string, kind: "task" | "item" | "repo-config" | "tag", issues: PppValidationIssue[], schemas: PppSchemaValidators, folder?: string) {

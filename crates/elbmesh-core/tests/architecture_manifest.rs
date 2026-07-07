@@ -58,6 +58,8 @@ fn manifest_definition_skeletons_carry_schema_identity_and_versions() {
     assert_eq!(manifest.views[0].schema_id, "view.offer_summary.v1");
     assert_eq!(manifest.views[0].schema_version, 1);
     assert_eq!(manifest.queries[0].query_type, "get_offer_summary");
+    assert_eq!(manifest.queries[0].view_type, "offer_summary");
+    assert_eq!(manifest.queries[0].index_names, vec!["all"]);
     assert_eq!(manifest.queries[0].schema_id, "query.get_offer_summary.v1");
     assert_eq!(manifest.queries[0].schema_version, 1);
     assert_eq!(
@@ -126,6 +128,8 @@ fn architecture_manifest_round_trips_as_stable_json_shape() {
             }],
             "queries": [{
                 "query_type": "get_offer_summary",
+                "view_type": "offer_summary",
+                "index_names": ["all"],
                 "schema_id": "query.get_offer_summary.v1",
                 "schema_version": 1,
             }],
@@ -305,6 +309,25 @@ fn valid_manifest_declared_external_operation_validation_succeeds() {
 }
 
 #[test]
+fn architecture_manifest_validation_rejects_query_targeting_unknown_view() {
+    let mut manifest = offer_manifest();
+    manifest.queries[0].view_type = "missing_view".to_string();
+
+    let err = manifest
+        .validate()
+        .expect_err("query targeting unknown view should fail validation");
+
+    assert_eq!(
+        err,
+        ManifestValidationError::UnknownQueryView {
+            query_type: "get_offer_summary".to_string(),
+            view_type: "missing_view".to_string(),
+        }
+    );
+    assert_eq!(err.code(), "manifest.query_unknown_view");
+}
+
+#[test]
 fn manifest_validation_rejects_action_referencing_unknown_external_operation() {
     let mut manifest = offer_manifest();
     manifest.actions[1].external_operation_types = vec!["missing_operation".to_string()];
@@ -455,6 +478,8 @@ fn offer_manifest() -> ArchitectureManifest {
         }],
         queries: vec![QueryDefinition {
             query_type: "get_offer_summary".to_string(),
+            view_type: "offer_summary".to_string(),
+            index_names: vec!["all".to_string()],
             schema_id: "query.get_offer_summary.v1".to_string(),
             schema_version: 1,
         }],

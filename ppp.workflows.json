@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "workTypes": [
+    {
+      "id": "feature",
+      "label": "Feature",
+      "description": "Plan, test, implement, check, and review a feature slice.",
+      "phases": [
+        {
+          "id": "plan",
+          "label": "Plan",
+          "task": "task.elbmesh-plan-implementation-slice",
+          "inputMap": {
+            "sliceName": "{{ derived.sliceName }}",
+            "phase": "{{ phase.id }}",
+            "goal": "{{ intake.goal }}",
+            "candidatePaths": "{{ derived.paths | json }}"
+          }
+        },
+        {
+          "id": "test",
+          "label": "Test",
+          "task": "task.elbmesh-write-failing-tests",
+          "inputMap": {
+            "sliceName": "{{ derived.sliceName }}",
+            "taskCard": "{{ taskCard.path | default: taskCard.markdown }}",
+            "affectedPaths": "{{ derived.paths | json }}",
+            "expectedBehavior": "{{ intake.acceptanceCriteria | json }}",
+            "testCommand": "{{ derived.testCommand }}"
+          },
+          "dependsOn": ["plan"]
+        },
+        {
+          "id": "implement",
+          "label": "Implement",
+          "task": "task.elbmesh-implement-runtime-slice",
+          "inputMap": {
+            "sliceName": "{{ derived.sliceName }}",
+            "failingTestEvidence": "{{ placeholders.failingTestEvidence }}",
+            "affectedPaths": "{{ derived.paths | json }}",
+            "testCommand": "{{ derived.testCommand }}"
+          },
+          "dependsOn": ["test"]
+        },
+        {
+          "id": "architecture-check",
+          "label": "Architecture Check",
+          "task": "task.elbmesh-check-architecture-boundaries",
+          "inputMap": {
+            "changeSummary": "{{ derived.changeSummary }}",
+            "changedPaths": "{{ derived.paths | json }}",
+            "verificationEvidence": "{{ placeholders.verificationEvidence }}"
+          },
+          "dependsOn": ["implement"]
+        },
+        {
+          "id": "review",
+          "label": "Review",
+          "task": "task.elbmesh-review-change",
+          "inputMap": {
+            "changeSummary": "{{ derived.changeSummary }}",
+            "changedPaths": "{{ derived.paths | json }}",
+            "verificationEvidence": "{{ placeholders.verificationEvidence }}"
+          },
+          "dependsOn": ["architecture-check"]
+        }
+      ]
+    }
+  ]
+}

@@ -123,6 +123,21 @@ impl ArchitectureManifest {
             }
         }
 
+        let view_types: HashSet<_> = self
+            .views
+            .iter()
+            .map(|view| view.view_type.as_str())
+            .collect();
+
+        for query in &self.queries {
+            if !view_types.contains(query.view_type.as_str()) {
+                return Err(ManifestValidationError::UnknownQueryView {
+                    query_type: query.query_type.clone(),
+                    view_type: query.view_type.clone(),
+                });
+            }
+        }
+
         if let Some(path) = self.reaction_graph_cycle() {
             return Err(ManifestValidationError::ReactionGraphCycle { path });
         }
@@ -227,6 +242,12 @@ pub enum ManifestValidationError {
         action_type: String,
     },
 
+    #[error("manifest query '{query_type}' targets undeclared view '{view_type}'")]
+    UnknownQueryView {
+        query_type: String,
+        view_type: String,
+    },
+
     #[error("manifest reaction graph contains a cycle: {path:?}")]
     ReactionGraphCycle { path: Vec<String> },
 }
@@ -246,6 +267,7 @@ impl ManifestValidationError {
             Self::UnknownActionEmittedEvent { .. } => "manifest.action_unknown_emitted_event",
             Self::UnknownReactionTriggerEvent { .. } => "manifest.reaction_unknown_trigger_event",
             Self::UnknownReactionTargetAction { .. } => "manifest.reaction_unknown_target_action",
+            Self::UnknownQueryView { .. } => "manifest.query_unknown_view",
             Self::ReactionGraphCycle { .. } => "manifest.reaction_graph_cycle",
         }
     }
@@ -338,6 +360,8 @@ pub struct ViewDefinition {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct QueryDefinition {
     pub query_type: String,
+    pub view_type: String,
+    pub index_names: Vec<String>,
     pub schema_id: String,
     pub schema_version: u32,
 }

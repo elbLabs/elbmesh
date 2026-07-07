@@ -10,10 +10,12 @@ use serde_json::Value;
 
 use reference_flow::{
     AcceptOfferV1, CreateInvoiceV1, CreateOfferV1, CreateOrderConfirmationV1, CreateSalesOrderV1,
-    FlowStatusFromOfferAccepted, FlowStatusFromOfferCreated, FlowStatusFromSalesOrderCreated,
-    Invoice, InvoiceCreatedV1, InvoiceError, Offer, OfferAcceptedCreatesSalesOrder,
-    OfferAcceptedV1, OfferCreatedV1, OfferError, OrderConfirmation, OrderConfirmationCreatedV1,
-    OrderConfirmationError, SalesOrder, SalesOrderCreatedV1, SalesOrderError,
+    FlowStatusFromInvoiceCreated, FlowStatusFromOfferAccepted, FlowStatusFromOfferCreated,
+    FlowStatusFromOrderConfirmationCreated, FlowStatusFromSalesOrderCreated, Invoice,
+    InvoiceCreatedV1, InvoiceError, Offer, OfferAcceptedCreatesSalesOrder, OfferAcceptedV1,
+    OfferCreatedV1, OfferError, OrderConfirmation, OrderConfirmationCreatedCreatesInvoice,
+    OrderConfirmationCreatedV1, OrderConfirmationError, SalesOrder,
+    SalesOrderCreatedCreatesOrderConfirmation, SalesOrderCreatedV1, SalesOrderError,
 };
 
 mod reference_flow {
@@ -23,8 +25,8 @@ mod reference_flow {
     use elbmesh_core::{
         apply_recorded_event, Action, ActionContext, ActionDecision, ActionDefinition,
         ActionFailure, Apply, ArchitectureManifest, Event, EventDefinition, Handle, HandlerError,
-        Projection, Reaction, ReactionDefinition, Resource, ResourceDefinition, ResourceError,
-        ViewDefinition, ViewDocument, ViewIndexEntry, ViewStore, ViewStoreError,
+        Projection, QueryDefinition, Reaction, ReactionDefinition, Resource, ResourceDefinition,
+        ResourceError, ViewDefinition, ViewDocument, ViewIndexEntry, ViewStore, ViewStoreError,
     };
     use serde::{Deserialize, Serialize};
     use serde_json::json;
@@ -133,19 +135,43 @@ mod reference_flow {
                     schema_version: InvoiceCreatedV1::SCHEMA_VERSION,
                 },
             ],
-            reactions: vec![ReactionDefinition {
-                reaction_type: OfferAcceptedCreatesSalesOrder::REACTION_TYPE.to_string(),
-                trigger_event_type: OfferAcceptedV1::EVENT_TYPE.to_string(),
-                target_action_type: CreateSalesOrderV1::ACTION_TYPE.to_string(),
-                schema_id: OfferAcceptedCreatesSalesOrder::SCHEMA_ID.to_string(),
-                schema_version: OfferAcceptedCreatesSalesOrder::SCHEMA_VERSION,
-            }],
+            reactions: vec![
+                ReactionDefinition {
+                    reaction_type: OfferAcceptedCreatesSalesOrder::REACTION_TYPE.to_string(),
+                    trigger_event_type: OfferAcceptedV1::EVENT_TYPE.to_string(),
+                    target_action_type: CreateSalesOrderV1::ACTION_TYPE.to_string(),
+                    schema_id: OfferAcceptedCreatesSalesOrder::SCHEMA_ID.to_string(),
+                    schema_version: OfferAcceptedCreatesSalesOrder::SCHEMA_VERSION,
+                },
+                ReactionDefinition {
+                    reaction_type: SalesOrderCreatedCreatesOrderConfirmation::REACTION_TYPE
+                        .to_string(),
+                    trigger_event_type: SalesOrderCreatedV1::EVENT_TYPE.to_string(),
+                    target_action_type: CreateOrderConfirmationV1::ACTION_TYPE.to_string(),
+                    schema_id: SalesOrderCreatedCreatesOrderConfirmation::SCHEMA_ID.to_string(),
+                    schema_version: SalesOrderCreatedCreatesOrderConfirmation::SCHEMA_VERSION,
+                },
+                ReactionDefinition {
+                    reaction_type: OrderConfirmationCreatedCreatesInvoice::REACTION_TYPE
+                        .to_string(),
+                    trigger_event_type: OrderConfirmationCreatedV1::EVENT_TYPE.to_string(),
+                    target_action_type: CreateInvoiceV1::ACTION_TYPE.to_string(),
+                    schema_id: OrderConfirmationCreatedCreatesInvoice::SCHEMA_ID.to_string(),
+                    schema_version: OrderConfirmationCreatedCreatesInvoice::SCHEMA_VERSION,
+                },
+            ],
             views: vec![ViewDefinition {
                 view_type: "flow_status".to_string(),
                 schema_id: "view.flow_status.v1".to_string(),
                 schema_version: 1,
             }],
-            queries: Vec::new(),
+            queries: vec![QueryDefinition {
+                query_type: "get_flow_status".to_string(),
+                view_type: "flow_status".to_string(),
+                index_names: vec!["all".to_string()],
+                schema_id: "query.get_flow_status.v1".to_string(),
+                schema_version: 1,
+            }],
             external_operations: Vec::new(),
         }
     }
@@ -504,6 +530,49 @@ mod reference_flow {
         }
     }
 
+    pub struct SalesOrderCreatedCreatesOrderConfirmation;
+
+    #[async_trait]
+    impl Reaction for SalesOrderCreatedCreatesOrderConfirmation {
+        type Trigger = SalesOrderCreatedV1;
+        type Resource = OrderConfirmation;
+        type Action = CreateOrderConfirmationV1;
+
+        const REACTION_TYPE: &'static str = "sales_order_created_to_create_order_confirmation";
+        const SCHEMA_ID: &'static str =
+            "reaction.sales_order_created_to_create_order_confirmation.v1";
+        const SCHEMA_VERSION: u32 = 1;
+
+        async fn react(&self, event: Self::Trigger) -> Self::Action {
+            CreateOrderConfirmationV1 {
+                order_confirmation_id: format!("order-confirmation-for-{}", event.sales_order_id),
+                sales_order_id: event.sales_order_id,
+                offer_id: event.offer_id,
+            }
+        }
+    }
+
+    pub struct OrderConfirmationCreatedCreatesInvoice;
+
+    #[async_trait]
+    impl Reaction for OrderConfirmationCreatedCreatesInvoice {
+        type Trigger = OrderConfirmationCreatedV1;
+        type Resource = Invoice;
+        type Action = CreateInvoiceV1;
+
+        const REACTION_TYPE: &'static str = "order_confirmation_created_to_create_invoice";
+        const SCHEMA_ID: &'static str = "reaction.order_confirmation_created_to_create_invoice.v1";
+        const SCHEMA_VERSION: u32 = 1;
+
+        async fn react(&self, event: Self::Trigger) -> Self::Action {
+            CreateInvoiceV1 {
+                invoice_id: format!("invoice-for-{}", event.order_confirmation_id),
+                order_confirmation_id: event.order_confirmation_id,
+                offer_id: event.offer_id,
+            }
+        }
+    }
+
     pub struct FlowStatusFromOfferCreated;
 
     #[async_trait]
@@ -593,6 +662,68 @@ mod reference_flow {
         }
     }
 
+    pub struct FlowStatusFromOrderConfirmationCreated;
+
+    #[async_trait]
+    impl Projection for FlowStatusFromOrderConfirmationCreated {
+        type Source = OrderConfirmationCreatedV1;
+
+        const PROJECTION_TYPE: &'static str = "flow_status_from_order_confirmation_created";
+
+        async fn project<V>(
+            &self,
+            event: Self::Source,
+            view_store: &V,
+        ) -> Result<(), ViewStoreError>
+        where
+            V: ViewStore,
+        {
+            view_store
+                .put(flow_status_document(
+                    &event.offer_id,
+                    "order_confirmation_created",
+                    json!({
+                        "offer_id": event.offer_id,
+                        "status": "order_confirmation_created",
+                        "order_confirmation_id": event.order_confirmation_id,
+                        "sales_order_id": event.sales_order_id,
+                    }),
+                ))
+                .await
+        }
+    }
+
+    pub struct FlowStatusFromInvoiceCreated;
+
+    #[async_trait]
+    impl Projection for FlowStatusFromInvoiceCreated {
+        type Source = InvoiceCreatedV1;
+
+        const PROJECTION_TYPE: &'static str = "flow_status_from_invoice_created";
+
+        async fn project<V>(
+            &self,
+            event: Self::Source,
+            view_store: &V,
+        ) -> Result<(), ViewStoreError>
+        where
+            V: ViewStore,
+        {
+            view_store
+                .put(flow_status_document(
+                    &event.offer_id,
+                    "invoice_created",
+                    json!({
+                        "offer_id": event.offer_id,
+                        "status": "invoice_created",
+                        "invoice_id": event.invoice_id,
+                        "order_confirmation_id": event.order_confirmation_id,
+                    }),
+                ))
+                .await
+        }
+    }
+
     fn flow_status_document(
         offer_id: &str,
         status: &str,
@@ -608,6 +739,7 @@ mod reference_flow {
     pub struct OrderConfirmation {
         id: Option<String>,
         sales_order_id: Option<String>,
+        offer_id: Option<String>,
     }
 
     #[derive(Debug, Clone, PartialEq, Eq)]
@@ -665,6 +797,7 @@ mod reference_flow {
     pub struct CreateOrderConfirmationV1 {
         pub order_confirmation_id: String,
         pub sales_order_id: String,
+        pub offer_id: String,
     }
 
     impl Action for CreateOrderConfirmationV1 {
@@ -683,6 +816,7 @@ mod reference_flow {
     pub struct OrderConfirmationCreatedV1 {
         pub order_confirmation_id: String,
         pub sales_order_id: String,
+        pub offer_id: String,
     }
 
     impl Event for OrderConfirmationCreatedV1 {
@@ -701,6 +835,7 @@ mod reference_flow {
         fn apply(&mut self, event: OrderConfirmationCreatedV1) -> Result<(), ResourceError> {
             self.id = Some(event.order_confirmation_id);
             self.sales_order_id = Some(event.sales_order_id);
+            self.offer_id = Some(event.offer_id);
             Ok(())
         }
     }
@@ -723,6 +858,7 @@ mod reference_flow {
                 OrderConfirmationCreatedV1 {
                     order_confirmation_id: action.order_confirmation_id,
                     sales_order_id: action.sales_order_id,
+                    offer_id: action.offer_id,
                 },
             )?;
 
@@ -734,6 +870,7 @@ mod reference_flow {
     pub struct Invoice {
         id: Option<String>,
         order_confirmation_id: Option<String>,
+        offer_id: Option<String>,
     }
 
     #[derive(Debug, Clone, PartialEq, Eq)]
@@ -791,6 +928,7 @@ mod reference_flow {
     pub struct CreateInvoiceV1 {
         pub invoice_id: String,
         pub order_confirmation_id: String,
+        pub offer_id: String,
     }
 
     impl Action for CreateInvoiceV1 {
@@ -809,6 +947,7 @@ mod reference_flow {
     pub struct InvoiceCreatedV1 {
         pub invoice_id: String,
         pub order_confirmation_id: String,
+        pub offer_id: String,
     }
 
     impl Event for InvoiceCreatedV1 {
@@ -827,6 +966,7 @@ mod reference_flow {
         fn apply(&mut self, event: InvoiceCreatedV1) -> Result<(), ResourceError> {
             self.id = Some(event.invoice_id);
             self.order_confirmation_id = Some(event.order_confirmation_id);
+            self.offer_id = Some(event.offer_id);
             Ok(())
         }
     }
@@ -849,6 +989,7 @@ mod reference_flow {
                 InvoiceCreatedV1 {
                     invoice_id: action.invoice_id,
                     order_confirmation_id: action.order_confirmation_id,
+                    offer_id: action.offer_id,
                 },
             )?;
 
@@ -1013,6 +1154,204 @@ async fn dispatching_offer_accepted_creates_sales_order_through_reference_flow_r
 }
 
 #[tokio::test]
+async fn dispatching_sales_order_created_creates_order_confirmation_through_reference_flow_reaction(
+) {
+    let event_store = InMemoryEventStore::new();
+    let action_executor = ActionExecutor::new(event_store.clone());
+
+    action_executor
+        .execute::<SalesOrder, CreateSalesOrderV1>(
+            CreateSalesOrderV1 {
+                sales_order_id: "sales-order-1".to_string(),
+                offer_id: "offer-1".to_string(),
+            },
+            action_metadata("create-sales-order-action-1"),
+        )
+        .await
+        .expect("create sales order should succeed");
+
+    let sales_order_created = event_store
+        .load(&ResourceStream::new("sales_order", "sales-order-1"))
+        .await
+        .expect("load sales order events")
+        .into_iter()
+        .find(|event| event.metadata.message_type == "sales_order_created")
+        .expect("sales order created event should exist");
+    let expected_action_id =
+        ReactionRuntime::<InMemoryEventStore, InMemoryReactionJournal>::reaction_action_id::<
+            SalesOrderCreatedCreatesOrderConfirmation,
+        >(&sales_order_created);
+
+    let reaction_journal = InMemoryReactionJournal::new();
+    let dispatcher = ReactionDispatcher::new(ReactionRuntime::new(
+        event_store.clone(),
+        reaction_journal.clone(),
+    ))
+    .with_handler(TypedReactionHandler::new(
+        SalesOrderCreatedCreatesOrderConfirmation,
+        |trigger: &RecordedEvent| {
+            ReactionRuntime::<InMemoryEventStore, InMemoryReactionJournal>::reaction_action_metadata::<
+                SalesOrderCreatedCreatesOrderConfirmation,
+            >(trigger)
+        },
+    ));
+
+    let receipts = dispatcher
+        .dispatch(&sales_order_created)
+        .await
+        .expect("dispatch should succeed");
+
+    assert_eq!(receipts.len(), 1);
+    assert_eq!(receipts[0].action_receipt.action_id, expected_action_id);
+
+    let order_confirmation_events = dispatcher
+        .event_store()
+        .load(&ResourceStream::new(
+            "order_confirmation",
+            "order-confirmation-for-sales-order-1",
+        ))
+        .await
+        .expect("load order confirmation events");
+    assert_eq!(order_confirmation_events.len(), 1);
+    assert_eq!(
+        order_confirmation_events[0].metadata.message_type,
+        "order_confirmation_created"
+    );
+    assert_eq!(
+        order_confirmation_events[0].metadata.stream_type,
+        StreamType::Resource
+    );
+    assert_eq!(
+        order_confirmation_events[0].metadata.action_id,
+        expected_action_id
+    );
+    assert_eq!(
+        order_confirmation_events[0].payload["order_confirmation_id"],
+        "order-confirmation-for-sales-order-1"
+    );
+    assert_eq!(
+        order_confirmation_events[0].payload["sales_order_id"],
+        "sales-order-1"
+    );
+    assert_eq!(order_confirmation_events[0].payload["offer_id"], "offer-1");
+    assert!(dispatcher
+        .event_store()
+        .all_events()
+        .iter()
+        .all(|event| event.metadata.stream_type == StreamType::Resource));
+
+    let reaction_records = reaction_journal
+        .load(&ReactionJournalStream::for_reaction(
+            receipts[0].reaction_id.clone(),
+        ))
+        .await
+        .expect("load reaction journal records");
+    assert_eq!(reaction_records.len(), 2);
+    assert!(reaction_records.iter().all(|record| match record {
+        ReactionJournalRecord::ReactionTriggered { metadata, .. }
+        | ReactionJournalRecord::ReactionCompleted { metadata, .. } => {
+            metadata.stream_type == StreamType::Reaction
+        }
+    }));
+}
+
+#[tokio::test]
+async fn dispatching_order_confirmation_created_creates_invoice_through_reference_flow_reaction() {
+    let event_store = InMemoryEventStore::new();
+    let action_executor = ActionExecutor::new(event_store.clone());
+
+    action_executor
+        .execute::<OrderConfirmation, CreateOrderConfirmationV1>(
+            CreateOrderConfirmationV1 {
+                order_confirmation_id: "order-confirmation-1".to_string(),
+                sales_order_id: "sales-order-1".to_string(),
+                offer_id: "offer-1".to_string(),
+            },
+            action_metadata("create-order-confirmation-action-1"),
+        )
+        .await
+        .expect("create order confirmation should succeed");
+
+    let order_confirmation_created = event_store
+        .load(&ResourceStream::new(
+            "order_confirmation",
+            "order-confirmation-1",
+        ))
+        .await
+        .expect("load order confirmation events")
+        .into_iter()
+        .find(|event| event.metadata.message_type == "order_confirmation_created")
+        .expect("order confirmation created event should exist");
+    let expected_action_id =
+        ReactionRuntime::<InMemoryEventStore, InMemoryReactionJournal>::reaction_action_id::<
+            OrderConfirmationCreatedCreatesInvoice,
+        >(&order_confirmation_created);
+
+    let reaction_journal = InMemoryReactionJournal::new();
+    let dispatcher = ReactionDispatcher::new(ReactionRuntime::new(
+        event_store.clone(),
+        reaction_journal.clone(),
+    ))
+    .with_handler(TypedReactionHandler::new(
+        OrderConfirmationCreatedCreatesInvoice,
+        |trigger: &RecordedEvent| {
+            ReactionRuntime::<InMemoryEventStore, InMemoryReactionJournal>::reaction_action_metadata::<
+                OrderConfirmationCreatedCreatesInvoice,
+            >(trigger)
+        },
+    ));
+
+    let receipts = dispatcher
+        .dispatch(&order_confirmation_created)
+        .await
+        .expect("dispatch should succeed");
+
+    assert_eq!(receipts.len(), 1);
+    assert_eq!(receipts[0].action_receipt.action_id, expected_action_id);
+
+    let invoice_events = dispatcher
+        .event_store()
+        .load(&ResourceStream::new(
+            "invoice",
+            "invoice-for-order-confirmation-1",
+        ))
+        .await
+        .expect("load invoice events");
+    assert_eq!(invoice_events.len(), 1);
+    assert_eq!(invoice_events[0].metadata.message_type, "invoice_created");
+    assert_eq!(invoice_events[0].metadata.stream_type, StreamType::Resource);
+    assert_eq!(invoice_events[0].metadata.action_id, expected_action_id);
+    assert_eq!(
+        invoice_events[0].payload["invoice_id"],
+        "invoice-for-order-confirmation-1"
+    );
+    assert_eq!(
+        invoice_events[0].payload["order_confirmation_id"],
+        "order-confirmation-1"
+    );
+    assert_eq!(invoice_events[0].payload["offer_id"], "offer-1");
+    assert!(dispatcher
+        .event_store()
+        .all_events()
+        .iter()
+        .all(|event| event.metadata.stream_type == StreamType::Resource));
+
+    let reaction_records = reaction_journal
+        .load(&ReactionJournalStream::for_reaction(
+            receipts[0].reaction_id.clone(),
+        ))
+        .await
+        .expect("load reaction journal records");
+    assert_eq!(reaction_records.len(), 2);
+    assert!(reaction_records.iter().all(|record| match record {
+        ReactionJournalRecord::ReactionTriggered { metadata, .. }
+        | ReactionJournalRecord::ReactionCompleted { metadata, .. } => {
+            metadata.stream_type == StreamType::Reaction
+        }
+    }));
+}
+
+#[tokio::test]
 async fn reference_flow_projects_document_flow_status_view() {
     let event_store = InMemoryEventStore::new();
     let action_executor = ActionExecutor::new(event_store.clone());
@@ -1063,6 +1402,20 @@ async fn reference_flow_projects_document_flow_status_view() {
                 ReactionRuntime::<InMemoryEventStore, InMemoryReactionJournal>::
                 reaction_action_metadata::<OfferAcceptedCreatesSalesOrder>(trigger)
             },
+        ))
+        .with_handler(TypedReactionHandler::new(
+            SalesOrderCreatedCreatesOrderConfirmation,
+            |trigger: &RecordedEvent| {
+                ReactionRuntime::<InMemoryEventStore, InMemoryReactionJournal>::
+                reaction_action_metadata::<SalesOrderCreatedCreatesOrderConfirmation>(trigger)
+            },
+        ))
+        .with_handler(TypedReactionHandler::new(
+            OrderConfirmationCreatedCreatesInvoice,
+            |trigger: &RecordedEvent| {
+                ReactionRuntime::<InMemoryEventStore, InMemoryReactionJournal>::
+                reaction_action_metadata::<OrderConfirmationCreatedCreatesInvoice>(trigger)
+            },
         ));
     reaction_dispatcher
         .dispatch(&offer_accepted)
@@ -1080,12 +1433,48 @@ async fn reference_flow_projects_document_flow_status_view() {
         .find(|event| event.metadata.message_type == "sales_order_created")
         .expect("sales order created event should exist")
         .clone();
+    reaction_dispatcher
+        .dispatch(&sales_order_created)
+        .await
+        .expect("sales order reaction dispatch should succeed");
+    let order_confirmation_events = event_store
+        .load(&ResourceStream::new(
+            "order_confirmation",
+            "order-confirmation-for-sales-order-for-offer-1",
+        ))
+        .await
+        .expect("load order confirmation events");
+    let order_confirmation_created = order_confirmation_events
+        .iter()
+        .find(|event| event.metadata.message_type == "order_confirmation_created")
+        .expect("order confirmation created event should exist")
+        .clone();
+    reaction_dispatcher
+        .dispatch(&order_confirmation_created)
+        .await
+        .expect("order confirmation reaction dispatch should succeed");
+    let invoice_events = event_store
+        .load(&ResourceStream::new(
+            "invoice",
+            "invoice-for-order-confirmation-for-sales-order-for-offer-1",
+        ))
+        .await
+        .expect("load invoice events");
+    let invoice_created = invoice_events
+        .iter()
+        .find(|event| event.metadata.message_type == "invoice_created")
+        .expect("invoice created event should exist")
+        .clone();
 
     let projection_dispatcher =
         ProjectionDispatcher::new(ProjectionRuntime::new(InMemoryViewStore::new()))
             .with_handler(TypedProjectionHandler::new(FlowStatusFromOfferCreated))
             .with_handler(TypedProjectionHandler::new(FlowStatusFromOfferAccepted))
-            .with_handler(TypedProjectionHandler::new(FlowStatusFromSalesOrderCreated));
+            .with_handler(TypedProjectionHandler::new(FlowStatusFromSalesOrderCreated))
+            .with_handler(TypedProjectionHandler::new(
+                FlowStatusFromOrderConfirmationCreated,
+            ))
+            .with_handler(TypedProjectionHandler::new(FlowStatusFromInvoiceCreated));
 
     let offer_created_report = projection_dispatcher
         .dispatch(&offer_created)
@@ -1131,6 +1520,44 @@ async fn reference_flow_projects_document_flow_status_view() {
     assert_eq!(
         flow_status.payload["sales_order_id"],
         "sales-order-for-offer-1"
+    );
+
+    let order_confirmation_report = projection_dispatcher
+        .dispatch(&order_confirmation_created)
+        .await
+        .expect("order confirmation projection dispatch should succeed");
+    assert_eq!(order_confirmation_report.applied, 1);
+    let order_confirmation_status = projection_dispatcher
+        .view_store()
+        .load(&ViewKey::new("flow_status", "offer-1"))
+        .await
+        .expect("load order confirmation flow status")
+        .expect("order confirmation flow status should exist");
+    assert_eq!(
+        order_confirmation_status.payload["status"],
+        "order_confirmation_created"
+    );
+    assert_eq!(
+        order_confirmation_status.payload["order_confirmation_id"],
+        "order-confirmation-for-sales-order-for-offer-1"
+    );
+
+    let invoice_report = projection_dispatcher
+        .dispatch(&invoice_created)
+        .await
+        .expect("invoice projection dispatch should succeed");
+    assert_eq!(invoice_report.applied, 1);
+    let flow_status = projection_dispatcher
+        .view_store()
+        .load(&ViewKey::new("flow_status", "offer-1"))
+        .await
+        .expect("load invoice flow status")
+        .expect("invoice flow status should exist");
+    assert_eq!(flow_status.payload["offer_id"], "offer-1");
+    assert_eq!(flow_status.payload["status"], "invoice_created");
+    assert_eq!(
+        flow_status.payload["invoice_id"],
+        "invoice-for-order-confirmation-for-sales-order-for-offer-1"
     );
 
     let listed = projection_dispatcher
@@ -1228,10 +1655,12 @@ async fn create_order_confirmation_emits_order_confirmation_created() {
         .when(CreateOrderConfirmationV1 {
             order_confirmation_id: "order-confirmation-1".to_string(),
             sales_order_id: "sales-order-1".to_string(),
+            offer_id: "offer-1".to_string(),
         })
         .then(vec![OrderConfirmationCreatedV1 {
             order_confirmation_id: "order-confirmation-1".to_string(),
             sales_order_id: "sales-order-1".to_string(),
+            offer_id: "offer-1".to_string(),
         }])
         .assert()
         .await;
@@ -1243,10 +1672,12 @@ async fn create_order_confirmation_twice_returns_typed_already_exists_error() {
         .given(vec![OrderConfirmationCreatedV1 {
             order_confirmation_id: "order-confirmation-1".to_string(),
             sales_order_id: "sales-order-1".to_string(),
+            offer_id: "offer-1".to_string(),
         }])
         .when(CreateOrderConfirmationV1 {
             order_confirmation_id: "order-confirmation-1".to_string(),
             sales_order_id: "sales-order-1".to_string(),
+            offer_id: "offer-1".to_string(),
         })
         .then_error(OrderConfirmationError::AlreadyExists)
         .assert()
@@ -1259,10 +1690,12 @@ async fn create_invoice_emits_invoice_created() {
         .when(CreateInvoiceV1 {
             invoice_id: "invoice-1".to_string(),
             order_confirmation_id: "order-confirmation-1".to_string(),
+            offer_id: "offer-1".to_string(),
         })
         .then(vec![InvoiceCreatedV1 {
             invoice_id: "invoice-1".to_string(),
             order_confirmation_id: "order-confirmation-1".to_string(),
+            offer_id: "offer-1".to_string(),
         }])
         .assert()
         .await;
@@ -1274,10 +1707,12 @@ async fn create_invoice_twice_returns_typed_already_exists_error() {
         .given(vec![InvoiceCreatedV1 {
             invoice_id: "invoice-1".to_string(),
             order_confirmation_id: "order-confirmation-1".to_string(),
+            offer_id: "offer-1".to_string(),
         }])
         .when(CreateInvoiceV1 {
             invoice_id: "invoice-1".to_string(),
             order_confirmation_id: "order-confirmation-1".to_string(),
+            offer_id: "offer-1".to_string(),
         })
         .then_error(InvoiceError::AlreadyExists)
         .assert()
@@ -1336,20 +1771,40 @@ fn reference_flow_manifest_json_names_resources_actions_and_events() {
         json_field_values(&manifest_json, "events", "event_type")
     );
     assert_eq!(
-        vec!["offer_accepted_to_create_sales_order"],
+        vec![
+            "offer_accepted_to_create_sales_order",
+            "sales_order_created_to_create_order_confirmation",
+            "order_confirmation_created_to_create_invoice",
+        ],
         json_field_values(&manifest_json, "reactions", "reaction_type")
     );
     assert_eq!(
-        vec!["offer_accepted"],
+        vec![
+            "offer_accepted",
+            "sales_order_created",
+            "order_confirmation_created",
+        ],
         json_field_values(&manifest_json, "reactions", "trigger_event_type")
     );
     assert_eq!(
-        vec!["create_sales_order"],
+        vec![
+            "create_sales_order",
+            "create_order_confirmation",
+            "create_invoice",
+        ],
         json_field_values(&manifest_json, "reactions", "target_action_type")
     );
     assert_eq!(
         vec!["flow_status"],
         json_field_values(&manifest_json, "views", "view_type")
+    );
+    assert_eq!(
+        vec!["get_flow_status"],
+        json_field_values(&manifest_json, "queries", "query_type")
+    );
+    assert_eq!(
+        vec!["flow_status"],
+        json_field_values(&manifest_json, "queries", "view_type")
     );
 }
 
