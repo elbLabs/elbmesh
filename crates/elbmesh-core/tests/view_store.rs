@@ -1,6 +1,6 @@
 use elbmesh_core::{
-    EventStore, InMemoryEventStore, InMemoryViewStore, ResourceStream, ViewDocument, ViewKey,
-    ViewStore,
+    EventStore, InMemoryEventStore, InMemoryViewStore, ResourceStream, ViewDocument,
+    ViewIndexEntry, ViewKey, ViewStore,
 };
 
 use serde_json::json;
@@ -129,6 +129,164 @@ async fn in_memory_view_store_writes_do_not_create_resource_events() {
     assert!(event_store.all_events().is_empty());
 }
 
+#[tokio::test]
+async fn in_memory_view_store_lists_all_index_with_empty_prefix() {
+    let store = InMemoryViewStore::new();
+
+    store
+        .put(indexed_offer_summary_view(
+            "offer-2",
+            "Second offer",
+            "draft",
+        ))
+        .await
+        .expect("put second offer");
+    store
+        .put(indexed_offer_summary_view(
+            "offer-1",
+            "Initial offer",
+            "accepted",
+        ))
+        .await
+        .expect("put first offer");
+
+    let listed = store
+        .list_by_index_prefix("offer_summary", "all", "")
+        .await
+        .expect("list all offer summaries");
+
+    assert_eq!(view_ids(&listed), vec!["offer-1", "offer-2"]);
+}
+
+#[tokio::test]
+async fn in_memory_view_store_lists_matching_index_prefix_only() {
+    let store = InMemoryViewStore::new();
+
+    store
+        .put(indexed_offer_summary_view(
+            "offer-1",
+            "Accepted offer",
+            "accepted",
+        ))
+        .await
+        .expect("put accepted offer");
+    store
+        .put(indexed_offer_summary_view(
+            "offer-2",
+            "Draft offer",
+            "draft",
+        ))
+        .await
+        .expect("put draft offer");
+    store
+        .put(indexed_offer_summary_view(
+            "offer-3",
+            "Accepted offer 2",
+            "accepted",
+        ))
+        .await
+        .expect("put second accepted offer");
+
+    let listed = store
+        .list_by_index_prefix("offer_summary", "by_status", "accepted/")
+        .await
+        .expect("list accepted offers");
+
+    assert_eq!(view_ids(&listed), vec!["offer-1", "offer-3"]);
+}
+
+#[tokio::test]
+async fn in_memory_view_store_index_listing_isolates_view_types_and_index_names() {
+    let store = InMemoryViewStore::new();
+
+    store
+        .put(indexed_offer_summary_view(
+            "shared-id",
+            "Initial offer",
+            "accepted",
+        ))
+        .await
+        .expect("put offer summary");
+    store
+        .put(
+            ViewDocument::new("flow_status", "shared-id", json!({ "status": "accepted" }))
+                .with_indexes(vec![
+                    ViewIndexEntry::new("all", "shared-id"),
+                    ViewIndexEntry::new("by_status", "accepted/shared-id"),
+                ]),
+        )
+        .await
+        .expect("put flow status");
+
+    let wrong_view_type = store
+        .list_by_index_prefix("invoice_summary", "all", "")
+        .await
+        .expect("list wrong view type");
+    let wrong_index_name = store
+        .list_by_index_prefix("offer_summary", "by_actor", "accepted/")
+        .await
+        .expect("list wrong index name");
+    let offer_summary = store
+        .list_by_index_prefix("offer_summary", "by_status", "accepted/")
+        .await
+        .expect("list offer summary by status");
+
+    assert!(wrong_view_type.is_empty());
+    assert!(wrong_index_name.is_empty());
+    assert_eq!(view_ids(&offer_summary), vec!["shared-id"]);
+}
+
+#[tokio::test]
+async fn in_memory_view_store_overwrite_replaces_index_membership() {
+    let store = InMemoryViewStore::new();
+
+    store
+        .put(indexed_offer_summary_view(
+            "offer-1",
+            "Draft offer",
+            "draft",
+        ))
+        .await
+        .expect("put draft offer");
+    store
+        .put(indexed_offer_summary_view(
+            "offer-1",
+            "Accepted offer",
+            "accepted",
+        ))
+        .await
+        .expect("put accepted offer");
+
+    let draft = store
+        .list_by_index_prefix("offer_summary", "by_status", "draft/")
+        .await
+        .expect("list draft offers");
+    let accepted = store
+        .list_by_index_prefix("offer_summary", "by_status", "accepted/")
+        .await
+        .expect("list accepted offers");
+
+    assert!(draft.is_empty());
+    assert_eq!(view_ids(&accepted), vec!["offer-1"]);
+}
+
+#[tokio::test]
+async fn in_memory_view_store_missing_index_returns_empty_list() {
+    let store = InMemoryViewStore::new();
+
+    store
+        .put(offer_summary_view("offer-1", "Initial offer"))
+        .await
+        .expect("put unindexed view");
+
+    let listed = store
+        .list_by_index_prefix("offer_summary", "all", "")
+        .await
+        .expect("list missing index");
+
+    assert!(listed.is_empty());
+}
+
 fn offer_summary_view(offer_id: &str, title: &str) -> ViewDocument {
     ViewDocument::new(
         "offer_summary",
@@ -138,4 +296,27 @@ fn offer_summary_view(offer_id: &str, title: &str) -> ViewDocument {
             "title": title,
         }),
     )
+}
+
+fn indexed_offer_summary_view(offer_id: &str, title: &str, status: &str) -> ViewDocument {
+    ViewDocument::new(
+        "offer_summary",
+        offer_id,
+        json!({
+            "offer_id": offer_id,
+            "title": title,
+            "status": status,
+        }),
+    )
+    .with_indexes(vec![
+        ViewIndexEntry::new("all", offer_id),
+        ViewIndexEntry::new("by_status", format!("{status}/{offer_id}")),
+    ])
+}
+
+fn view_ids(documents: &[ViewDocument]) -> Vec<&str> {
+    documents
+        .iter()
+        .map(|document| document.key.view_id.as_str())
+        .collect()
 }
