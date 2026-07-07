@@ -30,7 +30,10 @@ pub use message::{
     ActionDecision, ActionMetadata, ActionReceipt, ActionStatus, EmittedEvent, MessageMetadata,
     NewEvent, RecordedEvent, ResourceStream, StreamType,
 };
-pub use reaction::{Reaction, ReactionExecutionError, ReactionReceipt, ReactionRuntime};
+pub use reaction::{
+    Reaction, ReactionDispatchError, ReactionDispatchFailure, ReactionDispatcher,
+    ReactionExecutionError, ReactionReceipt, ReactionRuntime, TypedReactionHandler,
+};
 pub use reaction_journal::{
     InMemoryReactionJournal, ReactionJournal, ReactionJournalError, ReactionJournalRecord,
     ReactionJournalStream,
