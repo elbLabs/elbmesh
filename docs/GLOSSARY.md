@@ -273,6 +273,19 @@ Example:
 LexOffice Create Invoice: POST /v1/invoices
 ```
 
+### OperationJournal
+
+A technical journal that records External Operation calls, completions, and failures.
+
+Rules:
+
+```text
+OperationJournal records are not Resource Events.
+OperationJournal records are keyed by operation_id.
+OperationJournal records carry idempotency metadata for external retries.
+Provider response details belong in OperationJournal or Object Store, not Resource Events.
+```
+
 ### Resource State
 
 The reconstructed current Resource data obtained by replaying Resource Events.
