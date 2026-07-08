@@ -8,9 +8,10 @@ use crate::{
     Action, ActionDecision, ActionError, ActionFailure, ActionFailureClassification, ActionJournal,
     ActionJournalRecord, ActionJournalStream, ActionMetadata, ActionReceipt, ActionStatus, Apply,
     EmittedEvent, Event, EventStore, ExecutionError, ExpectedVersion, Handle, HandlerError,
-    MessageMetadata, NewEvent, Resource, ResourceStream, StreamType,
+    MessageMetadata, NewEvent, OperationJournal, OperationJournalRecord, OperationJournalStream,
+    Resource, ResourceStream, StreamType,
 };
-use crate::{ExternalOperation, ExternalOperationCall};
+use crate::{ExternalOperation, ExternalOperationCall, ExternalOperationFailure};
 
 pub struct ActionContext<R: Resource> {
     metadata: ActionMetadata,
@@ -18,6 +19,7 @@ pub struct ActionContext<R: Resource> {
     resource_id: String,
     current_version: u64,
     events: Vec<NewEvent>,
+    operation_journal: Option<Arc<dyn OperationJournal>>,
     _resource: PhantomData<R>,
 }
 
@@ -34,8 +36,17 @@ impl<R: Resource> ActionContext<R> {
             resource_id: resource_id.into(),
             current_version,
             events: Vec::new(),
+            operation_journal: None,
             _resource: PhantomData,
         }
+    }
+
+    fn with_operation_journal(
+        mut self,
+        operation_journal: Option<Arc<dyn OperationJournal>>,
+    ) -> Self {
+        self.operation_journal = operation_journal;
+        self
     }
 
     pub fn metadata(&self) -> &ActionMetadata {
@@ -90,6 +101,99 @@ impl<R: Resource> ActionContext<R> {
             operation_schema_version: O::SCHEMA_VERSION,
             idempotency_key,
         };
+
+        if let Some(operation_journal) = &self.operation_journal {
+            let stream = OperationJournalStream::for_operation(call.operation_id.clone());
+            let records = operation_journal
+                .load(&stream)
+                .await
+                .map_err(|error| ActionError::operation_journal(&call.operation_id, &error))?;
+
+            if let Some(response) = records.iter().rev().find_map(|record| match record {
+                OperationJournalRecord::OperationCompleted { response, .. } => Some(response),
+                _ => None,
+            }) {
+                return serde_json::from_value(response.clone()).map_err(|error| {
+                    ActionError::Serialization(format!(
+                        "external operation '{}' completed response replay failed: {error}",
+                        O::OPERATION_TYPE
+                    ))
+                });
+            }
+
+            let payload = serde_json::to_value(&request)
+                .map_err(|error| ActionError::Serialization(error.to_string()))?;
+            operation_journal
+                .append(
+                    &stream,
+                    OperationJournalRecord::OperationCalled {
+                        operation_id: call.operation_id.clone(),
+                        metadata: operation_journal_metadata(
+                            "operation_called",
+                            "journal.operation_called.v1",
+                            &self.resource_type,
+                            &self.resource_id,
+                            &self.metadata,
+                        ),
+                        operation_type: call.operation_type.clone(),
+                        operation_schema_id: call.operation_schema_id.clone(),
+                        operation_schema_version: call.operation_schema_version,
+                        idempotency_key: call.idempotency_key.clone(),
+                        payload,
+                    },
+                )
+                .await
+                .map_err(|error| ActionError::operation_journal(&call.operation_id, &error))?;
+
+            let response = match operation.execute(request, call.clone()).await {
+                Ok(response) => response,
+                Err(error) => {
+                    operation_journal
+                        .append(
+                            &stream,
+                            OperationJournalRecord::OperationFailed {
+                                operation_id: call.operation_id.clone(),
+                                metadata: operation_journal_metadata(
+                                    "operation_failed",
+                                    "journal.operation_failed.v1",
+                                    &self.resource_type,
+                                    &self.resource_id,
+                                    &self.metadata,
+                                ),
+                                failure_code: error.code().to_string(),
+                                failure_details: error.details(),
+                            },
+                        )
+                        .await
+                        .map_err(|journal_error| {
+                            ActionError::operation_journal(&call.operation_id, &journal_error)
+                        })?;
+
+                    return Err(ActionError::external_operation(O::OPERATION_TYPE, &error));
+                }
+            };
+            let response_value = serde_json::to_value(&response)
+                .map_err(|error| ActionError::Serialization(error.to_string()))?;
+            operation_journal
+                .append(
+                    &stream,
+                    OperationJournalRecord::OperationCompleted {
+                        operation_id: call.operation_id.clone(),
+                        metadata: operation_journal_metadata(
+                            "operation_completed",
+                            "journal.operation_completed.v1",
+                            &self.resource_type,
+                            &self.resource_id,
+                            &self.metadata,
+                        ),
+                        response: response_value,
+                    },
+                )
+                .await
+                .map_err(|error| ActionError::operation_journal(&call.operation_id, &error))?;
+
+            return Ok(response);
+        }
 
         operation
             .execute(request, call)
@@ -149,6 +253,7 @@ fn external_operation_id(action_id: &str, operation_type: &str, idempotency_key:
 pub struct ActionExecutor<S> {
     event_store: S,
     action_journal: Option<Arc<dyn ActionJournal>>,
+    operation_journal: Option<Arc<dyn OperationJournal>>,
 }
 
 impl<S> ActionExecutor<S>
@@ -159,6 +264,7 @@ where
         Self {
             event_store,
             action_journal: None,
+            operation_journal: None,
         }
     }
 
@@ -171,6 +277,14 @@ where
         J: ActionJournal,
     {
         self.action_journal = Some(Arc::new(action_journal));
+        self
+    }
+
+    pub fn with_operation_journal<J>(mut self, operation_journal: J) -> Self
+    where
+        J: OperationJournal,
+    {
+        self.operation_journal = Some(Arc::new(operation_journal));
         self
     }
 
@@ -247,7 +361,8 @@ where
             R::RESOURCE_TYPE,
             resource_id.clone(),
             previous_version,
-        );
+        )
+        .with_operation_journal(self.operation_journal.clone());
 
         let decision = match resource.handle(action, &mut ctx).await {
             Ok(decision) => decision,
@@ -443,6 +558,30 @@ fn action_journal_metadata(
         resource_type: resource_type.into(),
         resource_id: resource_id.into(),
         stream_type: StreamType::Action,
+        correlation_id: action.correlation_id.clone(),
+        causation_id: action.causation_id.clone(),
+        action_id: action.action_id.clone(),
+        actor_id: action.actor_id.clone(),
+        occurred_at: Utc::now().to_rfc3339(),
+        schema_id: schema_id.into(),
+        schema_version: 1,
+    }
+}
+
+fn operation_journal_metadata(
+    message_type: impl Into<String>,
+    schema_id: impl Into<String>,
+    resource_type: impl Into<String>,
+    resource_id: impl Into<String>,
+    action: &ActionMetadata,
+) -> MessageMetadata {
+    MessageMetadata {
+        message_id: Uuid::new_v4().to_string(),
+        message_type: message_type.into(),
+        message_version: 1,
+        resource_type: resource_type.into(),
+        resource_id: resource_id.into(),
+        stream_type: StreamType::Operation,
         correlation_id: action.correlation_id.clone(),
         causation_id: action.causation_id.clone(),
         action_id: action.action_id.clone(),

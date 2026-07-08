@@ -519,6 +519,17 @@ fn action_error_details(error: &ActionError) -> Value {
             "failure_code": failure_code,
             "failure_details": failure_details,
         }),
+        ActionError::OperationJournal {
+            operation_id,
+            failure_code,
+            failure_details,
+        } => json!({
+            "error_type": "ActionError",
+            "error_variant": "OperationJournal",
+            "operation_id": operation_id,
+            "failure_code": failure_code,
+            "failure_details": failure_details,
+        }),
         ActionError::StateTransition { reason } => json!({
             "error_type": "ActionError",
             "error_variant": "StateTransition",

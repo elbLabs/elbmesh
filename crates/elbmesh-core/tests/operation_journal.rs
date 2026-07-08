@@ -157,6 +157,17 @@ where
         .await
         .expect_err("wrong operation stream should fail");
 
+    assert_eq!(err.code(), "operation_journal.wrong_operation_stream");
+    assert_eq!(
+        err.details(),
+        json!({
+            "error_type": "OperationJournalError",
+            "error_variant": "WrongOperationStream",
+            "expected_operation_id": "expected-operation-id",
+            "actual_operation_id": "actual-operation-id",
+        })
+    );
+
     match err {
         OperationJournalError::WrongOperationStream {
             expected_operation_id,

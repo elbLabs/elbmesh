@@ -67,6 +67,33 @@ pub enum OperationJournalError {
     StoragePoisoned,
 }
 
+impl OperationJournalError {
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::WrongOperationStream { .. } => "operation_journal.wrong_operation_stream",
+            Self::StoragePoisoned => "operation_journal.storage_poisoned",
+        }
+    }
+
+    pub fn details(&self) -> Value {
+        match self {
+            Self::WrongOperationStream {
+                expected_operation_id,
+                actual_operation_id,
+            } => serde_json::json!({
+                "error_type": "OperationJournalError",
+                "error_variant": "WrongOperationStream",
+                "expected_operation_id": expected_operation_id,
+                "actual_operation_id": actual_operation_id,
+            }),
+            Self::StoragePoisoned => serde_json::json!({
+                "error_type": "OperationJournalError",
+                "error_variant": "StoragePoisoned",
+            }),
+        }
+    }
+}
+
 #[async_trait]
 pub trait OperationJournal: Send + Sync + 'static {
     async fn append(

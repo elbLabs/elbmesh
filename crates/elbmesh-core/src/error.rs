@@ -2,7 +2,7 @@ use thiserror::Error;
 
 use crate::{
     action_journal::ActionJournalError, external_operation::ExternalOperationFailure,
-    message::StreamType,
+    message::StreamType, operation_journal::OperationJournalError,
 };
 
 pub trait ActionFailure: std::fmt::Debug + std::fmt::Display + Send + Sync + 'static {
@@ -28,6 +28,13 @@ pub enum ActionError {
         failure_details: serde_json::Value,
     },
 
+    #[error("operation journal for operation '{operation_id}' failed with {failure_code}")]
+    OperationJournal {
+        operation_id: String,
+        failure_code: String,
+        failure_details: serde_json::Value,
+    },
+
     #[error("state transition failed: {reason}")]
     StateTransition { reason: String },
 
@@ -47,6 +54,7 @@ impl ActionFailure for ActionError {
             Self::Rejected { .. } => "action.rejected",
             Self::Validation { .. } => "action.validation",
             Self::ExternalOperation { .. } => "action.external_operation",
+            Self::OperationJournal { .. } => "action.operation_journal",
             Self::StateTransition { .. } => "action.state_transition",
             Self::Serialization(_) => "action.serialization",
             Self::WrongResource { .. } => "action.wrong_resource",
@@ -74,6 +82,17 @@ impl ActionFailure for ActionError {
                 "error_type": "ActionError",
                 "error_variant": "ExternalOperation",
                 "operation_type": operation_type,
+                "failure_code": failure_code,
+                "failure_details": failure_details,
+            }),
+            Self::OperationJournal {
+                operation_id,
+                failure_code,
+                failure_details,
+            } => serde_json::json!({
+                "error_type": "ActionError",
+                "error_variant": "OperationJournal",
+                "operation_id": operation_id,
                 "failure_code": failure_code,
                 "failure_details": failure_details,
             }),
@@ -142,6 +161,17 @@ impl ActionError {
     {
         Self::ExternalOperation {
             operation_type: operation_type.into(),
+            failure_code: error.code().to_string(),
+            failure_details: error.details(),
+        }
+    }
+
+    pub fn operation_journal(
+        operation_id: impl Into<String>,
+        error: &OperationJournalError,
+    ) -> Self {
+        Self::OperationJournal {
+            operation_id: operation_id.into(),
             failure_code: error.code().to_string(),
             failure_details: error.details(),
         }
