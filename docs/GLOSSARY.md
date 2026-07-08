@@ -219,7 +219,7 @@ List Invoices By Customer
 
 ### Capability Document
 
-A machine-readable JSON document generated from an ArchitectureManifest.
+A generated description of ArchitectureManifest capabilities. JSON is the machine-readable form; Markdown is the human-readable form.
 
 Rules:
 
@@ -228,6 +228,7 @@ Capability Documents preserve declared Resources, Actions, Events, Reactions, Vi
 Capability Documents include generator metadata.
 Capability Documents describe declared and implemented capabilities only.
 Capability Documents do not imply unimplemented NATS or Restate support.
+Capability Documents keep Resource Events separate from journals, ViewStore documents, provider diagnostics, and generated visibility artifacts.
 ```
 
 ### Policy

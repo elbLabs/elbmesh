@@ -117,6 +117,96 @@ fn capability_document_serializes_to_stable_json_shape() {
     );
 }
 
+#[test]
+fn capability_document_renders_stable_markdown_shape() {
+    let capabilities = CapabilityDocument::from_manifest(&offer_manifest());
+
+    assert_eq!(
+        capabilities.to_markdown(),
+        format!(
+            r#"# Capability Document
+
+- Capability schema: `capabilities.elbmesh.v1` v1
+- Manifest schema: `manifest.elbmesh.v1` v1
+- Generator: `elbmesh-core` v{version}
+
+## Runtime Boundaries
+
+This document describes declared capabilities and implemented framework boundaries only.
+It does not imply real Restate adapter support or complete NATS adapter coverage.
+Resource Events remain separate from ActionJournal, ReactionJournal, OperationJournal, ViewStore, provider diagnostics, and generated visibility artifacts.
+
+## Resources
+
+| Resource | Schema | Version | Components |
+| --- | --- | --- | --- |
+| `offer` | `resource.offer.v1` | 1 | `offer_terms` (`component.offer_terms.v1` v1) |
+
+## Actions
+
+| Action | Resource | Schema | Version | Emits | External Operations |
+| --- | --- | --- | --- | --- | --- |
+| `send_offer_email` | `offer` | `action.send_offer_email.v1` | 1 | `offer_created` | `lexoffice_create_invoice` |
+
+## Events
+
+| Event | Resource | Schema | Version |
+| --- | --- | --- | --- |
+| `offer_created` | `offer` | `event.offer_created.v1` | 1 |
+
+## Reactions
+
+| Reaction | Trigger Event | Target Action | Schema | Version |
+| --- | --- | --- | --- | --- |
+| `offer_created_to_send_offer_email` | `offer_created` | `send_offer_email` | `reaction.offer_created_to_send_offer_email.v1` | 1 |
+
+## Views
+
+| View | Schema | Version |
+| --- | --- | --- |
+| `offer_summary` | `view.offer_summary.v1` | 1 |
+
+## Queries
+
+| Query | Schema | Version |
+| --- | --- | --- |
+| `get_offer_summary` | `query.get_offer_summary.v1` | 1 |
+
+## External Operations
+
+External Operations use idempotency keys and OperationJournal records for call/completion/failure boundaries. Provider diagnostics are not Resource Events.
+
+| External Operation | Schema | Version |
+| --- | --- | --- |
+| `lexoffice_create_invoice` | `external_operation.lexoffice_create_invoice.v1` | 1 |
+"#,
+            version = env!("CARGO_PKG_VERSION")
+        )
+    );
+}
+
+#[test]
+fn capability_markdown_states_runtime_boundaries() {
+    let markdown = CapabilityDocument::from_manifest(&offer_manifest()).to_markdown();
+
+    assert!(markdown.contains(
+        "It does not imply real Restate adapter support or complete NATS adapter coverage."
+    ));
+    assert!(markdown.contains(
+        "Resource Events remain separate from ActionJournal, ReactionJournal, OperationJournal, ViewStore, provider diagnostics, and generated visibility artifacts."
+    ));
+}
+
+#[test]
+fn capability_markdown_documents_external_operation_recovery_boundary() {
+    let markdown = CapabilityDocument::from_manifest(&offer_manifest()).to_markdown();
+
+    assert!(markdown.contains(
+        "External Operations use idempotency keys and OperationJournal records for call/completion/failure boundaries."
+    ));
+    assert!(markdown.contains("Provider diagnostics are not Resource Events."));
+}
+
 fn offer_manifest() -> ArchitectureManifest {
     ArchitectureManifest {
         manifest_schema_id: "manifest.elbmesh.v1".to_string(),
