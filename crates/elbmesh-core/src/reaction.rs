@@ -631,6 +631,45 @@ fn action_journal_error_details(error: &ActionJournalError) -> Value {
             "error_type": "ActionJournalError",
             "error_variant": "StoragePoisoned",
         }),
+        ActionJournalError::NatsConnect { reason } => json!({
+            "error_type": "ActionJournalError",
+            "error_variant": "NatsConnect",
+            "reason": reason,
+        }),
+        ActionJournalError::NatsBucket { bucket, reason } => json!({
+            "error_type": "ActionJournalError",
+            "error_variant": "NatsBucket",
+            "bucket": bucket,
+            "reason": reason,
+        }),
+        ActionJournalError::RecordSerialization { reason } => json!({
+            "error_type": "ActionJournalError",
+            "error_variant": "RecordSerialization",
+            "reason": reason,
+        }),
+        ActionJournalError::RecordDeserialization {
+            stream,
+            revision,
+            reason,
+        } => json!({
+            "error_type": "ActionJournalError",
+            "error_variant": "RecordDeserialization",
+            "stream": stream,
+            "revision": revision,
+            "reason": reason,
+        }),
+        ActionJournalError::NatsAppend { stream, reason } => json!({
+            "error_type": "ActionJournalError",
+            "error_variant": "NatsAppend",
+            "stream": stream,
+            "reason": reason,
+        }),
+        ActionJournalError::NatsLoad { stream, reason } => json!({
+            "error_type": "ActionJournalError",
+            "error_variant": "NatsLoad",
+            "stream": stream,
+            "reason": reason,
+        }),
     }
 }
 

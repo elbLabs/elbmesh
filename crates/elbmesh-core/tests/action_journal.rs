@@ -4,7 +4,13 @@ use elbmesh_core::{
     MessageMetadata, ResourceStream, StreamType,
 };
 
+#[cfg(feature = "nats-tests")]
+use elbmesh_core::{NatsActionJournal, NatsActionJournalConfig};
+
 use serde_json::json;
+
+#[cfg(feature = "nats-tests")]
+mod support;
 
 #[test]
 fn in_memory_action_journal_implements_action_journal_trait() {
@@ -62,6 +68,79 @@ async fn in_memory_action_journal_writes_do_not_create_resource_events() {
 #[tokio::test]
 async fn in_memory_action_journal_rejects_wrong_action_stream_with_named_error() {
     let journal = InMemoryActionJournal::new();
+
+    assert_rejects_wrong_action_stream_with_named_error(&journal).await;
+}
+
+#[cfg(feature = "nats-tests")]
+#[test]
+fn nats_action_journal_implements_action_journal_trait() {
+    fn assert_action_journal<T: ActionJournal>() {}
+
+    assert_action_journal::<NatsActionJournal>();
+}
+
+#[cfg(feature = "nats-tests")]
+#[tokio::test]
+async fn nats_action_journal_appends_action_called_and_action_completed_records() {
+    let Some(journal) = nats_action_journal("called_completed").await else {
+        return;
+    };
+
+    assert_appends_action_called_and_completed_records(&journal).await;
+}
+
+#[cfg(feature = "nats-tests")]
+#[tokio::test]
+async fn nats_action_journal_reads_records_in_append_order_for_action_stream() {
+    let Some(journal) = nats_action_journal("append_order").await else {
+        return;
+    };
+
+    assert_reads_records_in_append_order_for_action_stream(&journal).await;
+}
+
+#[cfg(feature = "nats-tests")]
+#[tokio::test]
+async fn nats_action_journal_writes_do_not_create_resource_events() {
+    let Some(journal) = nats_action_journal("separate_from_events").await else {
+        return;
+    };
+    let event_store = InMemoryEventStore::new();
+    let action = action_metadata("nats-action-journal-separated-from-events");
+    let stream = ActionJournalStream::for_action(action.action_id.clone());
+
+    journal
+        .append(&stream, action_called_record(&action, "offer-123"))
+        .await
+        .expect("append ActionCalled record");
+    journal
+        .append(&stream, action_completed_record(&action, "offer-123"))
+        .await
+        .expect("append ActionCompleted record");
+
+    let resource_stream = ResourceStream::new("offer", "offer-123");
+    let resource_events = event_store
+        .load(&resource_stream)
+        .await
+        .expect("load resource events");
+
+    assert!(resource_events.is_empty());
+    assert!(event_store.all_events().is_empty());
+
+    let journal_records = journal
+        .load(&stream)
+        .await
+        .expect("load action journal records");
+    assert_eq!(journal_records.len(), 2);
+}
+
+#[cfg(feature = "nats-tests")]
+#[tokio::test]
+async fn nats_action_journal_rejects_wrong_action_stream_with_named_error() {
+    let Some(journal) = nats_action_journal("wrong_action_stream").await else {
+        return;
+    };
 
     assert_rejects_wrong_action_stream_with_named_error(&journal).await;
 }
@@ -297,4 +376,32 @@ fn assert_action_record_metadata(
     assert_eq!(metadata.actor_id, action.actor_id);
     assert_eq!(metadata.schema_id, format!("journal.{message_type}.v1"));
     assert_eq!(metadata.schema_version, 1);
+}
+
+#[cfg(feature = "nats-tests")]
+async fn nats_action_journal(test_name: &str) -> Option<NatsActionJournal> {
+    let harness = match support::nats::NatsHarnessConfig::from_env() {
+        Ok(harness) => harness,
+        Err(skip) => {
+            eprintln!("{}", skip.reason());
+            return None;
+        }
+    };
+
+    let config = NatsActionJournalConfig::new(unique_nats_bucket_name(test_name));
+    Some(
+        NatsActionJournal::connect(harness.url(), config)
+            .await
+            .expect("connect NATS ActionJournal"),
+    )
+}
+
+#[cfg(feature = "nats-tests")]
+fn unique_nats_bucket_name(test_name: &str) -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock should be after UNIX_EPOCH")
+        .as_nanos();
+
+    format!("elbmesh_action_journal_{test_name}_{nanos}")
 }
