@@ -19,6 +19,9 @@ pub use action_journal::{
     ActionJournalStream, InMemoryActionJournal,
 };
 
+#[cfg(feature = "nats-adapter")]
+pub use action_journal::{NatsActionJournal, NatsActionJournalConfig};
+
 pub use error::{
     ActionError, ActionFailure, EventStoreError, ExecutionError, HandlerError, ResourceError,
 };

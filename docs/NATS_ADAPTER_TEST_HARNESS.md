@@ -45,3 +45,15 @@ View documents stay in ViewStore keys.
 ```
 
 No NATS subject or key encoder is introduced in Phase 7.1. The first adapter MR that persists records to NATS must add contract tests for subject/key escaping before relying on that encoding.
+
+## ActionJournal KV Keys
+
+The Phase 7.4 NATS ActionJournal adapter stores records in a dedicated KV bucket, separate from Resource Event streams.
+
+ActionJournal stream keys use:
+
+```text
+action.<action-id-byte-length>.<percent-encoded-action-id>
+```
+
+Only ASCII letters, digits, `_`, and `-` remain unescaped in the encoded token. All other bytes are encoded as uppercase `%XX`, so dots and NATS wildcards cannot change the KV key token structure.
