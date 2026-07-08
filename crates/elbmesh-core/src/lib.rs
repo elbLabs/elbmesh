@@ -5,6 +5,7 @@ mod action_journal;
 mod error;
 mod manifest;
 mod message;
+mod operation_journal;
 mod projection;
 mod reaction;
 mod reaction_journal;
@@ -34,6 +35,10 @@ pub use manifest::{
 pub use message::{
     ActionDecision, ActionMetadata, ActionReceipt, ActionStatus, EmittedEvent, MessageMetadata,
     NewEvent, RecordedEvent, ResourceStream, StreamType,
+};
+pub use operation_journal::{
+    InMemoryOperationJournal, OperationJournal, OperationJournalError, OperationJournalRecord,
+    OperationJournalStream,
 };
 pub use projection::{
     Projection, ProjectionDispatchError, ProjectionDispatchFailure, ProjectionDispatchReport,
