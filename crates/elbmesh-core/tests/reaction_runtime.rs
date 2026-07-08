@@ -1,8 +1,9 @@
 use async_trait::async_trait;
 
 use elbmesh_core::{
-    apply_recorded_event, Action, ActionContext, ActionDecision, ActionFailure, ActionMetadata,
-    Apply, Event, EventStore, ExpectedVersion, Handle, HandlerError, InMemoryEventStore,
+    apply_recorded_event, Action, ActionContext, ActionDecision, ActionFailure, ActionJournal,
+    ActionJournalRecord, ActionJournalStream, ActionMetadata, Apply, Event, EventStore,
+    ExpectedVersion, Handle, HandlerError, InMemoryActionJournal, InMemoryEventStore,
     InMemoryReactionJournal, NewEvent, Reaction, ReactionDispatchError, ReactionDispatcher,
     ReactionJournal, ReactionJournalRecord, ReactionJournalStream, ReactionRuntime, RecordedEvent,
     Resource, ResourceError, ResourceStream, StreamType, TypedReactionHandler,
@@ -161,6 +162,86 @@ async fn default_reaction_execution_uses_deterministic_action_id() {
 }
 
 #[tokio::test]
+async fn reaction_runtime_with_action_journal_records_triggered_action_lifecycle() {
+    let reaction_journal = InMemoryReactionJournal::new();
+    let action_journal = InMemoryActionJournal::new();
+    let runtime = ReactionRuntime::new(InMemoryEventStore::new(), reaction_journal)
+        .with_action_journal(action_journal.clone());
+    let trigger = offer_accepted_recorded_event("offer-1");
+    let expected_action_id =
+        deterministic_reaction_action_id::<OfferAcceptedCreatesSalesOrder>(&trigger);
+
+    let receipt = runtime
+        .execute(&trigger, &OfferAcceptedCreatesSalesOrder)
+        .await
+        .expect("reaction should execute")
+        .expect("matching event should trigger reaction");
+
+    assert_eq!(receipt.action_receipt.action_id, expected_action_id);
+    let action_records = action_journal
+        .load(&ActionJournalStream::for_action(expected_action_id.clone()))
+        .await
+        .expect("load reaction-triggered action journal records");
+    assert_eq!(action_records.len(), 2);
+    match &action_records[0] {
+        ActionJournalRecord::ActionCalled {
+            metadata,
+            action_type,
+            ..
+        } => {
+            assert_eq!(metadata.message_type, "action_called");
+            assert_eq!(metadata.stream_type, StreamType::Action);
+            assert_eq!(metadata.action_id, expected_action_id);
+            assert_eq!(action_type, "create_sales_order");
+        }
+        other => panic!("expected ActionCalled record, got {other:?}"),
+    }
+    match &action_records[1] {
+        ActionJournalRecord::ActionCompleted { metadata, receipt } => {
+            assert_eq!(metadata.message_type, "action_completed");
+            assert_eq!(metadata.stream_type, StreamType::Action);
+            assert_eq!(metadata.action_id, expected_action_id);
+            assert_eq!(receipt.action_id, expected_action_id);
+        }
+        other => panic!("expected ActionCompleted record, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn dispatcher_with_deterministic_handler_uses_reaction_action_metadata() {
+    let reaction_journal = InMemoryReactionJournal::new();
+    let dispatcher = ReactionDispatcher::new(ReactionRuntime::new(
+        InMemoryEventStore::new(),
+        reaction_journal.clone(),
+    ))
+    .with_deterministic_handler(OfferAcceptedCreatesSalesOrder);
+    let trigger = offer_accepted_recorded_event("offer-1");
+    let expected_action_id =
+        deterministic_reaction_action_id::<OfferAcceptedCreatesSalesOrder>(&trigger);
+
+    let receipts = dispatcher
+        .dispatch(&trigger)
+        .await
+        .expect("deterministic handler dispatch should succeed");
+
+    assert_eq!(receipts.len(), 1);
+    assert_eq!(receipts[0].action_receipt.action_id, expected_action_id);
+    assert_sales_order_created(
+        dispatcher.event_store(),
+        "sales-order-for-offer-1",
+        &expected_action_id,
+    )
+    .await;
+    assert_reaction_journal_records(
+        &reaction_journal,
+        &receipts[0].reaction_id,
+        "offer_accepted_to_create_sales_order",
+        &expected_action_id,
+    )
+    .await;
+}
+
+#[tokio::test]
 async fn same_reaction_retry_uses_same_deterministic_action_id() {
     let trigger = offer_accepted_recorded_event("offer-1");
     let first_runtime =
@@ -183,6 +264,93 @@ async fn same_reaction_retry_uses_same_deterministic_action_id() {
         first_receipt.action_receipt.action_id,
         second_receipt.action_receipt.action_id
     );
+}
+
+#[tokio::test]
+async fn completed_reaction_retry_on_same_store_and_journal_is_idempotent() {
+    let event_store = InMemoryEventStore::new();
+    let reaction_journal = InMemoryReactionJournal::new();
+    let runtime = ReactionRuntime::new(event_store.clone(), reaction_journal.clone());
+    let trigger = offer_accepted_recorded_event("offer-1");
+
+    let first_receipt = runtime
+        .execute(&trigger, &OfferAcceptedCreatesSalesOrder)
+        .await
+        .expect("first reaction should execute")
+        .expect("matching event should trigger first reaction");
+
+    let retry = runtime
+        .execute(&trigger, &OfferAcceptedCreatesSalesOrder)
+        .await;
+
+    assert!(
+        retry.is_ok(),
+        "completed reaction retry should not re-run the downstream action"
+    );
+
+    let sales_order_events = event_store
+        .load(&ResourceStream::new(
+            "sales_order",
+            "sales-order-for-offer-1",
+        ))
+        .await
+        .expect("load sales order events after retry");
+    assert_eq!(sales_order_events.len(), 1);
+
+    let records = reaction_journal
+        .load(&ReactionJournalStream::for_reaction(
+            first_receipt.reaction_id.clone(),
+        ))
+        .await
+        .expect("load reaction journal records after retry");
+    assert_eq!(records.len(), 2);
+}
+
+#[tokio::test]
+async fn completed_reaction_dispatch_retry_on_same_store_and_journal_is_idempotent() {
+    let event_store = InMemoryEventStore::new();
+    let reaction_journal = InMemoryReactionJournal::new();
+    let dispatcher = ReactionDispatcher::new(ReactionRuntime::new(
+        event_store.clone(),
+        reaction_journal.clone(),
+    ))
+    .with_handler(TypedReactionHandler::new(
+        OfferAcceptedCreatesSalesOrder,
+        ReactionRuntime::<InMemoryEventStore, InMemoryReactionJournal>::reaction_action_metadata::<
+            OfferAcceptedCreatesSalesOrder,
+        >,
+    ));
+    let trigger = offer_accepted_recorded_event("offer-1");
+
+    let first_receipts = dispatcher
+        .dispatch(&trigger)
+        .await
+        .expect("first dispatch should execute reaction");
+    assert_eq!(first_receipts.len(), 1);
+
+    let retry = dispatcher.dispatch(&trigger).await;
+
+    assert!(
+        retry.is_ok(),
+        "completed reaction dispatch retry should not re-run the downstream action"
+    );
+
+    let sales_order_events = event_store
+        .load(&ResourceStream::new(
+            "sales_order",
+            "sales-order-for-offer-1",
+        ))
+        .await
+        .expect("load sales order events after dispatch retry");
+    assert_eq!(sales_order_events.len(), 1);
+
+    let records = reaction_journal
+        .load(&ReactionJournalStream::for_reaction(
+            first_receipts[0].reaction_id.clone(),
+        ))
+        .await
+        .expect("load reaction journal records after dispatch retry");
+    assert_eq!(records.len(), 2);
 }
 
 #[test]
@@ -212,6 +380,68 @@ fn deterministic_reaction_action_id_uses_structured_identity_not_delimiters() {
     let right_action_id = deterministic_reaction_action_id::<ColonTriggerEventId>(&right_trigger);
 
     assert_ne!(left_action_id, right_action_id);
+}
+
+#[tokio::test]
+async fn reaction_rejects_trigger_when_stream_identity_disagrees_with_metadata() {
+    let reaction_journal = InMemoryReactionJournal::new();
+    let runtime = ReactionRuntime::new(InMemoryEventStore::new(), reaction_journal.clone());
+    let mut trigger = offer_accepted_recorded_event("offer-1");
+    trigger.stream = ResourceStream::new("offer", "offer-2");
+    let reaction_id = ReactionRuntime::<InMemoryEventStore, InMemoryReactionJournal>::reaction_id::<
+        OfferAcceptedCreatesSalesOrder,
+    >(&trigger);
+
+    let result = runtime
+        .execute_with_metadata(
+            &trigger,
+            &OfferAcceptedCreatesSalesOrder,
+            reaction_action_metadata("create-sales-order-action-1"),
+        )
+        .await;
+
+    assert!(
+        result.is_err(),
+        "trigger with inconsistent RecordedEvent stream identity should be rejected"
+    );
+    assert!(runtime.event_store().all_events().is_empty());
+
+    let records = reaction_journal
+        .load(&ReactionJournalStream::for_reaction(reaction_id))
+        .await
+        .expect("load reaction journal records");
+    assert!(records.is_empty());
+}
+
+#[tokio::test]
+async fn reaction_rejects_trigger_when_payload_identity_disagrees_with_metadata() {
+    let reaction_journal = InMemoryReactionJournal::new();
+    let runtime = ReactionRuntime::new(InMemoryEventStore::new(), reaction_journal.clone());
+    let mut trigger = offer_accepted_recorded_event("offer-1");
+    trigger.payload = json!({ "offer_id": "offer-2" });
+    let reaction_id = ReactionRuntime::<InMemoryEventStore, InMemoryReactionJournal>::reaction_id::<
+        OfferAcceptedCreatesSalesOrder,
+    >(&trigger);
+
+    let result = runtime
+        .execute_with_metadata(
+            &trigger,
+            &OfferAcceptedCreatesSalesOrder,
+            reaction_action_metadata("create-sales-order-action-1"),
+        )
+        .await;
+
+    assert!(
+        result.is_err(),
+        "trigger with inconsistent payload resource identity should be rejected"
+    );
+    assert!(runtime.event_store().all_events().is_empty());
+
+    let records = reaction_journal
+        .load(&ReactionJournalStream::for_reaction(reaction_id))
+        .await
+        .expect("load reaction journal records");
+    assert!(records.is_empty());
 }
 
 #[tokio::test]

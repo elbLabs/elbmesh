@@ -287,6 +287,35 @@ async fn in_memory_view_store_missing_index_returns_empty_list() {
     assert!(listed.is_empty());
 }
 
+#[tokio::test]
+async fn in_memory_view_store_rejects_duplicate_index_names_in_one_document() {
+    let store = InMemoryViewStore::new();
+    let document = ViewDocument::new(
+        "offer_summary",
+        "offer-1",
+        json!({
+            "offer_id": "offer-1",
+            "title": "Initial offer",
+        }),
+    )
+    .with_indexes(vec![
+        ViewIndexEntry::new("by_status", "draft/offer-1"),
+        ViewIndexEntry::new("by_status", "accepted/offer-1"),
+    ]);
+
+    let result = store.put(document).await;
+
+    assert!(
+        result.is_err(),
+        "duplicate index names in one view document should be rejected"
+    );
+    let loaded = store
+        .load(&ViewKey::new("offer_summary", "offer-1"))
+        .await
+        .expect("load rejected duplicate-index view");
+    assert!(loaded.is_none());
+}
+
 fn offer_summary_view(offer_id: &str, title: &str) -> ViewDocument {
     ViewDocument::new(
         "offer_summary",
