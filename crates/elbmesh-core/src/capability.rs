@@ -18,6 +18,7 @@ pub struct CapabilityDocument {
     pub generator: CapabilityGeneratorMetadata,
     pub manifest_schema_id: String,
     pub manifest_schema_version: u32,
+    pub manifest_hash: String,
     pub resources: Vec<ResourceDefinition>,
     pub actions: Vec<ActionDefinition>,
     pub events: Vec<EventDefinition>,
@@ -38,6 +39,7 @@ impl CapabilityDocument {
             },
             manifest_schema_id: manifest.manifest_schema_id.clone(),
             manifest_schema_version: manifest.manifest_schema_version,
+            manifest_hash: stable_manifest_hash(manifest),
             resources: manifest.resources.clone(),
             actions: manifest.actions.clone(),
             events: manifest.events.clone(),
@@ -60,6 +62,7 @@ impl CapabilityDocument {
             "- Manifest schema: `{}` v{}\n",
             self.manifest_schema_id, self.manifest_schema_version
         ));
+        markdown.push_str(&format!("- Manifest hash: `{}`\n", self.manifest_hash));
         markdown.push_str(&format!(
             "- Generator: `{}` v{}\n\n",
             self.generator.name, self.generator.version
@@ -191,6 +194,7 @@ impl CapabilityDocument {
             "// manifest_schema_id: {} v{}\n",
             self.manifest_schema_id, self.manifest_schema_version
         ));
+        rust.push_str(&format!("// manifest_hash: {}\n", self.manifest_hash));
         rust.push_str("// Binding stubs declare types and schema constants only.\n");
         rust.push_str("// Behavior, provider registration, NATS adapters, and Restate execution are not generated here.\n\n");
 
@@ -336,6 +340,18 @@ impl CapabilityDocument {
 pub struct CapabilityGeneratorMetadata {
     pub name: String,
     pub version: String,
+}
+
+fn stable_manifest_hash(manifest: &ArchitectureManifest) -> String {
+    let manifest_json = serde_json::to_vec(manifest).expect("serialize architecture manifest");
+    let mut hash = 0xcbf29ce484222325_u64;
+
+    for byte in manifest_json {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+
+    format!("fnv1a64:{hash:016x}")
 }
 
 struct RustBindingConstant {
