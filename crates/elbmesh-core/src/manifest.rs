@@ -38,6 +38,8 @@ impl ArchitectureManifest {
     }
 
     pub fn validate(&self) -> Result<(), ManifestValidationError> {
+        self.validate_schema_identities()?;
+
         let mut resource_types = HashSet::new();
 
         for resource in &self.resources {
@@ -139,6 +141,89 @@ impl ArchitectureManifest {
         Ok(())
     }
 
+    fn validate_schema_identities(&self) -> Result<(), ManifestValidationError> {
+        validate_schema_identity(
+            "manifest",
+            "manifest",
+            &self.manifest_schema_id,
+            self.manifest_schema_version,
+        )?;
+
+        for resource in &self.resources {
+            validate_schema_identity(
+                "resource",
+                &resource.resource_type,
+                &resource.schema_id,
+                resource.schema_version,
+            )?;
+
+            for component in &resource.components {
+                validate_schema_identity(
+                    "component",
+                    &component.component_type,
+                    &component.schema_id,
+                    component.schema_version,
+                )?;
+            }
+        }
+
+        for action in &self.actions {
+            validate_schema_identity(
+                "action",
+                &action.action_type,
+                &action.schema_id,
+                action.schema_version,
+            )?;
+        }
+
+        for event in &self.events {
+            validate_schema_identity(
+                "event",
+                &event.event_type,
+                &event.schema_id,
+                event.schema_version,
+            )?;
+        }
+
+        for reaction in &self.reactions {
+            validate_schema_identity(
+                "reaction",
+                &reaction.reaction_type,
+                &reaction.schema_id,
+                reaction.schema_version,
+            )?;
+        }
+
+        for view in &self.views {
+            validate_schema_identity(
+                "view",
+                &view.view_type,
+                &view.schema_id,
+                view.schema_version,
+            )?;
+        }
+
+        for query in &self.queries {
+            validate_schema_identity(
+                "query",
+                &query.query_type,
+                &query.schema_id,
+                query.schema_version,
+            )?;
+        }
+
+        for operation in &self.external_operations {
+            validate_schema_identity(
+                "external_operation",
+                &operation.operation_type,
+                &operation.schema_id,
+                operation.schema_version,
+            )?;
+        }
+
+        Ok(())
+    }
+
     fn reaction_graph_cycle(&self) -> Option<Vec<String>> {
         let mut graph: HashMap<String, Vec<String>> = HashMap::new();
 
@@ -194,6 +279,19 @@ pub struct ArchitectureCheckFinding {
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ManifestValidationError {
+    #[error("manifest {definition_kind} '{definition_name}' is missing schema_id")]
+    MissingSchemaId {
+        definition_kind: String,
+        definition_name: String,
+    },
+
+    #[error("manifest {definition_kind} '{definition_name}' has invalid schema_version {schema_version}")]
+    InvalidSchemaVersion {
+        definition_kind: String,
+        definition_name: String,
+        schema_version: u32,
+    },
+
     #[error("manifest declares resource type '{resource_type}' more than once")]
     DuplicateResourceType { resource_type: String },
 
@@ -249,6 +347,8 @@ pub enum ManifestValidationError {
 impl ManifestValidationError {
     pub fn code(&self) -> &'static str {
         match self {
+            Self::MissingSchemaId { .. } => "manifest.missing_schema_id",
+            Self::InvalidSchemaVersion { .. } => "manifest.invalid_schema_version",
             Self::DuplicateResourceType { .. } => "manifest.duplicate_resource_type",
             Self::UnknownActionResource { .. } => "manifest.action_unknown_resource",
             Self::DuplicateExternalOperationType { .. } => {
@@ -267,6 +367,30 @@ impl ManifestValidationError {
             Self::ReactionGraphCycle { .. } => "manifest.reaction_graph_cycle",
         }
     }
+}
+
+fn validate_schema_identity(
+    definition_kind: &str,
+    definition_name: &str,
+    schema_id: &str,
+    schema_version: u32,
+) -> Result<(), ManifestValidationError> {
+    if schema_id.trim().is_empty() {
+        return Err(ManifestValidationError::MissingSchemaId {
+            definition_kind: definition_kind.to_string(),
+            definition_name: definition_name.to_string(),
+        });
+    }
+
+    if schema_version == 0 {
+        return Err(ManifestValidationError::InvalidSchemaVersion {
+            definition_kind: definition_kind.to_string(),
+            definition_name: definition_name.to_string(),
+            schema_version,
+        });
+    }
+
+    Ok(())
 }
 
 fn find_cycle_to_start(
