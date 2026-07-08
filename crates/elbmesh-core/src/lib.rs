@@ -3,6 +3,7 @@
 mod action_journal;
 
 mod error;
+mod external_operation;
 mod manifest;
 mod message;
 mod operation_journal;
@@ -25,6 +26,10 @@ pub use action_journal::{NatsActionJournal, NatsActionJournalConfig};
 
 pub use error::{
     ActionError, ActionFailure, EventStoreError, ExecutionError, HandlerError, ResourceError,
+};
+pub use external_operation::{
+    CreateLexOfficeInvoiceRequest, ExternalOperation, ExternalOperationFailure,
+    LexOfficeCreateInvoiceError, LexOfficeCreateInvoiceResult, MockLexOfficeCreateInvoice,
 };
 pub use manifest::{
     ActionDefinition, ArchitectureCheckFinding, ArchitectureCheckReport, ArchitectureCheckStatus,

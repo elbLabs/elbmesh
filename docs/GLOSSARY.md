@@ -258,12 +258,15 @@ ERP API
 
 A declared external read or write performed during an Action.
 
+In code, `ExternalOperation` is the typed runtime contract for executing the operation with a deterministic idempotency key and named failure type.
+
 Rules:
 
 ```text
 External Operations must be declared on Actions.
 External Operations are journaled separately from Resource Events.
 External writes must use idempotency where possible.
+Retrying the same External Operation with the same idempotency key must return the original provider result or a named conflict/failure.
 External Operation results may be used to create Resource Events.
 ```
 
