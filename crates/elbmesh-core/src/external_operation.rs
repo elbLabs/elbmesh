@@ -15,6 +15,15 @@ pub trait ExternalOperationFailure: Debug + Display + Send + Sync + 'static {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExternalOperationCall {
+    pub operation_id: String,
+    pub operation_type: String,
+    pub operation_schema_id: String,
+    pub operation_schema_version: u32,
+    pub idempotency_key: String,
+}
+
 #[async_trait]
 pub trait ExternalOperation: Send + Sync + 'static {
     type Request: Clone + Serialize + DeserializeOwned + Send + Sync + 'static;
@@ -30,7 +39,7 @@ pub trait ExternalOperation: Send + Sync + 'static {
     async fn execute(
         &self,
         request: Self::Request,
-        idempotency_key: String,
+        call: ExternalOperationCall,
     ) -> Result<Self::Response, Self::Error>;
 }
 
@@ -47,6 +56,7 @@ pub struct LexOfficeCreateInvoiceResult {
     pub invoice_id: String,
     pub order_confirmation_id: String,
     pub provider_invoice_id: String,
+    pub operation_id: String,
     pub idempotency_key: String,
 }
 
@@ -137,9 +147,10 @@ impl ExternalOperation for MockLexOfficeCreateInvoice {
     async fn execute(
         &self,
         request: Self::Request,
-        idempotency_key: String,
+        call: ExternalOperationCall,
     ) -> Result<Self::Response, Self::Error> {
         let mut state = self.lock_state()?;
+        let idempotency_key = call.idempotency_key.clone();
 
         if let Some(stored_invoice) = state.invoices_by_idempotency_key.get(&idempotency_key) {
             if stored_invoice.request != request {
@@ -162,6 +173,7 @@ impl ExternalOperation for MockLexOfficeCreateInvoice {
             invoice_id: request.invoice_id.clone(),
             order_confirmation_id: request.order_confirmation_id.clone(),
             provider_invoice_id: format!("lexoffice-invoice-{}", state.next_invoice_number),
+            operation_id: call.operation_id,
             idempotency_key: idempotency_key.clone(),
         };
 

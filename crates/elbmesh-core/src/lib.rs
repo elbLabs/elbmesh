@@ -28,8 +28,9 @@ pub use error::{
     ActionError, ActionFailure, EventStoreError, ExecutionError, HandlerError, ResourceError,
 };
 pub use external_operation::{
-    CreateLexOfficeInvoiceRequest, ExternalOperation, ExternalOperationFailure,
-    LexOfficeCreateInvoiceError, LexOfficeCreateInvoiceResult, MockLexOfficeCreateInvoice,
+    CreateLexOfficeInvoiceRequest, ExternalOperation, ExternalOperationCall,
+    ExternalOperationFailure, LexOfficeCreateInvoiceError, LexOfficeCreateInvoiceResult,
+    MockLexOfficeCreateInvoice,
 };
 pub use manifest::{
     ActionDefinition, ArchitectureCheckFinding, ArchitectureCheckReport, ArchitectureCheckStatus,

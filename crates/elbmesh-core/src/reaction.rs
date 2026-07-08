@@ -508,10 +508,16 @@ fn action_error_details(error: &ActionError) -> Value {
             "error_variant": "Validation",
             "reason": reason,
         }),
-        ActionError::ExternalOperation { reason } => json!({
+        ActionError::ExternalOperation {
+            operation_type,
+            failure_code,
+            failure_details,
+        } => json!({
             "error_type": "ActionError",
             "error_variant": "ExternalOperation",
-            "reason": reason,
+            "operation_type": operation_type,
+            "failure_code": failure_code,
+            "failure_details": failure_details,
         }),
         ActionError::StateTransition { reason } => json!({
             "error_type": "ActionError",
