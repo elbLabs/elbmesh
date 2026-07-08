@@ -582,6 +582,32 @@ fn event_store_error_details(error: &EventStoreError) -> Value {
             "expected": expected,
             "actual": actual,
         }),
+        EventStoreError::WrongEventStream {
+            stream,
+            expected_resource_type,
+            expected_resource_id,
+            actual_resource_type,
+            actual_resource_id,
+        } => json!({
+            "error_type": "EventStoreError",
+            "error_variant": "WrongEventStream",
+            "stream": stream,
+            "expected_resource_type": expected_resource_type,
+            "expected_resource_id": expected_resource_id,
+            "actual_resource_type": actual_resource_type,
+            "actual_resource_id": actual_resource_id,
+        }),
+        EventStoreError::WrongEventStreamType {
+            stream,
+            expected_stream_type,
+            actual_stream_type,
+        } => json!({
+            "error_type": "EventStoreError",
+            "error_variant": "WrongEventStreamType",
+            "stream": stream,
+            "expected_stream_type": expected_stream_type,
+            "actual_stream_type": actual_stream_type,
+        }),
         EventStoreError::Other(reason) => json!({
             "error_type": "EventStoreError",
             "error_variant": "Other",

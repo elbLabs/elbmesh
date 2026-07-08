@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use crate::{EventStoreError, NewEvent, RecordedEvent, ResourceStream};
+use crate::{EventStoreError, NewEvent, RecordedEvent, ResourceStream, StreamType};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExpectedVersion {
@@ -81,6 +81,28 @@ impl EventStore for InMemoryEventStore {
                 });
             }
             ExpectedVersion::NoStream | ExpectedVersion::Exact(_) => {}
+        }
+
+        for event in &events {
+            if event.metadata.stream_type != StreamType::Resource {
+                return Err(EventStoreError::WrongEventStreamType {
+                    stream: stream.key(),
+                    expected_stream_type: StreamType::Resource,
+                    actual_stream_type: event.metadata.stream_type.clone(),
+                });
+            }
+
+            if event.metadata.resource_type != stream.resource_type
+                || event.metadata.resource_id != stream.resource_id
+            {
+                return Err(EventStoreError::WrongEventStream {
+                    stream: stream.key(),
+                    expected_resource_type: stream.resource_type.clone(),
+                    expected_resource_id: stream.resource_id.clone(),
+                    actual_resource_type: event.metadata.resource_type.clone(),
+                    actual_resource_id: event.metadata.resource_id.clone(),
+                });
+            }
         }
 
         let recorded: Vec<_> = events

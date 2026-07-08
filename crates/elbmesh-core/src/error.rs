@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::action_journal::ActionJournalError;
+use crate::{action_journal::ActionJournalError, message::StreamType};
 
 pub trait ActionFailure: std::fmt::Debug + std::fmt::Display + Send + Sync + 'static {
     fn code(&self) -> &'static str;
@@ -118,6 +118,22 @@ pub enum EventStoreError {
         stream: String,
         expected: u64,
         actual: u64,
+    },
+
+    #[error("event targets resource '{actual_resource_type}/{actual_resource_id}', but stream '{stream}' is for resource '{expected_resource_type}/{expected_resource_id}'")]
+    WrongEventStream {
+        stream: String,
+        expected_resource_type: String,
+        expected_resource_id: String,
+        actual_resource_type: String,
+        actual_resource_id: String,
+    },
+
+    #[error("event targets stream type '{actual_stream_type:?}', but stream '{stream}' requires '{expected_stream_type:?}'")]
+    WrongEventStreamType {
+        stream: String,
+        expected_stream_type: StreamType,
+        actual_stream_type: StreamType,
     },
 
     #[error("event store failed: {0}")]
