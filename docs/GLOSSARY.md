@@ -287,6 +287,7 @@ Rules:
 OperationJournal records are not Resource Events.
 OperationJournal records are keyed by operation_id.
 OperationJournal records carry idempotency metadata for external retries.
+Completed OperationJournal records are reused on retry before re-calling an External System.
 Provider response details belong in OperationJournal or Object Store, not Resource Events.
 ```
 
