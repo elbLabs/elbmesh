@@ -1,6 +1,7 @@
 //! Core traits and in-memory runtime for the elbmesh event-sourcing framework.
 
 mod action_journal;
+mod capability;
 
 mod error;
 mod external_operation;
@@ -23,6 +24,11 @@ pub use action_journal::{
 
 #[cfg(feature = "nats-adapter")]
 pub use action_journal::{NatsActionJournal, NatsActionJournalConfig};
+
+pub use capability::{
+    CapabilityDocument, CapabilityGeneratorMetadata, CAPABILITY_GENERATOR_NAME,
+    CAPABILITY_GENERATOR_VERSION, CAPABILITY_SCHEMA_ID, CAPABILITY_SCHEMA_VERSION,
+};
 
 pub use error::{
     ActionError, ActionFailure, EventStoreError, ExecutionError, HandlerError, ResourceError,
