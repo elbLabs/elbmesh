@@ -244,6 +244,27 @@ fn projection_execution_failure_code(error: &ProjectionExecutionError) -> &'stat
         ProjectionExecutionError::ViewStore(ViewStoreError::DuplicateIndexName { .. }) => {
             "projection.view_store.duplicate_index_name"
         }
+        ProjectionExecutionError::ViewStore(ViewStoreError::NatsConnect { .. }) => {
+            "projection.view_store.nats_connect"
+        }
+        ProjectionExecutionError::ViewStore(ViewStoreError::NatsBucket { .. }) => {
+            "projection.view_store.nats_bucket"
+        }
+        ProjectionExecutionError::ViewStore(ViewStoreError::DocumentSerialization { .. }) => {
+            "projection.view_store.document_serialization"
+        }
+        ProjectionExecutionError::ViewStore(ViewStoreError::DocumentDeserialization { .. }) => {
+            "projection.view_store.document_deserialization"
+        }
+        ProjectionExecutionError::ViewStore(ViewStoreError::NatsPut { .. }) => {
+            "projection.view_store.nats_put"
+        }
+        ProjectionExecutionError::ViewStore(ViewStoreError::NatsLoad { .. }) => {
+            "projection.view_store.nats_load"
+        }
+        ProjectionExecutionError::ViewStore(ViewStoreError::NatsList { .. }) => {
+            "projection.view_store.nats_list"
+        }
     }
 }
 
@@ -296,6 +317,76 @@ fn projection_execution_failure_details(error: &ProjectionExecutionError) -> Val
             "view_type": view_type,
             "view_id": view_id,
             "index_name": index_name,
+        }),
+        ProjectionExecutionError::ViewStore(ViewStoreError::NatsConnect { reason }) => json!({
+            "error_type": "ViewStoreError",
+            "error_variant": "NatsConnect",
+            "reason": reason,
+        }),
+        ProjectionExecutionError::ViewStore(ViewStoreError::NatsBucket { bucket, reason }) => {
+            json!({
+                "error_type": "ViewStoreError",
+                "error_variant": "NatsBucket",
+                "bucket": bucket,
+                "reason": reason,
+            })
+        }
+        ProjectionExecutionError::ViewStore(ViewStoreError::DocumentSerialization {
+            view_type,
+            view_id,
+            reason,
+        }) => json!({
+            "error_type": "ViewStoreError",
+            "error_variant": "DocumentSerialization",
+            "view_type": view_type,
+            "view_id": view_id,
+            "reason": reason,
+        }),
+        ProjectionExecutionError::ViewStore(ViewStoreError::DocumentDeserialization {
+            key,
+            revision,
+            reason,
+        }) => json!({
+            "error_type": "ViewStoreError",
+            "error_variant": "DocumentDeserialization",
+            "key": key,
+            "revision": revision,
+            "reason": reason,
+        }),
+        ProjectionExecutionError::ViewStore(ViewStoreError::NatsPut {
+            view_type,
+            view_id,
+            reason,
+        }) => json!({
+            "error_type": "ViewStoreError",
+            "error_variant": "NatsPut",
+            "view_type": view_type,
+            "view_id": view_id,
+            "reason": reason,
+        }),
+        ProjectionExecutionError::ViewStore(ViewStoreError::NatsLoad {
+            view_type,
+            view_id,
+            reason,
+        }) => json!({
+            "error_type": "ViewStoreError",
+            "error_variant": "NatsLoad",
+            "view_type": view_type,
+            "view_id": view_id,
+            "reason": reason,
+        }),
+        ProjectionExecutionError::ViewStore(ViewStoreError::NatsList {
+            view_type,
+            index_name,
+            prefix,
+            reason,
+        }) => json!({
+            "error_type": "ViewStoreError",
+            "error_variant": "NatsList",
+            "view_type": view_type,
+            "index_name": index_name,
+            "prefix": prefix,
+            "reason": reason,
         }),
     }
 }

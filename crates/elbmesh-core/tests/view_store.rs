@@ -1,9 +1,15 @@
 use elbmesh_core::{
     EventStore, InMemoryEventStore, InMemoryViewStore, ResourceStream, ViewDocument,
-    ViewIndexEntry, ViewKey, ViewStore,
+    ViewIndexEntry, ViewKey, ViewStore, ViewStoreError,
 };
 
+#[cfg(feature = "nats-tests")]
+use elbmesh_core::{NatsViewStore, NatsViewStoreConfig};
+
 use serde_json::json;
+
+#[cfg(feature = "nats-tests")]
+mod support;
 
 #[test]
 fn in_memory_view_store_implements_view_store_trait() {
@@ -15,6 +21,202 @@ fn in_memory_view_store_implements_view_store_trait() {
 #[tokio::test]
 async fn in_memory_view_store_stores_and_loads_view_document_by_identity() {
     let store = InMemoryViewStore::new();
+
+    assert_stores_and_loads_view_document_by_identity(&store).await;
+}
+
+#[tokio::test]
+async fn in_memory_view_store_returns_none_for_missing_view() {
+    let store = InMemoryViewStore::new();
+
+    assert_returns_none_for_missing_view(&store).await;
+}
+
+#[tokio::test]
+async fn in_memory_view_store_overwrites_existing_view_document() {
+    let store = InMemoryViewStore::new();
+
+    assert_overwrites_existing_view_document(&store).await;
+}
+
+#[tokio::test]
+async fn in_memory_view_store_keeps_view_types_and_ids_isolated() {
+    let store = InMemoryViewStore::new();
+
+    assert_keeps_view_types_and_ids_isolated(&store).await;
+}
+
+#[tokio::test]
+async fn in_memory_view_store_writes_do_not_create_resource_events() {
+    let store = InMemoryViewStore::new();
+
+    assert_writes_do_not_create_resource_events(&store).await;
+}
+
+#[tokio::test]
+async fn in_memory_view_store_lists_all_index_with_empty_prefix() {
+    let store = InMemoryViewStore::new();
+
+    assert_lists_all_index_with_empty_prefix(&store).await;
+}
+
+#[tokio::test]
+async fn in_memory_view_store_lists_matching_index_prefix_only() {
+    let store = InMemoryViewStore::new();
+
+    assert_lists_matching_index_prefix_only(&store).await;
+}
+
+#[tokio::test]
+async fn in_memory_view_store_index_listing_isolates_view_types_and_index_names() {
+    let store = InMemoryViewStore::new();
+
+    assert_index_listing_isolates_view_types_and_index_names(&store).await;
+}
+
+#[tokio::test]
+async fn in_memory_view_store_overwrite_replaces_index_membership() {
+    let store = InMemoryViewStore::new();
+
+    assert_overwrite_replaces_index_membership(&store).await;
+}
+
+#[tokio::test]
+async fn in_memory_view_store_missing_index_returns_empty_list() {
+    let store = InMemoryViewStore::new();
+
+    assert_missing_index_returns_empty_list(&store).await;
+}
+
+#[tokio::test]
+async fn in_memory_view_store_rejects_duplicate_index_names_in_one_document() {
+    let store = InMemoryViewStore::new();
+
+    assert_rejects_duplicate_index_names_in_one_document(&store).await;
+}
+
+#[cfg(feature = "nats-tests")]
+#[test]
+fn nats_view_store_implements_view_store_trait() {
+    fn assert_view_store<S: ViewStore>() {}
+
+    assert_view_store::<NatsViewStore>();
+}
+
+#[cfg(feature = "nats-tests")]
+#[tokio::test]
+async fn nats_view_store_stores_and_loads_view_document_by_identity() {
+    let Some(store) = nats_view_store("stores_loads").await else {
+        return;
+    };
+
+    assert_stores_and_loads_view_document_by_identity(&store).await;
+}
+
+#[cfg(feature = "nats-tests")]
+#[tokio::test]
+async fn nats_view_store_returns_none_for_missing_view() {
+    let Some(store) = nats_view_store("missing_view").await else {
+        return;
+    };
+
+    assert_returns_none_for_missing_view(&store).await;
+}
+
+#[cfg(feature = "nats-tests")]
+#[tokio::test]
+async fn nats_view_store_overwrites_existing_view_document() {
+    let Some(store) = nats_view_store("overwrite_view").await else {
+        return;
+    };
+
+    assert_overwrites_existing_view_document(&store).await;
+}
+
+#[cfg(feature = "nats-tests")]
+#[tokio::test]
+async fn nats_view_store_keeps_view_types_and_ids_isolated() {
+    let Some(store) = nats_view_store("isolated_keys").await else {
+        return;
+    };
+
+    assert_keeps_view_types_and_ids_isolated(&store).await;
+}
+
+#[cfg(feature = "nats-tests")]
+#[tokio::test]
+async fn nats_view_store_writes_do_not_create_resource_events() {
+    let Some(store) = nats_view_store("separate_from_events").await else {
+        return;
+    };
+
+    assert_writes_do_not_create_resource_events(&store).await;
+}
+
+#[cfg(feature = "nats-tests")]
+#[tokio::test]
+async fn nats_view_store_lists_all_index_with_empty_prefix() {
+    let Some(store) = nats_view_store("all_index").await else {
+        return;
+    };
+
+    assert_lists_all_index_with_empty_prefix(&store).await;
+}
+
+#[cfg(feature = "nats-tests")]
+#[tokio::test]
+async fn nats_view_store_lists_matching_index_prefix_only() {
+    let Some(store) = nats_view_store("matching_prefix").await else {
+        return;
+    };
+
+    assert_lists_matching_index_prefix_only(&store).await;
+}
+
+#[cfg(feature = "nats-tests")]
+#[tokio::test]
+async fn nats_view_store_index_listing_isolates_view_types_and_index_names() {
+    let Some(store) = nats_view_store("isolated_indexes").await else {
+        return;
+    };
+
+    assert_index_listing_isolates_view_types_and_index_names(&store).await;
+}
+
+#[cfg(feature = "nats-tests")]
+#[tokio::test]
+async fn nats_view_store_overwrite_replaces_index_membership() {
+    let Some(store) = nats_view_store("replace_index_membership").await else {
+        return;
+    };
+
+    assert_overwrite_replaces_index_membership(&store).await;
+}
+
+#[cfg(feature = "nats-tests")]
+#[tokio::test]
+async fn nats_view_store_missing_index_returns_empty_list() {
+    let Some(store) = nats_view_store("missing_index").await else {
+        return;
+    };
+
+    assert_missing_index_returns_empty_list(&store).await;
+}
+
+#[cfg(feature = "nats-tests")]
+#[tokio::test]
+async fn nats_view_store_rejects_duplicate_index_names_in_one_document() {
+    let Some(store) = nats_view_store("duplicate_index").await else {
+        return;
+    };
+
+    assert_rejects_duplicate_index_names_in_one_document(&store).await;
+}
+
+async fn assert_stores_and_loads_view_document_by_identity<S>(store: &S)
+where
+    S: ViewStore,
+{
     let document = offer_summary_view("offer-1", "Initial offer");
 
     store.put(document.clone()).await.expect("put view");
@@ -27,10 +229,10 @@ async fn in_memory_view_store_stores_and_loads_view_document_by_identity() {
     assert_eq!(loaded, Some(document));
 }
 
-#[tokio::test]
-async fn in_memory_view_store_returns_none_for_missing_view() {
-    let store = InMemoryViewStore::new();
-
+async fn assert_returns_none_for_missing_view<S>(store: &S)
+where
+    S: ViewStore,
+{
     let loaded = store
         .load(&ViewKey::new("offer_summary", "missing-offer"))
         .await
@@ -39,10 +241,10 @@ async fn in_memory_view_store_returns_none_for_missing_view() {
     assert!(loaded.is_none());
 }
 
-#[tokio::test]
-async fn in_memory_view_store_overwrites_existing_view_document() {
-    let store = InMemoryViewStore::new();
-
+async fn assert_overwrites_existing_view_document<S>(store: &S)
+where
+    S: ViewStore,
+{
     store
         .put(offer_summary_view("offer-1", "Initial offer"))
         .await
@@ -61,9 +263,10 @@ async fn in_memory_view_store_overwrites_existing_view_document() {
     assert_eq!(loaded.payload["title"], "Accepted offer");
 }
 
-#[tokio::test]
-async fn in_memory_view_store_keeps_view_types_and_ids_isolated() {
-    let store = InMemoryViewStore::new();
+async fn assert_keeps_view_types_and_ids_isolated<S>(store: &S)
+where
+    S: ViewStore,
+{
     let offer_summary = offer_summary_view("shared-id", "Initial offer");
     let flow_status = ViewDocument::new(
         "flow_status",
@@ -110,10 +313,11 @@ async fn in_memory_view_store_keeps_view_types_and_ids_isolated() {
     );
 }
 
-#[tokio::test]
-async fn in_memory_view_store_writes_do_not_create_resource_events() {
+async fn assert_writes_do_not_create_resource_events<S>(view_store: &S)
+where
+    S: ViewStore,
+{
     let event_store = InMemoryEventStore::new();
-    let view_store = InMemoryViewStore::new();
 
     view_store
         .put(offer_summary_view("offer-1", "Initial offer"))
@@ -129,10 +333,10 @@ async fn in_memory_view_store_writes_do_not_create_resource_events() {
     assert!(event_store.all_events().is_empty());
 }
 
-#[tokio::test]
-async fn in_memory_view_store_lists_all_index_with_empty_prefix() {
-    let store = InMemoryViewStore::new();
-
+async fn assert_lists_all_index_with_empty_prefix<S>(store: &S)
+where
+    S: ViewStore,
+{
     store
         .put(indexed_offer_summary_view(
             "offer-2",
@@ -158,10 +362,10 @@ async fn in_memory_view_store_lists_all_index_with_empty_prefix() {
     assert_eq!(view_ids(&listed), vec!["offer-1", "offer-2"]);
 }
 
-#[tokio::test]
-async fn in_memory_view_store_lists_matching_index_prefix_only() {
-    let store = InMemoryViewStore::new();
-
+async fn assert_lists_matching_index_prefix_only<S>(store: &S)
+where
+    S: ViewStore,
+{
     store
         .put(indexed_offer_summary_view(
             "offer-1",
@@ -195,10 +399,10 @@ async fn in_memory_view_store_lists_matching_index_prefix_only() {
     assert_eq!(view_ids(&listed), vec!["offer-1", "offer-3"]);
 }
 
-#[tokio::test]
-async fn in_memory_view_store_index_listing_isolates_view_types_and_index_names() {
-    let store = InMemoryViewStore::new();
-
+async fn assert_index_listing_isolates_view_types_and_index_names<S>(store: &S)
+where
+    S: ViewStore,
+{
     store
         .put(indexed_offer_summary_view(
             "shared-id",
@@ -236,10 +440,10 @@ async fn in_memory_view_store_index_listing_isolates_view_types_and_index_names(
     assert_eq!(view_ids(&offer_summary), vec!["shared-id"]);
 }
 
-#[tokio::test]
-async fn in_memory_view_store_overwrite_replaces_index_membership() {
-    let store = InMemoryViewStore::new();
-
+async fn assert_overwrite_replaces_index_membership<S>(store: &S)
+where
+    S: ViewStore,
+{
     store
         .put(indexed_offer_summary_view(
             "offer-1",
@@ -270,10 +474,10 @@ async fn in_memory_view_store_overwrite_replaces_index_membership() {
     assert_eq!(view_ids(&accepted), vec!["offer-1"]);
 }
 
-#[tokio::test]
-async fn in_memory_view_store_missing_index_returns_empty_list() {
-    let store = InMemoryViewStore::new();
-
+async fn assert_missing_index_returns_empty_list<S>(store: &S)
+where
+    S: ViewStore,
+{
     store
         .put(offer_summary_view("offer-1", "Initial offer"))
         .await
@@ -287,9 +491,10 @@ async fn in_memory_view_store_missing_index_returns_empty_list() {
     assert!(listed.is_empty());
 }
 
-#[tokio::test]
-async fn in_memory_view_store_rejects_duplicate_index_names_in_one_document() {
-    let store = InMemoryViewStore::new();
+async fn assert_rejects_duplicate_index_names_in_one_document<S>(store: &S)
+where
+    S: ViewStore,
+{
     let document = ViewDocument::new(
         "offer_summary",
         "offer-1",
@@ -303,12 +508,24 @@ async fn in_memory_view_store_rejects_duplicate_index_names_in_one_document() {
         ViewIndexEntry::new("by_status", "accepted/offer-1"),
     ]);
 
-    let result = store.put(document).await;
+    let err = store
+        .put(document)
+        .await
+        .expect_err("duplicate index names in one view document should be rejected");
 
-    assert!(
-        result.is_err(),
-        "duplicate index names in one view document should be rejected"
-    );
+    match err {
+        ViewStoreError::DuplicateIndexName {
+            view_type,
+            view_id,
+            index_name,
+        } => {
+            assert_eq!(view_type, "offer_summary");
+            assert_eq!(view_id, "offer-1");
+            assert_eq!(index_name, "by_status");
+        }
+        other => panic!("expected DuplicateIndexName view store error, got {other:?}"),
+    }
+
     let loaded = store
         .load(&ViewKey::new("offer_summary", "offer-1"))
         .await
@@ -348,4 +565,32 @@ fn view_ids(documents: &[ViewDocument]) -> Vec<&str> {
         .iter()
         .map(|document| document.key.view_id.as_str())
         .collect()
+}
+
+#[cfg(feature = "nats-tests")]
+async fn nats_view_store(test_name: &str) -> Option<NatsViewStore> {
+    let harness = match support::nats::NatsHarnessConfig::from_env() {
+        Ok(harness) => harness,
+        Err(skip) => {
+            eprintln!("{}", skip.reason());
+            return None;
+        }
+    };
+
+    let config = NatsViewStoreConfig::new(unique_nats_bucket_name(test_name));
+    Some(
+        NatsViewStore::connect(harness.url(), config)
+            .await
+            .expect("connect NATS ViewStore"),
+    )
+}
+
+#[cfg(feature = "nats-tests")]
+fn unique_nats_bucket_name(test_name: &str) -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock should be after UNIX_EPOCH")
+        .as_nanos();
+
+    format!("elbmesh_view_store_{test_name}_{nanos}")
 }

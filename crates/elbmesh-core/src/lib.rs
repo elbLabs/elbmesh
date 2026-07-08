@@ -54,3 +54,6 @@ pub use traits::{apply_recorded_event, Action, Apply, Event, Handle, Resource};
 pub use view_store::{
     InMemoryViewStore, ViewDocument, ViewIndexEntry, ViewKey, ViewStore, ViewStoreError,
 };
+
+#[cfg(feature = "nats-adapter")]
+pub use view_store::{NatsViewStore, NatsViewStoreConfig};
