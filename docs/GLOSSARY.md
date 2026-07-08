@@ -264,6 +264,7 @@ Rules:
 
 ```text
 External Operations must be declared on Actions.
+ActionContext derives operation_id and idempotency metadata for ExternalOperation calls.
 External Operations are journaled separately from Resource Events.
 External writes must use idempotency where possible.
 Retrying the same External Operation with the same idempotency key must return the original provider result or a named conflict/failure.

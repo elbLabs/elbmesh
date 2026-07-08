@@ -10,6 +10,7 @@ use crate::{
     EmittedEvent, Event, EventStore, ExecutionError, ExpectedVersion, Handle, HandlerError,
     MessageMetadata, NewEvent, Resource, ResourceStream, StreamType,
 };
+use crate::{ExternalOperation, ExternalOperationCall};
 
 pub struct ActionContext<R: Resource> {
     metadata: ActionMetadata,
@@ -69,6 +70,33 @@ impl<R: Resource> ActionContext<R> {
         Ok(())
     }
 
+    pub async fn execute_external_operation<O>(
+        &self,
+        operation: &O,
+        request: O::Request,
+    ) -> Result<O::Response, ActionError>
+    where
+        O: ExternalOperation,
+    {
+        let idempotency_key = operation.idempotency_key(&request);
+        let call = ExternalOperationCall {
+            operation_id: external_operation_id(
+                &self.metadata.action_id,
+                O::OPERATION_TYPE,
+                &idempotency_key,
+            ),
+            operation_type: O::OPERATION_TYPE.to_string(),
+            operation_schema_id: O::SCHEMA_ID.to_string(),
+            operation_schema_version: O::SCHEMA_VERSION,
+            idempotency_key,
+        };
+
+        operation
+            .execute(request, call)
+            .await
+            .map_err(|error| ActionError::external_operation(O::OPERATION_TYPE, &error))
+    }
+
     fn new_event<E>(&self, event: &E) -> Result<NewEvent, ActionError>
     where
         E: Event<Resource = R>,
@@ -104,6 +132,18 @@ impl<R: Resource> ActionContext<R> {
     pub fn into_events(self) -> Vec<NewEvent> {
         self.events
     }
+}
+
+fn external_operation_id(action_id: &str, operation_type: &str, idempotency_key: &str) -> String {
+    format!(
+        "action.{}.{}.operation.{}.{}.idempotency.{}.{}",
+        action_id.len(),
+        action_id,
+        operation_type.len(),
+        operation_type,
+        idempotency_key.len(),
+        idempotency_key
+    )
 }
 
 pub struct ActionExecutor<S> {

@@ -1,6 +1,9 @@
 use thiserror::Error;
 
-use crate::{action_journal::ActionJournalError, message::StreamType};
+use crate::{
+    action_journal::ActionJournalError, external_operation::ExternalOperationFailure,
+    message::StreamType,
+};
 
 pub trait ActionFailure: std::fmt::Debug + std::fmt::Display + Send + Sync + 'static {
     fn code(&self) -> &'static str;
@@ -18,8 +21,12 @@ pub enum ActionError {
     #[error("validation failed: {reason}")]
     Validation { reason: String },
 
-    #[error("external operation failed: {reason}")]
-    ExternalOperation { reason: String },
+    #[error("external operation '{operation_type}' failed with {failure_code}")]
+    ExternalOperation {
+        operation_type: String,
+        failure_code: String,
+        failure_details: serde_json::Value,
+    },
 
     #[error("state transition failed: {reason}")]
     StateTransition { reason: String },
@@ -44,6 +51,53 @@ impl ActionFailure for ActionError {
             Self::Serialization(_) => "action.serialization",
             Self::WrongResource { .. } => "action.wrong_resource",
             Self::Other(_) => "action.other",
+        }
+    }
+
+    fn details(&self) -> serde_json::Value {
+        match self {
+            Self::Rejected { reason } => serde_json::json!({
+                "error_type": "ActionError",
+                "error_variant": "Rejected",
+                "reason": reason,
+            }),
+            Self::Validation { reason } => serde_json::json!({
+                "error_type": "ActionError",
+                "error_variant": "Validation",
+                "reason": reason,
+            }),
+            Self::ExternalOperation {
+                operation_type,
+                failure_code,
+                failure_details,
+            } => serde_json::json!({
+                "error_type": "ActionError",
+                "error_variant": "ExternalOperation",
+                "operation_type": operation_type,
+                "failure_code": failure_code,
+                "failure_details": failure_details,
+            }),
+            Self::StateTransition { reason } => serde_json::json!({
+                "error_type": "ActionError",
+                "error_variant": "StateTransition",
+                "reason": reason,
+            }),
+            Self::Serialization(reason) => serde_json::json!({
+                "error_type": "ActionError",
+                "error_variant": "Serialization",
+                "reason": reason,
+            }),
+            Self::WrongResource { expected, actual } => serde_json::json!({
+                "error_type": "ActionError",
+                "error_variant": "WrongResource",
+                "expected": expected,
+                "actual": actual,
+            }),
+            Self::Other(reason) => serde_json::json!({
+                "error_type": "ActionError",
+                "error_variant": "Other",
+                "reason": reason,
+            }),
         }
     }
 }
@@ -79,6 +133,17 @@ impl ActionError {
     pub fn validation(reason: impl Into<String>) -> Self {
         Self::Validation {
             reason: reason.into(),
+        }
+    }
+
+    pub fn external_operation<E>(operation_type: impl Into<String>, error: &E) -> Self
+    where
+        E: ExternalOperationFailure,
+    {
+        Self::ExternalOperation {
+            operation_type: operation_type.into(),
+            failure_code: error.code().to_string(),
+            failure_details: error.details(),
         }
     }
 
