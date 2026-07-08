@@ -231,6 +231,19 @@ Capability Documents do not imply unimplemented NATS or Restate support.
 Capability Documents keep Resource Events separate from journals, ViewStore documents, provider diagnostics, and generated visibility artifacts.
 ```
 
+### Binding Stub
+
+A generated Rust type shell derived from a Capability Document.
+
+Rules:
+
+```text
+Binding Stubs declare type names and schema constants only.
+Binding Stubs do not implement behavior.
+Binding Stubs do not register providers.
+Binding Stubs do not imply NATS or Restate adapter support.
+```
+
 ### Policy
 
 A rule that governs Actions, Resources, lifecycle transitions, or access.
