@@ -25,6 +25,27 @@ async fn in_memory_event_store_rejects_non_resource_event_metadata() {
     event_store_rejects_non_resource_event_metadata(InMemoryEventStore::new()).await;
 }
 
+#[tokio::test]
+async fn in_memory_event_store_exact_expected_version_appends_after_current_version() {
+    event_store_exact_expected_version_appends_after_current_version(InMemoryEventStore::new())
+        .await;
+}
+
+#[tokio::test]
+async fn in_memory_event_store_any_expected_version_appends_after_current_version() {
+    event_store_any_expected_version_appends_after_current_version(InMemoryEventStore::new()).await;
+}
+
+#[tokio::test]
+async fn in_memory_event_store_no_stream_conflict_leaves_stream_unchanged() {
+    event_store_no_stream_conflict_leaves_stream_unchanged(InMemoryEventStore::new()).await;
+}
+
+#[tokio::test]
+async fn in_memory_event_store_exact_version_conflict_leaves_stream_unchanged() {
+    event_store_exact_version_conflict_leaves_stream_unchanged(InMemoryEventStore::new()).await;
+}
+
 async fn event_store_appends_and_loads_resource_events_in_sequence<S>(store: S)
 where
     S: EventStore,
@@ -159,6 +180,164 @@ where
         .await
         .expect("load rejected stream should succeed");
     assert!(loaded.is_empty());
+}
+
+async fn event_store_exact_expected_version_appends_after_current_version<S>(store: S)
+where
+    S: EventStore,
+{
+    let stream = ResourceStream::new("offer", "offer-1");
+    store
+        .append(
+            &stream,
+            ExpectedVersion::NoStream,
+            vec![new_event(
+                "offer-created-event-1",
+                "offer_created",
+                "offer-1",
+            )],
+        )
+        .await
+        .expect("initial append should succeed");
+
+    let append = store
+        .append(
+            &stream,
+            ExpectedVersion::Exact(1),
+            vec![new_event(
+                "offer-accepted-event-1",
+                "offer_accepted",
+                "offer-1",
+            )],
+        )
+        .await
+        .expect("exact expected version should append");
+
+    assert_eq!(append.previous_version, 1);
+    assert_eq!(append.new_version, 2);
+    assert_eq!(append.events.len(), 1);
+    assert_eq!(append.events[0].sequence, 2);
+
+    let loaded = store.load(&stream).await.expect("load should succeed");
+    assert_eq!(loaded.len(), 2);
+    assert_eq!(loaded[0].sequence, 1);
+    assert_eq!(loaded[1].sequence, 2);
+}
+
+async fn event_store_any_expected_version_appends_after_current_version<S>(store: S)
+where
+    S: EventStore,
+{
+    let stream = ResourceStream::new("offer", "offer-1");
+    store
+        .append(
+            &stream,
+            ExpectedVersion::NoStream,
+            vec![new_event(
+                "offer-created-event-1",
+                "offer_created",
+                "offer-1",
+            )],
+        )
+        .await
+        .expect("initial append should succeed");
+
+    let append = store
+        .append(
+            &stream,
+            ExpectedVersion::Any,
+            vec![new_event(
+                "offer-accepted-event-1",
+                "offer_accepted",
+                "offer-1",
+            )],
+        )
+        .await
+        .expect("any expected version should append");
+
+    assert_eq!(append.previous_version, 1);
+    assert_eq!(append.new_version, 2);
+    assert_eq!(append.events[0].sequence, 2);
+}
+
+async fn event_store_no_stream_conflict_leaves_stream_unchanged<S>(store: S)
+where
+    S: EventStore,
+{
+    let stream = ResourceStream::new("offer", "offer-1");
+    let first = new_event("offer-created-event-1", "offer_created", "offer-1");
+    store
+        .append(&stream, ExpectedVersion::NoStream, vec![first])
+        .await
+        .expect("initial append should succeed");
+
+    let err = store
+        .append(
+            &stream,
+            ExpectedVersion::NoStream,
+            vec![new_event(
+                "offer-accepted-event-1",
+                "offer_accepted",
+                "offer-1",
+            )],
+        )
+        .await
+        .expect_err("NoStream should fail once stream exists");
+
+    assert_concurrency_conflict(err, "resources.offer.offer-1", 0, 1);
+    let loaded = store.load(&stream).await.expect("load should succeed");
+    assert_eq!(loaded.len(), 1);
+    assert_eq!(loaded[0].metadata.message_id, "offer-created-event-1");
+}
+
+async fn event_store_exact_version_conflict_leaves_stream_unchanged<S>(store: S)
+where
+    S: EventStore,
+{
+    let stream = ResourceStream::new("offer", "offer-1");
+    let first = new_event("offer-created-event-1", "offer_created", "offer-1");
+    store
+        .append(&stream, ExpectedVersion::NoStream, vec![first])
+        .await
+        .expect("initial append should succeed");
+
+    let err = store
+        .append(
+            &stream,
+            ExpectedVersion::Exact(2),
+            vec![new_event(
+                "offer-accepted-event-1",
+                "offer_accepted",
+                "offer-1",
+            )],
+        )
+        .await
+        .expect_err("wrong exact expected version should fail");
+
+    assert_concurrency_conflict(err, "resources.offer.offer-1", 2, 1);
+    let loaded = store.load(&stream).await.expect("load should succeed");
+    assert_eq!(loaded.len(), 1);
+    assert_eq!(loaded[0].metadata.message_id, "offer-created-event-1");
+}
+
+fn assert_concurrency_conflict(
+    err: EventStoreError,
+    expected_stream: &str,
+    expected_version: u64,
+    actual_version: u64,
+) {
+    match err {
+        EventStoreError::ConcurrencyConflict {
+            stream,
+            expected,
+            actual,
+        } => {
+            assert_eq!(stream, expected_stream);
+            assert_eq!(expected, expected_version);
+            assert_eq!(actual, actual_version);
+        }
+        other => panic!("expected ConcurrencyConflict, got {other:?}"),
+    }
 }
 
 fn new_event(message_id: &str, message_type: &str, offer_id: &str) -> NewEvent {
