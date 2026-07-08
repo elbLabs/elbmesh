@@ -4,10 +4,11 @@ use serde_json::{json, Value};
 use thiserror::Error;
 
 use crate::{
-    Action as ActionTrait, ActionError, ActionExecutor, ActionFailure, ActionJournalError,
-    ActionMetadata, ActionReceipt, Event, EventStore, EventStoreError, ExecutionError, Handle,
-    HandlerError, MessageMetadata, ReactionJournal, ReactionJournalError, ReactionJournalRecord,
-    ReactionJournalStream, RecordedEvent, Resource, ResourceError, StreamType,
+    Action as ActionTrait, ActionError, ActionExecutor, ActionFailure, ActionJournal,
+    ActionJournalError, ActionMetadata, ActionReceipt, Event, EventStore, EventStoreError,
+    ExecutionError, Handle, HandlerError, MessageMetadata, ReactionJournal, ReactionJournalError,
+    ReactionJournalRecord, ReactionJournalStream, RecordedEvent, Resource, ResourceError,
+    StreamType,
 };
 
 #[async_trait]
@@ -41,6 +42,20 @@ where
         message_type: String,
         schema_version: u32,
         source: serde_json::Error,
+    },
+
+    #[error("reaction trigger stream identity mismatch: metadata resource '{metadata_resource_type}/{metadata_resource_id}', stream resource '{stream_resource_type}/{stream_resource_id}'")]
+    TriggerStreamIdentityMismatch {
+        metadata_resource_type: String,
+        metadata_resource_id: String,
+        stream_resource_type: String,
+        stream_resource_id: String,
+    },
+
+    #[error("reaction trigger payload identity mismatch: metadata resource id '{metadata_resource_id}', payload resource id '{payload_resource_id}'")]
+    TriggerPayloadIdentityMismatch {
+        metadata_resource_id: String,
+        payload_resource_id: String,
     },
 
     #[error(transparent)]
@@ -83,6 +98,14 @@ where
         }
     }
 
+    pub fn with_action_journal<AJ>(mut self, action_journal: AJ) -> Self
+    where
+        AJ: ActionJournal,
+    {
+        self.action_executor = self.action_executor.with_action_journal(action_journal);
+        self
+    }
+
     pub fn event_store(&self) -> &S {
         self.action_executor.event_store()
     }
@@ -104,26 +127,14 @@ where
     where
         Rxn: Reaction,
     {
-        format!(
-            "reaction_action:{}",
-            deterministic_identity(&[
-                ("reaction_type", Rxn::REACTION_TYPE),
-                ("trigger_event_id", &trigger.metadata.message_id),
-                ("action_type", <Rxn::Action as ActionTrait>::ACTION_TYPE),
-            ])
-        )
+        deterministic_reaction_action_id::<Rxn>(trigger)
     }
 
     pub fn reaction_action_metadata<Rxn>(trigger: &RecordedEvent) -> ActionMetadata
     where
         Rxn: Reaction,
     {
-        ActionMetadata::with_ids(
-            Self::reaction_action_id::<Rxn>(trigger),
-            trigger.metadata.correlation_id.clone(),
-            trigger.metadata.message_id.clone(),
-            trigger.metadata.actor_id.clone(),
-        )
+        deterministic_reaction_action_metadata::<Rxn>(trigger)
     }
 
     pub async fn execute<Rxn>(
@@ -165,6 +176,17 @@ where
             return Ok(None);
         }
 
+        if trigger.stream.resource_type != trigger.metadata.resource_type
+            || trigger.stream.resource_id != trigger.metadata.resource_id
+        {
+            return Err(ReactionExecutionError::TriggerStreamIdentityMismatch {
+                metadata_resource_type: trigger.metadata.resource_type.clone(),
+                metadata_resource_id: trigger.metadata.resource_id.clone(),
+                stream_resource_type: trigger.stream.resource_type.clone(),
+                stream_resource_id: trigger.stream.resource_id.clone(),
+            });
+        }
+
         let reaction_id = Self::reaction_id::<Rxn>(trigger);
         let journal_stream = ReactionJournalStream::for_reaction(reaction_id.clone());
         let trigger_event = serde_json::from_value::<Rxn::Trigger>(trigger.payload.clone())
@@ -175,6 +197,27 @@ where
                     source,
                 },
             )?;
+
+        let payload_resource_id = trigger_event.resource_id().to_string();
+        if payload_resource_id != trigger.metadata.resource_id {
+            return Err(ReactionExecutionError::TriggerPayloadIdentityMismatch {
+                metadata_resource_id: trigger.metadata.resource_id.clone(),
+                payload_resource_id,
+            });
+        }
+
+        let records = self.reaction_journal.load(&journal_stream).await?;
+        if records.iter().any(|record| {
+            matches!(
+                record,
+                ReactionJournalRecord::ReactionCompleted {
+                    reaction_id: completed_reaction_id,
+                    ..
+                } if completed_reaction_id == &reaction_id
+            )
+        }) {
+            return Ok(None);
+        }
 
         let action = reaction.react(trigger_event).await;
         self.reaction_journal
@@ -252,6 +295,19 @@ impl<Rxn, F> TypedReactionHandler<Rxn, F> {
     }
 }
 
+impl<Rxn> TypedReactionHandler<Rxn, fn(&RecordedEvent) -> ActionMetadata>
+where
+    Rxn: Reaction,
+{
+    pub fn deterministic(reaction: Rxn) -> Self {
+        Self {
+            reaction,
+            action_metadata: deterministic_reaction_action_metadata::<Rxn>
+                as fn(&RecordedEvent) -> ActionMetadata,
+        }
+    }
+}
+
 #[async_trait]
 impl<S, J, Rxn, F> EventReactionHandler<S, J> for TypedReactionHandler<Rxn, F>
 where
@@ -308,6 +364,13 @@ where
         self
     }
 
+    pub fn with_deterministic_handler<Rxn>(self, reaction: Rxn) -> Self
+    where
+        Rxn: Reaction,
+    {
+        self.with_handler(TypedReactionHandler::deterministic(reaction))
+    }
+
     pub async fn dispatch(
         &self,
         trigger: &RecordedEvent,
@@ -354,6 +417,12 @@ where
         ReactionExecutionError::TriggerEventDeserialization { .. } => {
             "reaction.trigger_event_deserialization"
         }
+        ReactionExecutionError::TriggerStreamIdentityMismatch { .. } => {
+            "reaction.trigger_stream_identity_mismatch"
+        }
+        ReactionExecutionError::TriggerPayloadIdentityMismatch { .. } => {
+            "reaction.trigger_payload_identity_mismatch"
+        }
         ReactionExecutionError::ReactionJournal(_) => "reaction.journal_error",
         ReactionExecutionError::Action(ExecutionError::Handler(HandlerError::Domain { error })) => {
             error.code()
@@ -385,6 +454,28 @@ where
         } => json!({
             "message_type": message_type,
             "schema_version": schema_version,
+        }),
+        ReactionExecutionError::TriggerStreamIdentityMismatch {
+            metadata_resource_type,
+            metadata_resource_id,
+            stream_resource_type,
+            stream_resource_id,
+        } => json!({
+            "error_type": "ReactionExecutionError",
+            "error_variant": "TriggerStreamIdentityMismatch",
+            "metadata_resource_type": metadata_resource_type,
+            "metadata_resource_id": metadata_resource_id,
+            "stream_resource_type": stream_resource_type,
+            "stream_resource_id": stream_resource_id,
+        }),
+        ReactionExecutionError::TriggerPayloadIdentityMismatch {
+            metadata_resource_id,
+            payload_resource_id,
+        } => json!({
+            "error_type": "ReactionExecutionError",
+            "error_variant": "TriggerPayloadIdentityMismatch",
+            "metadata_resource_id": metadata_resource_id,
+            "payload_resource_id": payload_resource_id,
         }),
         ReactionExecutionError::ReactionJournal(error) => reaction_journal_error_details(error),
         ReactionExecutionError::Action(ExecutionError::Handler(HandlerError::Domain { error })) => {
@@ -548,6 +639,32 @@ where
 
 fn deterministic_identity(parts: &[(&str, &str)]) -> String {
     serde_json::to_string(parts).expect("deterministic identity parts should serialize")
+}
+
+fn deterministic_reaction_action_id<Rxn>(trigger: &RecordedEvent) -> String
+where
+    Rxn: Reaction,
+{
+    format!(
+        "reaction_action:{}",
+        deterministic_identity(&[
+            ("reaction_type", Rxn::REACTION_TYPE),
+            ("trigger_event_id", &trigger.metadata.message_id),
+            ("action_type", <Rxn::Action as ActionTrait>::ACTION_TYPE),
+        ])
+    )
+}
+
+fn deterministic_reaction_action_metadata<Rxn>(trigger: &RecordedEvent) -> ActionMetadata
+where
+    Rxn: Reaction,
+{
+    ActionMetadata::with_ids(
+        deterministic_reaction_action_id::<Rxn>(trigger),
+        trigger.metadata.correlation_id.clone(),
+        trigger.metadata.message_id.clone(),
+        trigger.metadata.actor_id.clone(),
+    )
 }
 
 fn reaction_journal_metadata(

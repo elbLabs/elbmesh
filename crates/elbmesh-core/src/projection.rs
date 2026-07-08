@@ -26,6 +26,20 @@ pub enum ProjectionExecutionError {
         source: serde_json::Error,
     },
 
+    #[error("projection source stream identity mismatch: metadata resource '{metadata_resource_type}/{metadata_resource_id}', stream resource '{stream_resource_type}/{stream_resource_id}'")]
+    SourceStreamIdentityMismatch {
+        metadata_resource_type: String,
+        metadata_resource_id: String,
+        stream_resource_type: String,
+        stream_resource_id: String,
+    },
+
+    #[error("projection source payload identity mismatch: metadata resource id '{metadata_resource_id}', payload resource id '{payload_resource_id}'")]
+    SourcePayloadIdentityMismatch {
+        metadata_resource_id: String,
+        payload_resource_id: String,
+    },
+
     #[error(transparent)]
     ViewStore(#[from] ViewStoreError),
 }
@@ -79,6 +93,17 @@ where
             return Ok(false);
         }
 
+        if source.stream.resource_type != source.metadata.resource_type
+            || source.stream.resource_id != source.metadata.resource_id
+        {
+            return Err(ProjectionExecutionError::SourceStreamIdentityMismatch {
+                metadata_resource_type: source.metadata.resource_type.clone(),
+                metadata_resource_id: source.metadata.resource_id.clone(),
+                stream_resource_type: source.stream.resource_type.clone(),
+                stream_resource_id: source.stream.resource_id.clone(),
+            });
+        }
+
         let source_event = serde_json::from_value::<P::Source>(source.payload.clone()).map_err(
             |deserialize_source| ProjectionExecutionError::SourceEventDeserialization {
                 message_type: source.metadata.message_type.clone(),
@@ -86,6 +111,14 @@ where
                 source: deserialize_source,
             },
         )?;
+
+        let payload_resource_id = source_event.resource_id().to_string();
+        if payload_resource_id != source.metadata.resource_id {
+            return Err(ProjectionExecutionError::SourcePayloadIdentityMismatch {
+                metadata_resource_id: source.metadata.resource_id.clone(),
+                payload_resource_id,
+            });
+        }
 
         projection.project(source_event, &self.view_store).await?;
         Ok(true)
@@ -199,8 +232,17 @@ fn projection_execution_failure_code(error: &ProjectionExecutionError) -> &'stat
         ProjectionExecutionError::SourceEventDeserialization { .. } => {
             "projection.source_event_deserialization"
         }
+        ProjectionExecutionError::SourceStreamIdentityMismatch { .. } => {
+            "projection.source_stream_identity_mismatch"
+        }
+        ProjectionExecutionError::SourcePayloadIdentityMismatch { .. } => {
+            "projection.source_payload_identity_mismatch"
+        }
         ProjectionExecutionError::ViewStore(ViewStoreError::StoragePoisoned) => {
             "projection.view_store.storage_poisoned"
+        }
+        ProjectionExecutionError::ViewStore(ViewStoreError::DuplicateIndexName { .. }) => {
+            "projection.view_store.duplicate_index_name"
         }
     }
 }
@@ -218,9 +260,42 @@ fn projection_execution_failure_details(error: &ProjectionExecutionError) -> Val
             "schema_version": schema_version,
             "source": source.to_string(),
         }),
+        ProjectionExecutionError::SourceStreamIdentityMismatch {
+            metadata_resource_type,
+            metadata_resource_id,
+            stream_resource_type,
+            stream_resource_id,
+        } => json!({
+            "error_type": "ProjectionExecutionError",
+            "error_variant": "SourceStreamIdentityMismatch",
+            "metadata_resource_type": metadata_resource_type,
+            "metadata_resource_id": metadata_resource_id,
+            "stream_resource_type": stream_resource_type,
+            "stream_resource_id": stream_resource_id,
+        }),
+        ProjectionExecutionError::SourcePayloadIdentityMismatch {
+            metadata_resource_id,
+            payload_resource_id,
+        } => json!({
+            "error_type": "ProjectionExecutionError",
+            "error_variant": "SourcePayloadIdentityMismatch",
+            "metadata_resource_id": metadata_resource_id,
+            "payload_resource_id": payload_resource_id,
+        }),
         ProjectionExecutionError::ViewStore(ViewStoreError::StoragePoisoned) => json!({
             "error_type": "ViewStoreError",
             "error_variant": "StoragePoisoned",
+        }),
+        ProjectionExecutionError::ViewStore(ViewStoreError::DuplicateIndexName {
+            view_type,
+            view_id,
+            index_name,
+        }) => json!({
+            "error_type": "ViewStoreError",
+            "error_variant": "DuplicateIndexName",
+            "view_type": view_type,
+            "view_id": view_id,
+            "index_name": index_name,
         }),
     }
 }

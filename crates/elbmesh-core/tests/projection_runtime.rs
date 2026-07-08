@@ -118,6 +118,58 @@ async fn schema_or_resource_mismatch_is_ignored_without_view_writes() {
 }
 
 #[tokio::test]
+async fn projection_rejects_source_when_stream_identity_disagrees_with_metadata() {
+    let runtime = ProjectionRuntime::new(InMemoryViewStore::new());
+    let mut source = offer_created_recorded_event("offer-1", "Initial offer");
+    source.stream = ResourceStream::new("offer", "offer-2");
+
+    let result = runtime.apply(&source, &OfferSummaryProjection).await;
+
+    assert!(
+        result.is_err(),
+        "source with inconsistent RecordedEvent stream identity should be rejected"
+    );
+    let metadata_view = runtime
+        .view_store()
+        .load(&ViewKey::new("offer_summary", "offer-1"))
+        .await
+        .expect("load metadata identity view");
+    let stream_view = runtime
+        .view_store()
+        .load(&ViewKey::new("offer_summary", "offer-2"))
+        .await
+        .expect("load stream identity view");
+    assert!(metadata_view.is_none());
+    assert!(stream_view.is_none());
+}
+
+#[tokio::test]
+async fn projection_rejects_source_when_payload_identity_disagrees_with_metadata() {
+    let runtime = ProjectionRuntime::new(InMemoryViewStore::new());
+    let mut source = offer_created_recorded_event("offer-1", "Initial offer");
+    source.payload = json!({ "offer_id": "offer-2", "title": "Initial offer" });
+
+    let result = runtime.apply(&source, &OfferSummaryProjection).await;
+
+    assert!(
+        result.is_err(),
+        "source with inconsistent payload resource identity should be rejected"
+    );
+    let metadata_view = runtime
+        .view_store()
+        .load(&ViewKey::new("offer_summary", "offer-1"))
+        .await
+        .expect("load metadata identity view");
+    let payload_view = runtime
+        .view_store()
+        .load(&ViewKey::new("offer_summary", "offer-2"))
+        .await
+        .expect("load payload identity view");
+    assert!(metadata_view.is_none());
+    assert!(payload_view.is_none());
+}
+
+#[tokio::test]
 async fn matching_event_with_invalid_payload_returns_named_deserialization_error() {
     let runtime = ProjectionRuntime::new(InMemoryViewStore::new());
     let mut trigger = offer_created_recorded_event("offer-1", "Initial offer");
@@ -242,6 +294,42 @@ async fn dispatcher_returns_named_failures_with_details() {
     }
 }
 
+#[tokio::test]
+async fn dispatcher_reports_mixed_success_and_failure_and_keeps_successful_view() {
+    let dispatcher = ProjectionDispatcher::new(ProjectionRuntime::new(InMemoryViewStore::new()))
+        .with_handler(TypedProjectionHandler::new(OfferFlowStatusProjection))
+        .with_handler(TypedProjectionHandler::new(
+            OfferCreatedRequiresAuditProjection,
+        ));
+    let source = offer_created_recorded_event("offer-1", "Initial offer");
+
+    let error = dispatcher
+        .dispatch(&source)
+        .await
+        .expect_err("one matching projection should fail dispatch");
+
+    match error {
+        ProjectionDispatchError::HandlerFailures { applied, failures } => {
+            assert_eq!(applied, 1);
+            assert_eq!(failures.len(), 1);
+            assert_eq!(failures[0].projection_type, "offer_created_requires_audit");
+            assert_eq!(
+                failures[0].failure_code,
+                "projection.source_event_deserialization"
+            );
+        }
+    }
+
+    let view = dispatcher
+        .view_store()
+        .load(&ViewKey::new("flow_status", "offer-1"))
+        .await
+        .expect("load successfully projected flow status")
+        .expect("successful projection view should remain");
+    assert_eq!(view.payload["offer_id"], "offer-1");
+    assert_eq!(view.payload["status"], "offer_created");
+}
+
 #[derive(Debug, Default, Clone)]
 struct Offer;
 
@@ -262,6 +350,25 @@ struct OfferCreatedV1 {
 }
 
 impl Event for OfferCreatedV1 {
+    type Resource = Offer;
+
+    const EVENT_TYPE: &'static str = "offer_created";
+    const SCHEMA_ID: &'static str = "event.offer_created.v1";
+    const SCHEMA_VERSION: u32 = 1;
+
+    fn resource_id(&self) -> <Self::Resource as Resource>::Id {
+        self.offer_id.clone()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct OfferCreatedRequiresAuditV1 {
+    offer_id: String,
+    title: String,
+    required_audit_marker: String,
+}
+
+impl Event for OfferCreatedRequiresAuditV1 {
     type Resource = Offer;
 
     const EVENT_TYPE: &'static str = "offer_created";
@@ -349,6 +456,32 @@ impl Projection for OfferFlowStatusProjection {
                     "offer_id": event.offer_id,
                     "status": "offer_created",
                     "title": event.title,
+                }),
+            ))
+            .await
+    }
+}
+
+struct OfferCreatedRequiresAuditProjection;
+
+#[async_trait]
+impl Projection for OfferCreatedRequiresAuditProjection {
+    type Source = OfferCreatedRequiresAuditV1;
+
+    const PROJECTION_TYPE: &'static str = "offer_created_requires_audit";
+
+    async fn project<V>(&self, event: Self::Source, view_store: &V) -> Result<(), ViewStoreError>
+    where
+        V: ViewStore,
+    {
+        view_store
+            .put(ViewDocument::new(
+                "offer_audit",
+                event.offer_id.clone(),
+                json!({
+                    "offer_id": event.offer_id,
+                    "title": event.title,
+                    "required_audit_marker": event.required_audit_marker,
                 }),
             ))
             .await

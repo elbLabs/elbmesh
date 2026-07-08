@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -62,6 +62,13 @@ impl ViewIndexEntry {
 pub enum ViewStoreError {
     #[error("view store storage is poisoned")]
     StoragePoisoned,
+
+    #[error("view document '{view_type}/{view_id}' declares index '{index_name}' more than once")]
+    DuplicateIndexName {
+        view_type: String,
+        view_id: String,
+        index_name: String,
+    },
 }
 
 #[async_trait]
@@ -92,6 +99,17 @@ impl InMemoryViewStore {
 #[async_trait]
 impl ViewStore for InMemoryViewStore {
     async fn put(&self, document: ViewDocument) -> Result<(), ViewStoreError> {
+        let mut index_names = HashSet::new();
+        for index in &document.indexes {
+            if !index_names.insert(index.index_name.clone()) {
+                return Err(ViewStoreError::DuplicateIndexName {
+                    view_type: document.key.view_type.clone(),
+                    view_id: document.key.view_id.clone(),
+                    index_name: index.index_name.clone(),
+                });
+            }
+        }
+
         let mut documents = self
             .documents
             .lock()
