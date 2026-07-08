@@ -6,6 +6,9 @@ use elbmesh_core::{
 
 use serde_json::json;
 
+type ManifestMutation = fn(&mut ArchitectureManifest);
+type SchemaIdentityCase = (ManifestMutation, &'static str, &'static str);
+
 #[test]
 fn architecture_manifest_describes_resource_action_and_event_schema_identity() {
     let manifest = offer_manifest();
@@ -147,6 +150,174 @@ fn valid_manifest_resource_ownership_validation_succeeds() {
     offer_manifest()
         .validate()
         .expect("valid manifest should pass resource ownership validation");
+}
+
+#[test]
+fn manifest_validation_rejects_missing_manifest_schema_id() {
+    let mut manifest = offer_manifest();
+    manifest.manifest_schema_id.clear();
+
+    let err = manifest
+        .validate()
+        .expect_err("missing manifest schema id should fail validation");
+
+    assert_eq!(
+        err,
+        ManifestValidationError::MissingSchemaId {
+            definition_kind: "manifest".to_string(),
+            definition_name: "manifest".to_string(),
+        }
+    );
+    assert_eq!(err.code(), "manifest.missing_schema_id");
+}
+
+#[test]
+fn manifest_validation_rejects_zero_manifest_schema_version() {
+    let mut manifest = offer_manifest();
+    manifest.manifest_schema_version = 0;
+
+    let err = manifest
+        .validate()
+        .expect_err("zero manifest schema version should fail validation");
+
+    assert_eq!(
+        err,
+        ManifestValidationError::InvalidSchemaVersion {
+            definition_kind: "manifest".to_string(),
+            definition_name: "manifest".to_string(),
+            schema_version: 0,
+        }
+    );
+    assert_eq!(err.code(), "manifest.invalid_schema_version");
+}
+
+#[test]
+fn manifest_validation_rejects_missing_definition_schema_ids() {
+    let cases: Vec<SchemaIdentityCase> = vec![
+        (
+            |manifest| manifest.resources[0].schema_id.clear(),
+            "resource",
+            "offer",
+        ),
+        (
+            |manifest| manifest.resources[0].components[0].schema_id.clear(),
+            "component",
+            "offer_terms",
+        ),
+        (
+            |manifest| manifest.actions[0].schema_id.clear(),
+            "action",
+            "create_offer",
+        ),
+        (
+            |manifest| manifest.events[0].schema_id.clear(),
+            "event",
+            "offer_created",
+        ),
+        (
+            |manifest| manifest.reactions[0].schema_id.clear(),
+            "reaction",
+            "offer_created_to_send_offer_email",
+        ),
+        (
+            |manifest| manifest.views[0].schema_id.clear(),
+            "view",
+            "offer_summary",
+        ),
+        (
+            |manifest| manifest.queries[0].schema_id.clear(),
+            "query",
+            "get_offer_summary",
+        ),
+        (
+            |manifest| manifest.external_operations[0].schema_id.clear(),
+            "external_operation",
+            "create_invoice",
+        ),
+    ];
+
+    for (mutate, definition_kind, definition_name) in cases {
+        let mut manifest = offer_manifest();
+        mutate(&mut manifest);
+
+        let err = manifest
+            .validate()
+            .expect_err("missing definition schema id should fail validation");
+
+        assert_eq!(
+            err,
+            ManifestValidationError::MissingSchemaId {
+                definition_kind: definition_kind.to_string(),
+                definition_name: definition_name.to_string(),
+            }
+        );
+        assert_eq!(err.code(), "manifest.missing_schema_id");
+    }
+}
+
+#[test]
+fn manifest_validation_rejects_zero_definition_schema_versions() {
+    let cases: Vec<SchemaIdentityCase> = vec![
+        (
+            |manifest| manifest.resources[0].schema_version = 0,
+            "resource",
+            "offer",
+        ),
+        (
+            |manifest| manifest.resources[0].components[0].schema_version = 0,
+            "component",
+            "offer_terms",
+        ),
+        (
+            |manifest| manifest.actions[0].schema_version = 0,
+            "action",
+            "create_offer",
+        ),
+        (
+            |manifest| manifest.events[0].schema_version = 0,
+            "event",
+            "offer_created",
+        ),
+        (
+            |manifest| manifest.reactions[0].schema_version = 0,
+            "reaction",
+            "offer_created_to_send_offer_email",
+        ),
+        (
+            |manifest| manifest.views[0].schema_version = 0,
+            "view",
+            "offer_summary",
+        ),
+        (
+            |manifest| manifest.queries[0].schema_version = 0,
+            "query",
+            "get_offer_summary",
+        ),
+        (
+            |manifest| manifest.external_operations[0].schema_version = 0,
+            "external_operation",
+            "create_invoice",
+        ),
+    ];
+
+    for (mutate, definition_kind, definition_name) in cases {
+        let mut manifest = offer_manifest();
+        mutate(&mut manifest);
+
+        let err = manifest
+            .validate()
+            .expect_err("zero definition schema version should fail validation");
+
+        assert_eq!(
+            err,
+            ManifestValidationError::InvalidSchemaVersion {
+                definition_kind: definition_kind.to_string(),
+                definition_name: definition_name.to_string(),
+                schema_version: 0,
+            }
+        );
+        assert_eq!(err.code(), "manifest.invalid_schema_version");
+    }
 }
 
 #[test]
