@@ -217,6 +217,19 @@ List Open Receivables
 List Invoices By Customer
 ```
 
+### Capability Document
+
+A machine-readable JSON document generated from an ArchitectureManifest.
+
+Rules:
+
+```text
+Capability Documents preserve declared Resources, Actions, Events, Reactions, Views, Queries, and External Operations.
+Capability Documents include generator metadata.
+Capability Documents describe declared and implemented capabilities only.
+Capability Documents do not imply unimplemented NATS or Restate support.
+```
+
 ### Policy
 
 A rule that governs Actions, Resources, lifecycle transitions, or access.
