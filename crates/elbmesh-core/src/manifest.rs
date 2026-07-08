@@ -88,7 +88,16 @@ impl ArchitectureManifest {
             .collect();
 
         for action in &self.actions {
+            let mut action_external_operation_types = HashSet::new();
+
             for operation_type in &action.external_operation_types {
+                if !action_external_operation_types.insert(operation_type.as_str()) {
+                    return Err(ManifestValidationError::DuplicateActionExternalOperation {
+                        action_type: action.action_type.clone(),
+                        operation_type: operation_type.clone(),
+                    });
+                }
+
                 if !external_operation_types.contains(operation_type.as_str()) {
                     return Err(ManifestValidationError::UnknownActionExternalOperation {
                         action_type: action.action_type.clone(),
@@ -203,6 +212,12 @@ pub enum ManifestValidationError {
         operation_type: String,
     },
 
+    #[error("manifest action '{action_type}' references external operation '{operation_type}' more than once")]
+    DuplicateActionExternalOperation {
+        action_type: String,
+        operation_type: String,
+    },
+
     #[error("manifest event '{event_type}' belongs to undeclared resource '{resource_type}'")]
     UnknownEventResource {
         event_type: String,
@@ -241,6 +256,9 @@ impl ManifestValidationError {
             }
             Self::UnknownActionExternalOperation { .. } => {
                 "manifest.action_unknown_external_operation"
+            }
+            Self::DuplicateActionExternalOperation { .. } => {
+                "manifest.action_duplicate_external_operation"
             }
             Self::UnknownEventResource { .. } => "manifest.event_unknown_resource",
             Self::UnknownActionEmittedEvent { .. } => "manifest.action_unknown_emitted_event",

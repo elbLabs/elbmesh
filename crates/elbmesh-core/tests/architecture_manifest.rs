@@ -324,6 +324,26 @@ fn manifest_validation_rejects_action_referencing_unknown_external_operation() {
 }
 
 #[test]
+fn manifest_validation_rejects_action_referencing_same_external_operation_twice() {
+    let mut manifest = offer_manifest();
+    manifest.actions[1].external_operation_types =
+        vec!["create_invoice".to_string(), "create_invoice".to_string()];
+
+    let err = manifest
+        .validate()
+        .expect_err("duplicate action external operation reference should fail validation");
+
+    assert_eq!(
+        err,
+        ManifestValidationError::DuplicateActionExternalOperation {
+            action_type: "send_offer_email".to_string(),
+            operation_type: "create_invoice".to_string(),
+        }
+    );
+    assert_eq!(err.code(), "manifest.action_duplicate_external_operation");
+}
+
+#[test]
 fn manifest_validation_rejects_duplicate_external_operation_type() {
     let mut manifest = offer_manifest();
     manifest
