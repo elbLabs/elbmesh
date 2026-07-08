@@ -225,7 +225,7 @@ Rules:
 
 ```text
 Capability Documents preserve declared Resources, Actions, Events, Reactions, Views, Queries, and External Operations.
-Capability Documents include generator metadata.
+Capability Documents include generator metadata and a manifest hash.
 Capability Documents describe declared and implemented capabilities only.
 Capability Documents do not imply unimplemented NATS or Restate support.
 Capability Documents keep Resource Events separate from journals, ViewStore documents, provider diagnostics, and generated visibility artifacts.

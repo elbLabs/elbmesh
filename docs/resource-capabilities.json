@@ -1,0 +1,77 @@
+{
+  "capability_schema_id": "capabilities.elbmesh.v1",
+  "capability_schema_version": 1,
+  "generator": {
+    "name": "elbmesh-core",
+    "version": "0.1.0"
+  },
+  "manifest_schema_id": "manifest.elbmesh.v1",
+  "manifest_schema_version": 1,
+  "manifest_hash": "fnv1a64:6a2d2e43edfa832f",
+  "resources": [
+    {
+      "resource_type": "offer",
+      "schema_id": "resource.offer.v1",
+      "schema_version": 1,
+      "components": [
+        {
+          "component_type": "offer_terms",
+          "schema_id": "component.offer_terms.v1",
+          "schema_version": 1
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "action_type": "send_offer_email",
+      "resource_type": "offer",
+      "schema_id": "action.send_offer_email.v1",
+      "schema_version": 1,
+      "emitted_event_types": [
+        "offer_created"
+      ],
+      "external_operation_types": [
+        "lexoffice_create_invoice"
+      ]
+    }
+  ],
+  "events": [
+    {
+      "event_type": "offer_created",
+      "resource_type": "offer",
+      "schema_id": "event.offer_created.v1",
+      "schema_version": 1
+    }
+  ],
+  "reactions": [
+    {
+      "reaction_type": "offer_created_to_send_offer_email",
+      "trigger_event_type": "offer_created",
+      "target_action_type": "send_offer_email",
+      "schema_id": "reaction.offer_created_to_send_offer_email.v1",
+      "schema_version": 1
+    }
+  ],
+  "views": [
+    {
+      "view_type": "offer_summary",
+      "schema_id": "view.offer_summary.v1",
+      "schema_version": 1
+    }
+  ],
+  "queries": [
+    {
+      "query_type": "get_offer_summary",
+      "schema_id": "query.get_offer_summary.v1",
+      "schema_version": 1
+    }
+  ],
+  "external_operations": [
+    {
+      "operation_type": "lexoffice_create_invoice",
+      "schema_id": "external_operation.lexoffice_create_invoice.v1",
+      "schema_version": 1
+    }
+  ]
+}
