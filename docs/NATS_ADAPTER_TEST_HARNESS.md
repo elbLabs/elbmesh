@@ -57,3 +57,15 @@ action.<action-id-byte-length>.<percent-encoded-action-id>
 ```
 
 Only ASCII letters, digits, `_`, and `-` remain unescaped in the encoded token. All other bytes are encoded as uppercase `%XX`, so dots and NATS wildcards cannot change the KV key token structure.
+
+## ViewStore KV Keys
+
+The Phase 7.5 NATS ViewStore adapter stores each `ViewDocument` in a dedicated KV bucket, separate from Resource Event streams and Journal streams.
+
+View document keys use:
+
+```text
+view.<view-type-byte-length>.<percent-encoded-view-type>.<view-id-byte-length>.<percent-encoded-view-id>
+```
+
+Index-prefix queries scan current KV documents and derive index membership from each document's latest payload. This preserves overwrite semantics without storing separate stale index entries.
