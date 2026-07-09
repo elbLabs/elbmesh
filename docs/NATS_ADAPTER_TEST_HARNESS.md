@@ -33,6 +33,29 @@ Example environment:
 ELBMESH_NATS_URL=nats://127.0.0.1:4222
 ```
 
+## Docker-Backed Local NATS
+
+Start a local NATS server with JetStream enabled:
+
+```bash
+docker compose up -d nats
+```
+
+Run the live adapter contract tests against that server:
+
+```bash
+ELBMESH_NATS_URL=nats://127.0.0.1:4222 cargo test -p elbmesh-core --features nats-tests --test action_journal
+ELBMESH_NATS_URL=nats://127.0.0.1:4222 cargo test -p elbmesh-core --features nats-tests --test view_store
+```
+
+Stop the local server:
+
+```bash
+docker compose down
+```
+
+These live commands should fail if Docker is not running or if `ELBMESH_NATS_URL` points at no broker. A feature-gated test run without `ELBMESH_NATS_URL` still skips live adapter work by design so default development does not require NATS.
+
 ## Adapter Boundaries
 
 Phase 7 adapters must preserve the existing runtime boundaries:
