@@ -625,6 +625,46 @@ fn event_store_error_details(error: &EventStoreError) -> Value {
             "expected_stream_type": expected_stream_type,
             "actual_stream_type": actual_stream_type,
         }),
+        EventStoreError::NatsConnect { reason } => json!({
+            "error_type": "EventStoreError",
+            "error_variant": "NatsConnect",
+            "reason": reason,
+        }),
+        EventStoreError::NatsBucket { bucket, reason } => json!({
+            "error_type": "EventStoreError",
+            "error_variant": "NatsBucket",
+            "bucket": bucket,
+            "reason": reason,
+        }),
+        EventStoreError::StreamSerialization { stream, reason } => json!({
+            "error_type": "EventStoreError",
+            "error_variant": "StreamSerialization",
+            "stream": stream,
+            "reason": reason,
+        }),
+        EventStoreError::StreamDeserialization {
+            stream,
+            revision,
+            reason,
+        } => json!({
+            "error_type": "EventStoreError",
+            "error_variant": "StreamDeserialization",
+            "stream": stream,
+            "revision": revision,
+            "reason": reason,
+        }),
+        EventStoreError::NatsLoad { stream, reason } => json!({
+            "error_type": "EventStoreError",
+            "error_variant": "NatsLoad",
+            "stream": stream,
+            "reason": reason,
+        }),
+        EventStoreError::NatsAppend { stream, reason } => json!({
+            "error_type": "EventStoreError",
+            "error_variant": "NatsAppend",
+            "stream": stream,
+            "reason": reason,
+        }),
         EventStoreError::Other(reason) => json!({
             "error_type": "EventStoreError",
             "error_variant": "Other",
