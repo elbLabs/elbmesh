@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 pub const NATS_URL_ENV: &str = "ELBMESH_NATS_URL";
 #[allow(dead_code)]
 pub const NATS_DOCKER_SERVICE: &str = "nats";

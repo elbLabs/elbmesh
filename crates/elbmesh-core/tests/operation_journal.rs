@@ -12,7 +12,7 @@ use elbmesh_core::{RestateOperationJournal, RestateOperationJournalConfig};
 
 use serde_json::json;
 
-#[cfg(feature = "nats-tests")]
+#[cfg(any(feature = "nats-tests", feature = "restate-tests"))]
 mod support;
 
 #[test]
@@ -169,6 +169,40 @@ async fn restate_operation_journal_rejects_wrong_operation_stream_before_http_ca
         RestateOperationJournal::new(RestateOperationJournalConfig::new("http://127.0.0.1:1"));
 
     assert_rejects_wrong_operation_stream_with_named_error(&journal).await;
+}
+
+#[cfg(feature = "restate-tests")]
+#[tokio::test]
+async fn restate_live_operation_journal_appends_called_and_completed_records() {
+    let Some((journal, _endpoint)) = restate_operation_journal().await else {
+        return;
+    };
+    let operation_id = unique_restate_operation_id("called_completed");
+    let stream = OperationJournalStream::for_operation(&operation_id);
+
+    journal
+        .append(
+            &stream,
+            operation_called_record(&operation_id, "restate-offer-123"),
+        )
+        .await
+        .expect("append live Restate OperationCalled record");
+    journal
+        .append(
+            &stream,
+            operation_completed_record(&operation_id, "restate-offer-123"),
+        )
+        .await
+        .expect("append live Restate OperationCompleted record");
+
+    let records = journal
+        .load(&stream)
+        .await
+        .expect("load live Restate operation journal records");
+
+    assert_eq!(records.len(), 2);
+    assert_operation_called_record(&records[0], &operation_id, "restate-offer-123");
+    assert_operation_completed_record(&records[1], &operation_id, "restate-offer-123");
 }
 
 async fn assert_appends_called_and_completed_records<J>(journal: &J)
@@ -449,6 +483,27 @@ async fn nats_operation_journal(test_name: &str) -> Option<NatsOperationJournal>
     )
 }
 
+#[cfg(feature = "restate-tests")]
+async fn restate_operation_journal() -> Option<(
+    RestateOperationJournal,
+    support::restate::RestateLiveEndpoint,
+)> {
+    let harness = match support::restate::RestateHarnessConfig::from_env() {
+        Ok(harness) => harness,
+        Err(skip) => {
+            eprintln!("{}", skip.reason());
+            return None;
+        }
+    };
+    let endpoint = harness
+        .start_operation_journal_endpoint()
+        .await
+        .expect("start and register live Restate OperationJournal endpoint");
+    let journal = RestateOperationJournal::new(RestateOperationJournalConfig::new(harness.url()));
+
+    Some((journal, endpoint))
+}
+
 #[cfg(feature = "nats-tests")]
 fn unique_nats_bucket_name(test_name: &str) -> String {
     let nanos = std::time::SystemTime::now()
@@ -457,4 +512,14 @@ fn unique_nats_bucket_name(test_name: &str) -> String {
         .as_nanos();
 
     format!("elbmesh_operation_journal_{test_name}_{nanos}")
+}
+
+#[cfg(feature = "restate-tests")]
+fn unique_restate_operation_id(test_name: &str) -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock should be after UNIX_EPOCH")
+        .as_nanos();
+
+    format!("restate-operation-journal-{test_name}-{nanos}")
 }

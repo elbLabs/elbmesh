@@ -1,0 +1,7 @@
+# Restate server configuration for local live integration tests.
+
+[admin]
+bind-address = "0.0.0.0:9070"
+
+[ingress]
+bind-address = "0.0.0.0:8080"

@@ -19,6 +19,9 @@ use serde_json::json;
 #[cfg(feature = "restate-adapter")]
 use elbmesh_core::{RestateOperationJournal, RestateOperationJournalConfig};
 
+#[cfg(feature = "restate-tests")]
+mod support;
+
 #[tokio::test]
 async fn action_context_executes_external_operation_with_deterministic_operation_metadata() {
     let operation = MockLexOfficeCreateInvoice::new();
@@ -315,6 +318,101 @@ async fn restate_operation_journal_retry_after_append_failure_reuses_completed_e
     assert_eq!(records_after_retry.len(), 2);
 }
 
+#[cfg(feature = "restate-tests")]
+#[tokio::test]
+async fn live_restate_operation_journal_retry_after_append_failure_reuses_completed_external_operation(
+) {
+    let Some((operation_journal, _endpoint)) = live_restate_operation_journal().await else {
+        return;
+    };
+    let unique = unique_live_restate_suffix();
+    let event_store = AppendFailsOnceEventStore::new(InMemoryEventStore::new());
+    let executor =
+        ActionExecutor::new(event_store.clone()).with_operation_journal(operation_journal.clone());
+    let action = CreateLiveRestateRetryInvoiceThroughLexOfficeV1 {
+        invoice_id: format!("live-restate-retry-invoice-{unique}"),
+        order_confirmation_id: format!("live-restate-retry-order-confirmation-{unique}"),
+        customer_id: "customer-123".to_string(),
+        amount_cents: 12_345,
+    };
+    let metadata = action_metadata(&format!("live-restate-retry-action-{unique}"));
+    let request = lexoffice_request(&action.invoice_id, &action.order_confirmation_id);
+    let operation = live_restate_retry_lexoffice_operation();
+    let idempotency_key = operation.idempotency_key(&request);
+    let operation_id = expected_operation_id(
+        &metadata.action_id,
+        MockLexOfficeCreateInvoice::OPERATION_TYPE,
+        &idempotency_key,
+    );
+
+    let first_err = executor
+        .execute::<Invoice, CreateLiveRestateRetryInvoiceThroughLexOfficeV1>(
+            action.clone(),
+            metadata.clone(),
+        )
+        .await
+        .expect_err("first live Restate-backed attempt should fail after operation succeeds");
+
+    assert!(matches!(
+        first_err,
+        ExecutionError::EventStore(EventStoreError::Other(reason)) if reason == "append failed once"
+    ));
+    assert_eq!(
+        operation.created_invoice_count().expect("count invoices"),
+        1
+    );
+
+    let stream = OperationJournalStream::for_operation(operation_id.clone());
+    let records = operation_journal
+        .load(&stream)
+        .await
+        .expect("load live Restate operation records after failed append");
+    assert_eq!(records.len(), 2);
+    assert_operation_called_record(&records[0], &operation_id, &idempotency_key);
+    assert_operation_completed_record(&records[1], &operation_id);
+
+    let receipt = executor
+        .execute::<Invoice, CreateLiveRestateRetryInvoiceThroughLexOfficeV1>(
+            action.clone(),
+            metadata,
+        )
+        .await
+        .expect("live Restate-backed retry should reuse completed operation and append event");
+
+    assert_eq!(receipt.status, ActionStatus::Completed);
+    assert_eq!(
+        operation.created_invoice_count().expect("count invoices"),
+        1
+    );
+    assert_eq!(event_store.append_attempts(), 2);
+
+    let resource_stream = ResourceStream::new("invoice", &action.invoice_id);
+    let events = executor
+        .event_store()
+        .load(&resource_stream)
+        .await
+        .expect("load live Restate retry invoice events");
+
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].metadata.stream_type, StreamType::Resource);
+    assert_eq!(
+        events[0].payload,
+        json!({
+            "invoice_id": action.invoice_id,
+            "provider_invoice_id": "lexoffice-invoice-1",
+        })
+    );
+    assert!(events[0].payload.get("operation_id").is_none());
+    assert!(events[0].payload.get("operation_type").is_none());
+    assert!(events[0].payload.get("idempotency_key").is_none());
+
+    let records_after_retry = operation_journal
+        .load(&stream)
+        .await
+        .expect("load live Restate operation records after retry");
+    assert_eq!(records_after_retry.len(), 2);
+}
+
 #[derive(Debug, Default, Clone)]
 struct Invoice {
     id: Option<String>,
@@ -416,6 +514,28 @@ struct CreateRestateRetryInvoiceThroughLexOfficeV1 {
     order_confirmation_id: String,
     customer_id: String,
     amount_cents: u64,
+}
+
+#[cfg(feature = "restate-tests")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CreateLiveRestateRetryInvoiceThroughLexOfficeV1 {
+    invoice_id: String,
+    order_confirmation_id: String,
+    customer_id: String,
+    amount_cents: u64,
+}
+
+#[cfg(feature = "restate-tests")]
+impl Action for CreateLiveRestateRetryInvoiceThroughLexOfficeV1 {
+    type Resource = Invoice;
+
+    const ACTION_TYPE: &'static str = "create_live_restate_retry_invoice_through_lexoffice";
+    const SCHEMA_ID: &'static str = "action.create_live_restate_retry_invoice_through_lexoffice.v1";
+    const SCHEMA_VERSION: u32 = 1;
+
+    fn resource_id(&self) -> <Self::Resource as Resource>::Id {
+        self.invoice_id.clone()
+    }
 }
 
 #[cfg(feature = "restate-adapter")]
@@ -575,6 +695,46 @@ impl Handle<CreateRestateRetryInvoiceThroughLexOfficeV1> for Invoice {
     }
 }
 
+#[cfg(feature = "restate-tests")]
+#[async_trait]
+impl Handle<CreateLiveRestateRetryInvoiceThroughLexOfficeV1> for Invoice {
+    type Error = InvoiceError;
+
+    async fn handle(
+        &mut self,
+        action: CreateLiveRestateRetryInvoiceThroughLexOfficeV1,
+        ctx: &mut ActionContext<Self>,
+    ) -> Result<ActionDecision, HandlerError<Self::Error>> {
+        if self.id.is_some() {
+            return Err(HandlerError::domain(InvoiceError::AlreadyExists));
+        }
+
+        let result = ctx
+            .execute_external_operation(
+                &live_restate_retry_lexoffice_operation(),
+                CreateLexOfficeInvoiceRequest {
+                    invoice_id: action.invoice_id.clone(),
+                    order_confirmation_id: action.order_confirmation_id,
+                    customer_id: action.customer_id,
+                    amount_cents: action.amount_cents,
+                },
+            )
+            .await?;
+
+        ctx.record_applied(
+            self,
+            InvoiceCreatedThroughLexOfficeV1 {
+                invoice_id: action.invoice_id,
+                provider_invoice_id: result.provider_invoice_id,
+            },
+        )?;
+
+        Ok(ActionDecision::with_message(
+            "live Restate retry invoice created through lexoffice",
+        ))
+    }
+}
+
 #[derive(Clone)]
 struct AppendFailsOnceEventStore {
     inner: InMemoryEventStore,
@@ -651,6 +811,46 @@ fn restate_retry_lexoffice_operation() -> MockLexOfficeCreateInvoice {
     OPERATION
         .get_or_init(MockLexOfficeCreateInvoice::new)
         .clone()
+}
+
+#[cfg(feature = "restate-tests")]
+fn live_restate_retry_lexoffice_operation() -> MockLexOfficeCreateInvoice {
+    static OPERATION: OnceLock<MockLexOfficeCreateInvoice> = OnceLock::new();
+
+    OPERATION
+        .get_or_init(MockLexOfficeCreateInvoice::new)
+        .clone()
+}
+
+#[cfg(feature = "restate-tests")]
+async fn live_restate_operation_journal() -> Option<(
+    RestateOperationJournal,
+    support::restate::RestateLiveEndpoint,
+)> {
+    let harness = match support::restate::RestateHarnessConfig::from_env() {
+        Ok(harness) => harness,
+        Err(skip) => {
+            eprintln!("{}", skip.reason());
+            return None;
+        }
+    };
+    let endpoint = harness
+        .start_operation_journal_endpoint()
+        .await
+        .expect("start and register live Restate OperationJournal endpoint");
+    let journal = RestateOperationJournal::new(RestateOperationJournalConfig::new(harness.url()));
+
+    Some((journal, endpoint))
+}
+
+#[cfg(feature = "restate-tests")]
+fn unique_live_restate_suffix() -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock should be after UNIX_EPOCH")
+        .as_nanos();
+
+    nanos.to_string()
 }
 
 fn expected_operation_id(action_id: &str, operation_type: &str, idempotency_key: &str) -> String {
