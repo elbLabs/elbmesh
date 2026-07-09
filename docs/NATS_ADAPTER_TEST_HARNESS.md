@@ -47,6 +47,7 @@ Run the live adapter contract tests against that server:
 ELBMESH_NATS_URL=nats://127.0.0.1:4222 cargo test -p elbmesh-core --features nats-tests --test event_store_contract
 ELBMESH_NATS_URL=nats://127.0.0.1:4222 cargo test -p elbmesh-core --features nats-tests --test action_journal
 ELBMESH_NATS_URL=nats://127.0.0.1:4222 cargo test -p elbmesh-core --features nats-tests --test operation_journal
+ELBMESH_NATS_URL=nats://127.0.0.1:4222 cargo test -p elbmesh-core --features nats-tests --test reaction_journal
 ELBMESH_NATS_URL=nats://127.0.0.1:4222 cargo test -p elbmesh-core --features nats-tests --test view_store
 ```
 
@@ -104,6 +105,18 @@ OperationJournal stream keys use:
 
 ```text
 operation.<operation-id-byte-length>.<percent-encoded-operation-id>
+```
+
+Only ASCII letters, digits, `_`, and `-` remain unescaped in the encoded token. All other bytes are encoded as uppercase `%XX`, so dots and NATS wildcards cannot change the KV key token structure.
+
+## ReactionJournal KV Keys
+
+The NATS ReactionJournal adapter stores records in a dedicated KV bucket, separate from Resource Event streams, ActionJournal streams, OperationJournal streams, and ViewStore keys.
+
+ReactionJournal stream keys use:
+
+```text
+reaction.<reaction-id-byte-length>.<percent-encoded-reaction-id>
 ```
 
 Only ASCII letters, digits, `_`, and `-` remain unescaped in the encoded token. All other bytes are encoded as uppercase `%XX`, so dots and NATS wildcards cannot change the KV key token structure.

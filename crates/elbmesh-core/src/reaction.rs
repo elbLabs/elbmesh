@@ -745,6 +745,45 @@ fn reaction_journal_error_details(error: &ReactionJournalError) -> Value {
             "error_type": "ReactionJournalError",
             "error_variant": "StoragePoisoned",
         }),
+        ReactionJournalError::NatsConnect { reason } => json!({
+            "error_type": "ReactionJournalError",
+            "error_variant": "NatsConnect",
+            "reason": reason,
+        }),
+        ReactionJournalError::NatsBucket { bucket, reason } => json!({
+            "error_type": "ReactionJournalError",
+            "error_variant": "NatsBucket",
+            "bucket": bucket,
+            "reason": reason,
+        }),
+        ReactionJournalError::RecordSerialization { reason } => json!({
+            "error_type": "ReactionJournalError",
+            "error_variant": "RecordSerialization",
+            "reason": reason,
+        }),
+        ReactionJournalError::RecordDeserialization {
+            stream,
+            revision,
+            reason,
+        } => json!({
+            "error_type": "ReactionJournalError",
+            "error_variant": "RecordDeserialization",
+            "stream": stream,
+            "revision": revision,
+            "reason": reason,
+        }),
+        ReactionJournalError::NatsAppend { stream, reason } => json!({
+            "error_type": "ReactionJournalError",
+            "error_variant": "NatsAppend",
+            "stream": stream,
+            "reason": reason,
+        }),
+        ReactionJournalError::NatsLoad { stream, reason } => json!({
+            "error_type": "ReactionJournalError",
+            "error_variant": "NatsLoad",
+            "stream": stream,
+            "reason": reason,
+        }),
     }
 }
 

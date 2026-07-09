@@ -3,6 +3,12 @@ use elbmesh_core::{
     ReactionJournalRecord, ReactionJournalStream, ResourceStream, StreamType,
 };
 
+#[cfg(feature = "nats-tests")]
+use elbmesh_core::{NatsReactionJournal, NatsReactionJournalConfig};
+
+#[cfg(feature = "nats-tests")]
+mod support;
+
 #[test]
 fn in_memory_reaction_journal_implements_reaction_journal_trait() {
     fn assert_reaction_journal<T: ReactionJournal>() {}
@@ -59,6 +65,79 @@ async fn in_memory_reaction_journal_writes_do_not_create_resource_events() {
 #[tokio::test]
 async fn in_memory_reaction_journal_rejects_wrong_reaction_stream_with_named_error() {
     let journal = InMemoryReactionJournal::new();
+
+    assert_rejects_wrong_reaction_stream_with_named_error(&journal).await;
+}
+
+#[cfg(feature = "nats-tests")]
+#[test]
+fn nats_reaction_journal_implements_reaction_journal_trait() {
+    fn assert_reaction_journal<T: ReactionJournal>() {}
+
+    assert_reaction_journal::<NatsReactionJournal>();
+}
+
+#[cfg(feature = "nats-tests")]
+#[tokio::test]
+async fn nats_reaction_journal_appends_triggered_and_completed_records() {
+    let Some(journal) = nats_reaction_journal("triggered_completed").await else {
+        return;
+    };
+
+    assert_appends_triggered_and_completed_records(&journal).await;
+}
+
+#[cfg(feature = "nats-tests")]
+#[tokio::test]
+async fn nats_reaction_journal_reads_records_in_append_order_for_reaction_stream() {
+    let Some(journal) = nats_reaction_journal("append_order").await else {
+        return;
+    };
+
+    assert_reads_records_in_append_order_for_reaction_stream(&journal).await;
+}
+
+#[cfg(feature = "nats-tests")]
+#[tokio::test]
+async fn nats_reaction_journal_writes_do_not_create_resource_events() {
+    let Some(journal) = nats_reaction_journal("separate_from_events").await else {
+        return;
+    };
+    let event_store = InMemoryEventStore::new();
+    let reaction_id = "nats-reaction-journal-separated-from-events";
+    let stream = ReactionJournalStream::for_reaction(reaction_id);
+
+    journal
+        .append(&stream, reaction_triggered_record(reaction_id, "offer-123"))
+        .await
+        .expect("append ReactionTriggered record");
+    journal
+        .append(&stream, reaction_completed_record(reaction_id, "offer-123"))
+        .await
+        .expect("append ReactionCompleted record");
+
+    let resource_stream = ResourceStream::new("offer", "offer-123");
+    let resource_events = event_store
+        .load(&resource_stream)
+        .await
+        .expect("load resource events");
+
+    assert!(resource_events.is_empty());
+    assert!(event_store.all_events().is_empty());
+
+    let journal_records = journal
+        .load(&stream)
+        .await
+        .expect("load reaction journal records");
+    assert_eq!(journal_records.len(), 2);
+}
+
+#[cfg(feature = "nats-tests")]
+#[tokio::test]
+async fn nats_reaction_journal_rejects_wrong_reaction_stream_with_named_error() {
+    let Some(journal) = nats_reaction_journal("wrong_reaction_stream").await else {
+        return;
+    };
 
     assert_rejects_wrong_reaction_stream_with_named_error(&journal).await;
 }
@@ -280,4 +359,32 @@ fn assert_reaction_record_metadata(
     assert_eq!(metadata.actor_id, "reaction-runtime");
     assert_eq!(metadata.schema_id, format!("journal.{message_type}.v1"));
     assert_eq!(metadata.schema_version, 1);
+}
+
+#[cfg(feature = "nats-tests")]
+async fn nats_reaction_journal(test_name: &str) -> Option<NatsReactionJournal> {
+    let harness = match support::nats::NatsHarnessConfig::from_env() {
+        Ok(harness) => harness,
+        Err(skip) => {
+            eprintln!("{}", skip.reason());
+            return None;
+        }
+    };
+
+    let config = NatsReactionJournalConfig::new(unique_nats_bucket_name(test_name));
+    Some(
+        NatsReactionJournal::connect(harness.url(), config)
+            .await
+            .expect("connect NATS ReactionJournal"),
+    )
+}
+
+#[cfg(feature = "nats-tests")]
+fn unique_nats_bucket_name(test_name: &str) -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock should be after UNIX_EPOCH")
+        .as_nanos();
+
+    format!("elbmesh_reaction_journal_{test_name}_{nanos}")
 }
