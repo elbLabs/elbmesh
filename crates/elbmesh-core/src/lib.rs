@@ -67,6 +67,9 @@ pub use reaction_journal::{
     InMemoryReactionJournal, ReactionJournal, ReactionJournalError, ReactionJournalRecord,
     ReactionJournalStream,
 };
+
+#[cfg(feature = "nats-adapter")]
+pub use reaction_journal::{NatsReactionJournal, NatsReactionJournalConfig};
 pub use runtime::{ActionContext, ActionExecutor};
 pub use store::{AppendResult, EventStore, ExpectedVersion, InMemoryEventStore};
 
