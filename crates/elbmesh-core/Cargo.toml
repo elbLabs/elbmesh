@@ -10,6 +10,7 @@ default = []
 nats-adapter = ["dep:async-nats", "dep:futures-util"]
 nats-tests = ["nats-adapter"]
 restate-adapter = ["dep:reqwest", "dep:restate-sdk"]
+restate-tests = ["restate-adapter"]
 
 [dependencies]
 async-nats = { version = "0.49", default-features = false, features = ["jetstream", "kv", "nuid"], optional = true }
