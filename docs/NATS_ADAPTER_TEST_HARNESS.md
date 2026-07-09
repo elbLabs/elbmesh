@@ -44,6 +44,7 @@ docker compose up -d nats
 Run the live adapter contract tests against that server:
 
 ```bash
+ELBMESH_NATS_URL=nats://127.0.0.1:4222 cargo test -p elbmesh-core --features nats-tests --test event_store_contract
 ELBMESH_NATS_URL=nats://127.0.0.1:4222 cargo test -p elbmesh-core --features nats-tests --test action_journal
 ELBMESH_NATS_URL=nats://127.0.0.1:4222 cargo test -p elbmesh-core --features nats-tests --test view_store
 ```
@@ -68,6 +69,18 @@ View documents stay in ViewStore keys.
 ```
 
 No NATS subject or key encoder is introduced in Phase 7.1. The first adapter MR that persists records to NATS must add contract tests for subject/key escaping before relying on that encoding.
+
+## Resource EventStore KV Keys
+
+The NATS EventStore adapter stores each Resource stream as one JSON stream document in a dedicated KV bucket, separate from Journal streams and ViewStore keys.
+
+Resource Event stream keys use:
+
+```text
+resource.<resource-type-byte-length>.<percent-encoded-resource-type>.<resource-id-byte-length>.<percent-encoded-resource-id>
+```
+
+Only ASCII letters, digits, `_`, and `-` remain unescaped in encoded tokens. All other bytes are encoded as uppercase `%XX`, so dots and NATS wildcards cannot change the KV key token structure.
 
 ## ActionJournal KV Keys
 

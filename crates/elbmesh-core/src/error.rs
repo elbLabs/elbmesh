@@ -231,6 +231,28 @@ pub enum EventStoreError {
         actual_stream_type: StreamType,
     },
 
+    #[error("failed to connect NATS EventStore: {reason}")]
+    NatsConnect { reason: String },
+
+    #[error("failed to open NATS EventStore bucket '{bucket}': {reason}")]
+    NatsBucket { bucket: String, reason: String },
+
+    #[error("failed to serialize event stream '{stream}': {reason}")]
+    StreamSerialization { stream: String, reason: String },
+
+    #[error("failed to deserialize event stream '{stream}' revision {revision}: {reason}")]
+    StreamDeserialization {
+        stream: String,
+        revision: u64,
+        reason: String,
+    },
+
+    #[error("failed to load event stream '{stream}' from NATS: {reason}")]
+    NatsLoad { stream: String, reason: String },
+
+    #[error("failed to append event stream '{stream}' to NATS: {reason}")]
+    NatsAppend { stream: String, reason: String },
+
     #[error("event store failed: {0}")]
     Other(String),
 }

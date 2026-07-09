@@ -3,7 +3,13 @@ use elbmesh_core::{
     ResourceStream, StreamType,
 };
 
+#[cfg(feature = "nats-tests")]
+use elbmesh_core::{NatsEventStore, NatsEventStoreConfig};
+
 use serde_json::json;
+
+#[cfg(feature = "nats-tests")]
+mod support;
 
 #[tokio::test]
 async fn in_memory_event_store_appends_and_loads_resource_events_in_sequence() {
@@ -44,6 +50,94 @@ async fn in_memory_event_store_no_stream_conflict_leaves_stream_unchanged() {
 #[tokio::test]
 async fn in_memory_event_store_exact_version_conflict_leaves_stream_unchanged() {
     event_store_exact_version_conflict_leaves_stream_unchanged(InMemoryEventStore::new()).await;
+}
+
+#[cfg(feature = "nats-tests")]
+#[test]
+fn nats_event_store_implements_event_store_trait() {
+    fn assert_event_store<S: EventStore>() {}
+
+    assert_event_store::<NatsEventStore>();
+}
+
+#[cfg(feature = "nats-tests")]
+#[tokio::test]
+async fn nats_event_store_appends_and_loads_resource_events_in_sequence() {
+    let Some(store) = nats_event_store("append_load").await else {
+        return;
+    };
+
+    event_store_appends_and_loads_resource_events_in_sequence(store).await;
+}
+
+#[cfg(feature = "nats-tests")]
+#[tokio::test]
+async fn nats_event_store_isolates_resource_streams() {
+    let Some(store) = nats_event_store("isolated_streams").await else {
+        return;
+    };
+
+    event_store_isolates_resource_streams(store).await;
+}
+
+#[cfg(feature = "nats-tests")]
+#[tokio::test]
+async fn nats_event_store_rejects_event_metadata_resource_identity_mismatch() {
+    let Some(store) = nats_event_store("wrong_resource_identity").await else {
+        return;
+    };
+
+    event_store_rejects_event_metadata_resource_identity_mismatch(store).await;
+}
+
+#[cfg(feature = "nats-tests")]
+#[tokio::test]
+async fn nats_event_store_rejects_non_resource_event_metadata() {
+    let Some(store) = nats_event_store("wrong_stream_type").await else {
+        return;
+    };
+
+    event_store_rejects_non_resource_event_metadata(store).await;
+}
+
+#[cfg(feature = "nats-tests")]
+#[tokio::test]
+async fn nats_event_store_exact_expected_version_appends_after_current_version() {
+    let Some(store) = nats_event_store("exact_version_append").await else {
+        return;
+    };
+
+    event_store_exact_expected_version_appends_after_current_version(store).await;
+}
+
+#[cfg(feature = "nats-tests")]
+#[tokio::test]
+async fn nats_event_store_any_expected_version_appends_after_current_version() {
+    let Some(store) = nats_event_store("any_version_append").await else {
+        return;
+    };
+
+    event_store_any_expected_version_appends_after_current_version(store).await;
+}
+
+#[cfg(feature = "nats-tests")]
+#[tokio::test]
+async fn nats_event_store_no_stream_conflict_leaves_stream_unchanged() {
+    let Some(store) = nats_event_store("no_stream_conflict").await else {
+        return;
+    };
+
+    event_store_no_stream_conflict_leaves_stream_unchanged(store).await;
+}
+
+#[cfg(feature = "nats-tests")]
+#[tokio::test]
+async fn nats_event_store_exact_version_conflict_leaves_stream_unchanged() {
+    let Some(store) = nats_event_store("exact_version_conflict").await else {
+        return;
+    };
+
+    event_store_exact_version_conflict_leaves_stream_unchanged(store).await;
 }
 
 async fn event_store_appends_and_loads_resource_events_in_sequence<S>(store: S)
@@ -359,4 +453,32 @@ fn new_event(message_id: &str, message_type: &str, offer_id: &str) -> NewEvent {
         },
         payload: json!({ "offer_id": offer_id }),
     }
+}
+
+#[cfg(feature = "nats-tests")]
+async fn nats_event_store(test_name: &str) -> Option<NatsEventStore> {
+    let harness = match support::nats::NatsHarnessConfig::from_env() {
+        Ok(harness) => harness,
+        Err(skip) => {
+            eprintln!("{}", skip.reason());
+            return None;
+        }
+    };
+
+    let config = NatsEventStoreConfig::new(unique_nats_bucket_name(test_name));
+    Some(
+        NatsEventStore::connect(harness.url(), config)
+            .await
+            .expect("connect NATS EventStore"),
+    )
+}
+
+#[cfg(feature = "nats-tests")]
+fn unique_nats_bucket_name(test_name: &str) -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock should be after UNIX_EPOCH")
+        .as_nanos();
+
+    format!("elbmesh_event_store_{test_name}_{nanos}")
 }

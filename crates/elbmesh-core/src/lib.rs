@@ -66,6 +66,10 @@ pub use reaction_journal::{
 };
 pub use runtime::{ActionContext, ActionExecutor};
 pub use store::{AppendResult, EventStore, ExpectedVersion, InMemoryEventStore};
+
+#[cfg(feature = "nats-adapter")]
+pub use store::{NatsEventStore, NatsEventStoreConfig};
+
 pub use testing::ActionScenario;
 pub use traits::{apply_recorded_event, Action, Apply, Event, Handle, Resource};
 pub use view_store::{
