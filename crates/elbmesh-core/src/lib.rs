@@ -52,6 +52,9 @@ pub use operation_journal::{
     InMemoryOperationJournal, OperationJournal, OperationJournalError, OperationJournalRecord,
     OperationJournalStream,
 };
+
+#[cfg(feature = "nats-adapter")]
+pub use operation_journal::{NatsOperationJournal, NatsOperationJournalConfig};
 pub use projection::{
     Projection, ProjectionDispatchError, ProjectionDispatchFailure, ProjectionDispatchReport,
     ProjectionDispatcher, ProjectionExecutionError, ProjectionRuntime, TypedProjectionHandler,
