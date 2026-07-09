@@ -1,4 +1,8 @@
 pub const NATS_URL_ENV: &str = "ELBMESH_NATS_URL";
+#[allow(dead_code)]
+pub const NATS_DOCKER_SERVICE: &str = "nats";
+#[allow(dead_code)]
+pub const NATS_DOCKER_URL: &str = "nats://127.0.0.1:4222";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NatsHarnessConfig {

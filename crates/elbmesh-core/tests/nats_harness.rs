@@ -15,6 +15,13 @@ fn nats_harness_uses_documented_url_env_name() {
 
 #[cfg(feature = "nats-tests")]
 #[test]
+fn nats_harness_documents_docker_compose_defaults() {
+    assert_eq!(support::nats::NATS_DOCKER_SERVICE, "nats");
+    assert_eq!(support::nats::NATS_DOCKER_URL, "nats://127.0.0.1:4222");
+}
+
+#[cfg(feature = "nats-tests")]
+#[test]
 fn nats_harness_reports_skip_when_url_is_missing() {
     let skip = support::nats::NatsHarnessConfig::from_lookup(|_| None)
         .expect_err("missing NATS URL should skip NATS integration tests");
