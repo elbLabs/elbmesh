@@ -46,6 +46,7 @@ Run the live adapter contract tests against that server:
 ```bash
 ELBMESH_NATS_URL=nats://127.0.0.1:4222 cargo test -p elbmesh-core --features nats-tests --test event_store_contract
 ELBMESH_NATS_URL=nats://127.0.0.1:4222 cargo test -p elbmesh-core --features nats-tests --test action_journal
+ELBMESH_NATS_URL=nats://127.0.0.1:4222 cargo test -p elbmesh-core --features nats-tests --test operation_journal
 ELBMESH_NATS_URL=nats://127.0.0.1:4222 cargo test -p elbmesh-core --features nats-tests --test view_store
 ```
 
@@ -64,6 +65,7 @@ Phase 7 adapters must preserve the existing runtime boundaries:
 ```text
 Resource Events stay in Resource streams.
 ActionJournal records stay in ActionJournal streams.
+OperationJournal records stay in OperationJournal streams.
 ReactionJournal records stay in ReactionJournal streams.
 View documents stay in ViewStore keys.
 ```
@@ -90,6 +92,18 @@ ActionJournal stream keys use:
 
 ```text
 action.<action-id-byte-length>.<percent-encoded-action-id>
+```
+
+Only ASCII letters, digits, `_`, and `-` remain unescaped in the encoded token. All other bytes are encoded as uppercase `%XX`, so dots and NATS wildcards cannot change the KV key token structure.
+
+## OperationJournal KV Keys
+
+The NATS OperationJournal adapter stores records in a dedicated KV bucket, separate from Resource Event streams, ActionJournal streams, ReactionJournal streams, and ViewStore keys.
+
+OperationJournal stream keys use:
+
+```text
+operation.<operation-id-byte-length>.<percent-encoded-operation-id>
 ```
 
 Only ASCII letters, digits, `_`, and `-` remain unescaped in the encoded token. All other bytes are encoded as uppercase `%XX`, so dots and NATS wildcards cannot change the KV key token structure.
