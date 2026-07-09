@@ -8,7 +8,7 @@
 ## Runtime Boundaries
 
 This document describes declared capabilities and implemented framework boundaries only.
-It does not imply real Restate adapter support or complete NATS adapter coverage.
+Live NATS and Restate infrastructure are feature-gated and not required by default.
 Resource Events remain separate from ActionJournal, ReactionJournal, OperationJournal, ViewStore, provider diagnostics, and generated visibility artifacts.
 
 ## Resources

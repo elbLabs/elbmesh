@@ -73,7 +73,7 @@ impl CapabilityDocument {
             "This document describes declared capabilities and implemented framework boundaries only.\n",
         );
         markdown.push_str(
-            "It does not imply real Restate adapter support or complete NATS adapter coverage.\n",
+            "Live NATS and Restate infrastructure are feature-gated and not required by default.\n",
         );
         markdown.push_str("Resource Events remain separate from ActionJournal, ReactionJournal, OperationJournal, ViewStore, provider diagnostics, and generated visibility artifacts.\n\n");
 

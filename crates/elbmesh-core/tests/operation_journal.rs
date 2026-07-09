@@ -7,6 +7,9 @@ use elbmesh_core::{
 #[cfg(feature = "nats-tests")]
 use elbmesh_core::{NatsOperationJournal, NatsOperationJournalConfig};
 
+#[cfg(feature = "restate-adapter")]
+use elbmesh_core::{RestateOperationJournal, RestateOperationJournalConfig};
+
 use serde_json::json;
 
 #[cfg(feature = "nats-tests")]
@@ -147,6 +150,23 @@ async fn nats_operation_journal_rejects_wrong_operation_stream_with_named_error(
     let Some(journal) = nats_operation_journal("wrong_operation_stream").await else {
         return;
     };
+
+    assert_rejects_wrong_operation_stream_with_named_error(&journal).await;
+}
+
+#[cfg(feature = "restate-adapter")]
+#[test]
+fn restate_operation_journal_implements_operation_journal_trait() {
+    fn assert_operation_journal<J: OperationJournal>() {}
+
+    assert_operation_journal::<RestateOperationJournal>();
+}
+
+#[cfg(feature = "restate-adapter")]
+#[tokio::test]
+async fn restate_operation_journal_rejects_wrong_operation_stream_before_http_call() {
+    let journal =
+        RestateOperationJournal::new(RestateOperationJournalConfig::new("http://127.0.0.1:1"));
 
     assert_rejects_wrong_operation_stream_with_named_error(&journal).await;
 }

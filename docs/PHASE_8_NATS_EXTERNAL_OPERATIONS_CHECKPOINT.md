@@ -1,6 +1,6 @@
 # Phase 8 NATS And External Operations Checkpoint
 
-This checkpoint covers Phase 7 NATS adapters and Phase 8 External Operations before Phase 9 generation and capability docs start.
+This checkpoint covers Phase 7 NATS adapters, Phase 8 External Operations, and the first feature-gated Restate external-operation retry adapter.
 
 The checkpoint is a review artifact, not a new runtime source of truth. It summarizes what the current framework proves, what a human can demonstrate today, and which decisions remain before adding generated docs and bindings.
 
@@ -9,10 +9,10 @@ The checkpoint is a review artifact, not a new runtime source of truth. It summa
 | Question | Answer |
 | --- | --- |
 | Can a human understand the runtime or architecture flow? | Yes. The current flow is visible as `Action -> optional ExternalOperation -> Resource Event`, with ActionJournal, OperationJournal, ReactionJournal, ViewStore, and NATS adapter stores staying separate. |
-| Can behavior be demonstrated without reading source code? | Yes. Focused tests prove NATS feature gating, NATS-backed ActionJournal/ViewStore contracts, ExternalOperation idempotency, ActionContext execution, and retry after append failure. |
-| Do tests cover key success, rejection, failure, and recovery paths? | Success, domain rejection, runtime failure, NATS contract behavior, ExternalOperation provider failure, OperationJournal wrong-stream errors, and append-failure retry reuse are covered. A real Restate adapter remains deferred. |
+| Can behavior be demonstrated without reading source code? | Yes. Focused tests prove NATS feature gating, NATS-backed EventStore/ActionJournal/OperationJournal/ReactionJournal/ViewStore contracts, ExternalOperation idempotency, ActionContext execution, and retry after append failure. |
+| Do tests cover key success, rejection, failure, and recovery paths? | Success, domain rejection, runtime failure, NATS contract behavior, ExternalOperation provider failure, OperationJournal wrong-stream errors, in-memory append-failure retry reuse, and feature-gated Restate OperationJournal retry reuse are covered. |
 | Are Resource Events still separate from journals, Views, and provider details? | Yes. Resource Event streams only contain domain Events. ActionJournal, ReactionJournal, OperationJournal, ViewStore documents, and NATS KV records are separate. |
-| What debt or ambiguity should be resolved before Phase 9? | Generation must describe declared capabilities without implying generated runtime coverage for Restate or unimplemented NATS EventStore/ReactionJournal/OperationJournal adapters. |
+| What debt or ambiguity should be resolved before Phase 9? | Generation must describe declared capabilities without implying live NATS or Restate infrastructure is required by default. |
 
 ## Current Architecture Flow
 
@@ -53,7 +53,10 @@ ViewStore documents:
   view_type/view_id -> latest ViewDocument and derived indexes
 
 NATS adapter stores:
-  ActionJournal KV bucket and ViewStore KV bucket are feature-gated and separate
+  EventStore, ActionJournal, OperationJournal, ReactionJournal, and ViewStore KV buckets are feature-gated and separate
+
+Restate OperationJournal object:
+  ElbmeshOperationJournal/<operation_id> -> OperationJournal records behind restate-adapter
 ```
 
 ## Demonstration Runs
@@ -91,14 +94,32 @@ Run NATS-gated tests when a local NATS server is available:
 
 ```bash
 ELBMESH_NATS_URL=nats://127.0.0.1:4222 cargo test -p elbmesh-core --features nats-tests --test action_journal
+ELBMESH_NATS_URL=nats://127.0.0.1:4222 cargo test -p elbmesh-core --features nats-tests --test event_store_contract
+ELBMESH_NATS_URL=nats://127.0.0.1:4222 cargo test -p elbmesh-core --features nats-tests --test operation_journal
+ELBMESH_NATS_URL=nats://127.0.0.1:4222 cargo test -p elbmesh-core --features nats-tests --test reaction_journal
 ELBMESH_NATS_URL=nats://127.0.0.1:4222 cargo test -p elbmesh-core --features nats-tests --test view_store
 ```
 
 Expected result:
 
 ```text
-NATS ActionJournal and NATS ViewStore pass the same contract helpers as in-memory implementations.
+NATS EventStore, ActionJournal, OperationJournal, ReactionJournal, and ViewStore pass the same contract helpers as in-memory implementations.
 If ELBMESH_NATS_URL is missing, NATS-gated tests skip without failing.
+```
+
+Run the Restate feature-gated external-operation retry proof without a live Restate runtime:
+
+```bash
+cargo test -p elbmesh-core --features restate-adapter --test action_context_external_operation restate_operation_journal_retry_after_append_failure_reuses_completed_external_operation
+```
+
+Expected result:
+
+```text
+The RestateOperationJournal HTTP adapter targets the ElbmeshOperationJournal object boundary.
+The first attempt writes OperationCalled and OperationCompleted through that boundary, then Resource Event append fails once.
+The retry loads the completed response and does not call the provider again.
+Exactly one Resource Event is appended after retry, without provider diagnostics.
 ```
 
 ## Coverage Matrix
@@ -107,11 +128,15 @@ If ELBMESH_NATS_URL is missing, NATS-gated tests skip without failing.
 | --- | --- | --- |
 | NATS feature gating | `cargo test --all`, `nats_harness` | Default suite does not require NATS. |
 | NATS ActionJournal | `cargo test -p elbmesh-core --features nats-tests --test action_journal` | KV key encoding is length-prefixed and percent-encoded. |
+| NATS EventStore | `cargo test -p elbmesh-core --features nats-tests --test event_store_contract` | Resource Event streams stay separate from journals and ViewStore keys. |
+| NATS OperationJournal | `cargo test -p elbmesh-core --features nats-tests --test operation_journal` | Operation records live in a dedicated KV bucket keyed by `operation_id`. |
+| NATS ReactionJournal | `cargo test -p elbmesh-core --features nats-tests --test reaction_journal` | Reaction records live in a dedicated KV bucket keyed by `reaction_id`. |
 | NATS ViewStore | `cargo test -p elbmesh-core --features nats-tests --test view_store` | View docs live in KV; index queries derive from current docs. |
 | OperationJournal contract | `cargo test -p elbmesh-core --test operation_journal` | Records are keyed by `operation_id` and separated from Resource Events. |
 | ExternalOperation metadata/idempotency | `cargo test -p elbmesh-core --test external_operation` | Mock LexOffice operation exposes typed request/result, operation schema metadata, idempotency, conflicts, and provider failures. |
 | ActionContext external operations | `cargo test -p elbmesh-core --test action_context_external_operation` | Context derives operation metadata, maps provider failures, and records Resource Events from selected result facts. |
 | Append-failure retry | `retry_after_append_failure_reuses_completed_external_operation` | Completed OperationJournal response prevents a second provider call. |
+| Restate OperationJournal retry | `cargo test -p elbmesh-core --features restate-adapter --test action_context_external_operation restate_operation_journal_retry_after_append_failure_reuses_completed_external_operation` | Feature-gated HTTP adapter targets the Restate OperationJournal object boundary and preserves retry idempotency. |
 | Architecture manifest external operations | `cargo test -p elbmesh-core --test architecture_manifest` | Actions must reference declared ExternalOperation definitions without duplicates. |
 
 ## Current Decisions
@@ -123,17 +148,16 @@ If ELBMESH_NATS_URL is missing, NATS-gated tests skip without failing.
 | External operation identity | `ActionContext` derives `operation_id` from action id, operation type, and idempotency key using length-prefixed tokens. |
 | Provider retry | Completed OperationJournal records are reused before calling a provider again. |
 | Provider details | Provider request/response diagnostics belong in OperationJournal or future object storage, not Resource Events. |
-| Restate | Restate remains hidden behind future execution APIs; no real Restate adapter exists yet. |
+| Restate | `restate-adapter` exposes a Restate virtual object plus HTTP-backed OperationJournal adapter for external-operation retry. Live Restate runtime execution remains explicit and feature-gated. |
 
 ## Residual Debt
 
 | ID | Severity | Debt | Risk | Next Phase Impact |
 | --- | --- | --- | --- | --- |
-| P8-D1 | High | No NATS-backed EventStore implementation yet. | Generated capability docs must not imply durable Resource Event NATS support is complete. | Phase 9 docs should describe implemented adapters precisely. |
-| P8-D2 | High | No NATS-backed OperationJournal or ReactionJournal adapters yet. | External operation retry proof is in-memory only. | Capability output should distinguish logical contract from adapter availability. |
-| P8-D3 | Medium | No real Restate adapter. | The append-failure retry proof models Restate semantics but does not exercise Restate runtime. | Phase 9 should avoid claiming Restate operational support. |
-| P8-D4 | Medium | ExternalOperation provider registry and generated binding shape are not defined. | Action handlers still pass concrete operation instances manually. | Phase 9 generated stubs must make this explicit or defer binding generation. |
-| P8-D5 | Medium | OperationJournal completed response deserialization failure maps through `ActionError::Serialization`. | Recovery failures are named but not yet specialized by operation response schema. | A later runtime-hardening MR can split this into a dedicated named variant if needed. |
+| P8-D1 | Medium | No live Restate runtime harness yet. | Feature-gated tests exercise the adapter boundary with a local fake Restate object endpoint, not a running Restate server. | Add live Restate integration only behind an explicit feature/env var. |
+| P8-D2 | Medium | Restate support is currently scoped to OperationJournal-backed external-operation retry. | Action/Reaction execution is not Restate-native yet. | Future runtime work must keep Restate hidden behind framework APIs. |
+| P8-D3 | Medium | ExternalOperation provider registry and generated binding shape are not defined. | Action handlers still pass concrete operation instances manually. | Phase 9 generated stubs must make this explicit or defer binding generation. |
+| P8-D4 | Medium | OperationJournal completed response deserialization failure maps through `ActionError::Serialization`. | Recovery failures are named but not yet specialized by operation response schema. | A later runtime-hardening MR can split this into a dedicated named variant if needed. |
 
 ## Phase 9 Entry Criteria
 
@@ -141,8 +165,8 @@ Phase 9 may start if generation work observes these constraints:
 
 ```text
 Generated docs must describe what is declared and implemented today.
-Generated docs must not imply real Restate adapter support.
-Generated docs must not imply all NATS adapters exist.
+Generated docs must not imply live NATS or Restate infrastructure is required by default.
+Generated docs must describe feature-gated NATS and Restate adapter availability precisely.
 Generated Resource/Event capability docs must keep journals and ViewStore separate from Resource Events.
 Generated ExternalOperation docs must include idempotency and OperationJournal boundaries.
 ```

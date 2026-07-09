@@ -55,6 +55,12 @@ pub use operation_journal::{
 
 #[cfg(feature = "nats-adapter")]
 pub use operation_journal::{NatsOperationJournal, NatsOperationJournalConfig};
+
+#[cfg(feature = "restate-adapter")]
+pub use operation_journal::{
+    RestateOperationJournal, RestateOperationJournalConfig, RestateOperationJournalObject,
+    RestateOperationJournalObjectClient, RestateOperationJournalObjectImpl,
+};
 pub use projection::{
     Projection, ProjectionDispatchError, ProjectionDispatchFailure, ProjectionDispatchReport,
     ProjectionDispatcher, ProjectionExecutionError, ProjectionRuntime, TypedProjectionHandler,
