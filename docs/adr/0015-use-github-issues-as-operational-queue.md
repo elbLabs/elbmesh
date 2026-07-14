@@ -30,9 +30,12 @@ No issue, no implementation.
 No failing tests or explicit test plan, no implementation.
 One implementation issue maps to one PR unless the Orchestrator explicitly splits it.
 Every PR closes or links its issue.
-The Orchestrator manages labels, dependencies, and phase sequencing.
-The MR Reviewer/Merger merges only after quality gates pass.
+The Orchestrator manages desired queue state, dependencies, and phase sequencing.
+The MR Reviewer reports merge readiness only after quality gates pass; a human performs the merge and retains all merge authority.
 ```
+
+The Orchestrator manages desired queue state.
+Because Bash is denied, the shell-free Orchestrator reports readiness and requests each issue-label transition; a human applies every label mutation.
 
 ## Labels
 

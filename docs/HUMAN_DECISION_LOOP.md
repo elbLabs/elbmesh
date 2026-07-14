@@ -142,11 +142,14 @@ Consequence: Slower path to external operation runtime.
 
 ## Human Response Handling
 
-After the human answers, the Orchestrator must:
+After the human answers, the Orchestrator manages desired queue state.
+Because Bash is denied, the shell-free Orchestrator reports readiness and requests each issue-label transition; a human applies every label mutation.
+
+The Orchestrator must:
 
 ```text
 Record the decision in the GitHub issue or PR.
-Update issue labels from status:blocked/status:decision-needed to the next actionable status.
+Report the desired issue-label transition from status:blocked/status:decision-needed to the next actionable status and request that the human apply it.
 Create or update an ADR if the decision affects architecture.
 Update task acceptance criteria if needed.
 Tell the next assigned agent exactly what changed.

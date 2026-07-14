@@ -31,7 +31,7 @@ Keep parallel tasks independent.
 Maintain Issue and PR/MR queue state.
 Reject unplanned implementation and refactors.
 Create Human Decision Requests for domain, priority, scope, and architecture blockers.
-Update phase status after merge.
+Update phase status after observing the human merge.
 ```
 
 ## MR Queue Entry

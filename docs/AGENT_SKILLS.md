@@ -159,7 +159,7 @@ Purpose: implement the smallest production change that satisfies failing tests.
 Use when:
 
 ```text
-Tests exist and are confirmed by the Driver.
+Tests and fixtures exist and are accepted by the Orchestrator.
 The target slice is clear.
 The work belongs to the active phase and task card.
 ```
@@ -168,10 +168,13 @@ Outputs:
 
 ```text
 Production code
-Minimal supporting test fixtures
 Updated docs when behavior or architecture changed
 Verification results
 ```
+
+Accepted tests and fixtures are immutable to Implementers. Implementer outputs must exclude supporting test fixtures.
+
+If an accepted test or fixture conflicts with the task card or architecture, the Implementer reports the conflict to the Orchestrator for human confirmation. Only after human confirmation may a fresh Test Writer revise accepted tests or fixtures; the Implementer must not revise them.
 
 Must preserve:
 
@@ -181,6 +184,7 @@ No domain behavior hidden behind macros.
 No external calls outside declared External Operations.
 Replay/apply stays deterministic.
 Resource event streams contain only Resource Events.
+Accepted tests and fixtures stay immutable to Implementers.
 No unplanned refactors or speculative abstractions.
 ```
 
@@ -220,14 +224,14 @@ Docs/index updates.
 
 ### elbmesh-mr-reviewer
 
-Purpose: review and merge phase-scoped MRs after quality gates pass.
+Purpose: review phase-scoped MRs and report merge readiness after quality gates pass. A human performs the merge and retains all merge authority.
 
 Use when:
 
 ```text
 An implementation agent marks an MR ready.
 An MR needs final architecture and Rust quality review.
-An MR needs merge or change-request decision.
+An MR needs a merge-readiness or change-request recommendation.
 ```
 
 Outputs:
@@ -235,7 +239,7 @@ Outputs:
 ```text
 Findings ordered by severity
 Gate pass/fail status
-Merge decision
+Merge-readiness report
 Required follow-up tasks
 Residual risks
 ```

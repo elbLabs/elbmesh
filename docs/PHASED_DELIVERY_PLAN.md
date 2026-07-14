@@ -5,7 +5,7 @@ This plan groups implementation into phases. The Orchestrator uses it to create 
 ## Operating Rule
 
 ```text
-Plan phase -> create GitHub Issue -> write tests first -> implement one PR/MR -> review -> merge -> update issue and plan.
+Plan phase -> create GitHub Issue -> write tests first -> implement one PR/MR -> review -> human merge -> update issue and plan.
 ```
 
 Every Issue/PR pair must be small enough to review and large enough to prove one useful behavior.
@@ -135,7 +135,7 @@ Exit criteria:
 ```text
 The Orchestrator can create phase-scoped task cards.
 Implementation agents know the required docs and quality gates.
-MR Reviewer/Merger has explicit merge criteria.
+MR Reviewer has explicit merge-readiness criteria; a human performs the merge.
 Current tests pass.
 ```
 

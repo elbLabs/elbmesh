@@ -13,8 +13,11 @@ Use this skill to write failing tests before production implementation.
 docs/GOAL.md
 docs/GLOSSARY.md
 docs/DEVELOPMENT_WORKFLOW.md
+docs/HUMAN_DECISION_LOOP.md
 docs/PHASED_DELIVERY_PLAN.md
 docs/AGENT_SKILLS.md
+docs/IMPLEMENTATION_PLAN.md
+docs/adr/
 docs/adr/0010-typed-action-errors-and-scenario-tests.md
 ```
 

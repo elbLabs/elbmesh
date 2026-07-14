@@ -30,7 +30,7 @@ Use these roles:
 Orchestrator: owns phases, task cards, MR queue, and sequencing.
 Test Writer: writes failing tests first for a task card.
 Implementation Agent: implements one planned MR at a time.
-MR Reviewer/Merger: reviews, requests changes, and merges only after gates pass.
+MR Reviewer: reviews, requests changes, and reports merge readiness after gates pass; a human performs the merge and retains all merge authority.
 Doc Maintainer: keeps ADRs, glossary, plans, and skills aligned.
 Architecture Checker: verifies architecture rules before completion.
 ```
@@ -88,7 +88,7 @@ The development process becomes part of the architecture.
 
 Agents can work in parallel only when the Orchestrator has created independent task cards and MR scopes.
 
-Review and merge are separate from implementation.
+Review and the human merge are separate from implementation.
 
 Unplanned work is rejected even if technically correct.
 

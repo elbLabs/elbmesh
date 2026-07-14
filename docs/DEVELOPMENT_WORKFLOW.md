@@ -67,7 +67,7 @@ Define the smallest useful implementation slice.
 Write a task card with acceptance criteria.
 Identify architecture rules the slice must preserve.
 Assign or request test-writing work before implementation.
-Resolve conflicts between tests, docs, and ADRs.
+Report conflicts between tests, docs, and ADRs to the Orchestrator for human confirmation.
 Keep exactly one implementation direction active.
 ```
 
@@ -112,10 +112,14 @@ Responsibilities:
 Preserve the documented vocabulary and boundaries.
 Implement behavior through explicit traits.
 Do not hide domain behavior behind macros.
-Do not change tests unless the Driver confirms the test is wrong.
+Treat accepted tests and fixtures as immutable.
 Keep implementation minimal and slice-focused.
 Run the required verification commands.
 ```
+
+Accepted tests and fixtures are immutable to Implementers, and Implementer outputs must exclude supporting test fixtures.
+
+If an accepted test or fixture conflicts with the task card or architecture, the Implementation Agent reports the conflict to the Orchestrator for human confirmation. Only after human confirmation may a fresh Test Writer revise accepted tests or fixtures; the Implementer must not revise them.
 
 ### Review Agent
 
@@ -133,11 +137,11 @@ Look for hidden external calls, replay impurity, cross-Resource mutation, and jo
 Confirm generated or derived docs remain in sync when generation exists.
 ```
 
-### MR Reviewer/Merger Agent
+### MR Reviewer Agent
 
 Skill: `elbmesh-mr-reviewer`
 
-The MR Reviewer/Merger reviews complete MRs and merges only after all gates pass.
+The MR Reviewer reviews complete MRs and reports merge readiness after all gates pass. A human performs the merge and retains all merge authority.
 
 Responsibilities:
 
@@ -147,7 +151,7 @@ Verify tests were written for the changed behavior.
 Verify named errors and Rust quality rules.
 Run or inspect required verification commands.
 Request changes for unplanned work, missing tests, or architecture drift.
-Merge only when the MR satisfies quality gates.
+Report merge readiness when the MR satisfies quality gates.
 Record residual risks and follow-up tasks.
 ```
 
@@ -162,9 +166,9 @@ Follow this loop:
 3. Orchestrator confirms tests match the architecture intent.
 4. Implementation Agent makes tests pass with minimal production code.
 5. Implementation Agent opens a PR/MR with verification results and links the issue.
-6. Review Agent or MR Reviewer/Merger reviews behavior, architecture rules, Rust quality, and docs.
+6. Review Agent or MR Reviewer reviews behavior, architecture rules, Rust quality, and docs.
 7. Implementation Agent addresses requested changes.
-8. MR Reviewer/Merger merges only when all gates pass.
+8. MR Reviewer reports merge readiness when all gates pass; a human performs the merge.
 9. Orchestrator updates phase status, open questions, and next task dependencies.
 
 ## Phase Checkpoint Loop
@@ -398,7 +402,7 @@ Formatting and lint gates pass or current limitation is documented.
 Docs are updated or explicitly not needed.
 ADR index is updated if an ADR was added.
 Open questions are updated if a decision remains unresolved.
-MR was reviewed and merged by a non-implementing agent.
+MR was reviewed by a non-implementing agent, which reported merge readiness, and merged by a human.
 ```
 
 ## First Slice Recommendation

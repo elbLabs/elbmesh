@@ -5,7 +5,7 @@ description: Use when reviewing Elbmesh changes for bugs, architecture drift, mi
 
 # Elbmesh Reviewer
 
-Use this skill to review completed or proposed changes. Use `elbmesh-mr-reviewer` when making the final merge decision for an MR.
+Use this skill to review completed or proposed changes. Use `elbmesh-mr-reviewer` for the final merge-readiness report; a human performs the merge.
 
 ## Read First
 
@@ -13,6 +13,7 @@ Use this skill to review completed or proposed changes. Use `elbmesh-mr-reviewer
 docs/GOAL.md
 docs/GLOSSARY.md
 docs/DEVELOPMENT_WORKFLOW.md
+docs/HUMAN_DECISION_LOOP.md
 docs/PHASED_DELIVERY_PLAN.md
 docs/AGENT_SKILLS.md
 docs/IMPLEMENTATION_PLAN.md
