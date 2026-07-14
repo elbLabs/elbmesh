@@ -6,6 +6,7 @@ const ORCHESTRATOR_AGENT: &str = ".opencode/agents/elbmesh-orchestrator.md";
 const TEST_WRITER_AGENT: &str = ".opencode/agents/elbmesh-test-writer.md";
 const IMPLEMENTER_AGENT: &str = ".opencode/agents/elbmesh-implementer.md";
 const REVIEWER_AGENT: &str = ".opencode/agents/elbmesh-reviewer.md";
+const PR_PUBLISHER_AGENT: &str = ".opencode/agents/elbmesh-pr-publisher.md";
 
 #[test]
 fn project_config_selects_the_primary_elbmesh_orchestrator() {
@@ -44,6 +45,232 @@ fn orchestrator_sequences_fresh_role_sessions_after_red_and_green_gates() {
     assert!(
         has_gated_sequence,
         "{ORCHESTRATOR_AGENT} must spawn fresh test-writer, implementer, and reviewer sessions in that order, with red before implementation and green before review"
+    );
+}
+
+#[test]
+fn orchestrator_automates_pull_request_delivery_with_fresh_role_sessions() {
+    let (_, body) = agent_file(ORCHESTRATOR_AGENT);
+    let body = body.to_ascii_lowercase();
+    let paragraphs: Vec<_> = body.split("\n\n").collect();
+    let stages: [(&str, &[&str]); 7] = [
+        (
+            "red proof",
+            &["fresh", "spawn", "elbmesh-test-writer", "red", "proof"],
+        ),
+        (
+            "draft PR publication",
+            &[
+                "fresh",
+                "spawn",
+                "elbmesh-pr-publisher",
+                "branch",
+                "only",
+                "accepted",
+                "test",
+                "fixture",
+                "commit",
+                "push",
+                "draft",
+                "pull request",
+            ],
+        ),
+        (
+            "green proof",
+            &[
+                "fresh",
+                "spawn",
+                "elbmesh-implementer",
+                "accepted test",
+                "immutable",
+                "green",
+                "proof",
+            ],
+        ),
+        (
+            "green publication",
+            &[
+                "fresh",
+                "spawn",
+                "elbmesh-pr-publisher",
+                "green",
+                "only",
+                "reviewed",
+                "implementation",
+                "documentation",
+                "path",
+                "commit",
+                "push",
+            ],
+        ),
+        (
+            "PR review",
+            &[
+                "fresh",
+                "spawn",
+                "elbmesh-reviewer",
+                "review",
+                "pull request",
+            ],
+        ),
+        (
+            "ready publication",
+            &[
+                "no block",
+                "fresh",
+                "spawn",
+                "elbmesh-pr-publisher",
+                "ready",
+                "url",
+            ],
+        ),
+        ("human review and merge", &["human", "review", "merge"]),
+    ];
+    let mut next_paragraph = 0;
+
+    for (stage, required_terms) in stages {
+        let Some(relative_position) = paragraphs[next_paragraph..]
+            .iter()
+            .position(|paragraph| required_terms.iter().all(|term| paragraph.contains(term)))
+        else {
+            panic!(
+                "{ORCHESTRATOR_AGENT} must document the `{stage}` stage after the preceding delivery stage with markers {required_terms:?}"
+            );
+        };
+        next_paragraph += relative_position + 1;
+    }
+}
+
+#[test]
+fn pr_publisher_is_a_non_editing_delivery_subagent_with_auditable_handoffs() {
+    let (frontmatter, body) = agent_file(PR_PUBLISHER_AGENT);
+    assert_agent_mode(PR_PUBLISHER_AGENT, &frontmatter, "subagent");
+    assert_skill_reference(PR_PUBLISHER_AGENT, &body, "elbmesh-pr-publisher");
+    assert!(
+        edit_is_denied(&frontmatter),
+        "{PR_PUBLISHER_AGENT} must deny Edit"
+    );
+    assert_eq!(
+        permission_default_action(&frontmatter, "task").as_deref(),
+        Some("deny"),
+        "{PR_PUBLISHER_AGENT} must explicitly deny Task"
+    );
+    assert_prohibits_action(PR_PUBLISHER_AGENT, &body, &["merge"]);
+
+    let body = body.to_ascii_lowercase();
+    assert!(
+        body.split("\n\n").any(|paragraph| {
+            ["stage", "only", "role", "report", "path"]
+                .iter()
+                .all(|term| paragraph.contains(term))
+        }),
+        "{PR_PUBLISHER_AGENT} must stage only paths reported by the preceding role"
+    );
+    assert_contains_all(PR_PUBLISHER_AGENT, &body, &["git status", "git diff"]);
+    assert!(
+        body.split("\n\n").any(|paragraph| {
+            ["red", "green", "commit"]
+                .iter()
+                .all(|term| paragraph.contains(term))
+                && ["separate", "distinct"]
+                    .iter()
+                    .any(|term| paragraph.contains(term))
+        }),
+        "{PR_PUBLISHER_AGENT} must preserve separate red and green commits"
+    );
+    assert!(
+        body.split("\n\n").any(|paragraph| {
+            paragraph.contains("issue")
+                && ["link", "close"]
+                    .iter()
+                    .any(|term| paragraph.contains(term))
+        }),
+        "{PR_PUBLISHER_AGENT} must link the pull request to its issue"
+    );
+    assert!(
+        body.contains("evidence")
+            && (body.contains("pr body") || body.contains("pull request body"))
+            && body.contains("comment"),
+        "{PR_PUBLISHER_AGENT} must carry role evidence into the pull request body and comments"
+    );
+    assert!(
+        body.split("\n\n").any(|paragraph| {
+            paragraph.contains("return")
+                && paragraph.contains("url")
+                && (paragraph.contains("pr") || paragraph.contains("pull request"))
+        }),
+        "{PR_PUBLISHER_AGENT} must return the pull request URL"
+    );
+}
+
+#[test]
+fn pr_publisher_permissions_allow_publication_but_deny_direct_merge() {
+    let (frontmatter, _) = agent_file(PR_PUBLISHER_AGENT);
+    let mut violations = Vec::new();
+    let bash_rules = permission_rules(&frontmatter, "bash");
+
+    if bash_rules
+        .first()
+        .map(|(pattern, action)| (pattern.as_str(), action.as_str()))
+        != Some(("*", "deny"))
+    {
+        violations.push("Bash rules must begin with a broad deny".to_owned());
+    }
+
+    for (operation, command) in [
+        ("create the issue branch", "git switch -c issue-147"),
+        ("inspect status", "git status --short"),
+        ("inspect the staged diff", "git diff --cached"),
+        (
+            "stage a role-reported path",
+            "git add -- crates/elbmesh-core/tests/agent_delivery_harness.rs",
+        ),
+        (
+            "create the red commit",
+            "git commit -m \"test: add red proof\"",
+        ),
+        (
+            "push the issue branch",
+            "git push --set-upstream origin HEAD",
+        ),
+        (
+            "open the draft pull request",
+            "gh pr create --draft --title \"Issue 147\" --body \"Closes #147\"",
+        ),
+        ("push the green commit", "git push origin HEAD"),
+        (
+            "publish evidence",
+            "gh pr comment 148 --body \"Green proof\"",
+        ),
+        ("mark the pull request ready", "gh pr ready 148"),
+    ] {
+        let decision = effective_agent_permission(&frontmatter, "bash", command);
+        if decision != "allow" {
+            violations.push(format!(
+                "permission for `{operation}` resolves to {decision} instead of allow: {command}"
+            ));
+        }
+    }
+
+    for command in [
+        "git merge main",
+        "git merge --continue",
+        "gh pr merge 148",
+        "gh pr merge 148 --auto",
+        "git push origin main",
+    ] {
+        let decision = effective_agent_permission(&frontmatter, "bash", command);
+        if decision != "deny" {
+            violations.push(format!(
+                "direct merge or base-branch publication resolves to {decision} instead of deny: {command}"
+            ));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "{PR_PUBLISHER_AGENT} publication permissions are defense in depth and must expose only the required non-merging delivery operations:\n- {}",
+        violations.join("\n- ")
     );
 }
 
@@ -140,6 +367,7 @@ fn harness_agent_skills_include_canonical_required_reading() {
     let skill_paths = [
         ".opencode/skills/elbmesh-orchestrator/SKILL.md",
         ".opencode/skills/elbmesh-test-writer/SKILL.md",
+        ".opencode/skills/elbmesh-pr-publisher/SKILL.md",
         ".opencode/skills/elbmesh-implementer/SKILL.md",
         ".opencode/skills/elbmesh-reviewer/SKILL.md",
     ];
@@ -178,6 +406,7 @@ fn every_concrete_elbmesh_skill_includes_canonical_required_reading() {
         ".opencode/skills/elbmesh-driver/SKILL.md",
         ".opencode/skills/elbmesh-orchestrator/SKILL.md",
         ".opencode/skills/elbmesh-test-writer/SKILL.md",
+        ".opencode/skills/elbmesh-pr-publisher/SKILL.md",
         ".opencode/skills/elbmesh-implementer/SKILL.md",
         ".opencode/skills/elbmesh-reviewer/SKILL.md",
         ".opencode/skills/elbmesh-mr-reviewer/SKILL.md",
@@ -300,6 +529,42 @@ fn harness_documentation_keeps_merge_authority_human_and_tracks_issue_transition
 }
 
 #[test]
+fn harness_documents_automatic_pull_request_creation_and_human_only_merge() {
+    let path = "docs/AGENT_DELIVERY_HARNESS.md";
+    let documentation = project_file(path).to_ascii_lowercase();
+
+    assert!(
+        documentation.split("\n\n").any(|paragraph| {
+            paragraph.contains("automatic")
+                && (paragraph.contains("pr creation")
+                    || paragraph.contains("pull request creation")
+                    || ((paragraph.contains("create") || paragraph.contains("open"))
+                        && paragraph.contains("pull request")))
+        }),
+        "{path} must explicitly state that pull request creation is automatic"
+    );
+    assert!(
+        documentation.split("\n\n").any(|paragraph| {
+            paragraph.contains("only")
+                && paragraph.contains("merge")
+                && paragraph.contains("human")
+                && (paragraph.contains("human action")
+                    || paragraph.contains("human intervention")
+                    || paragraph.contains("requires the human"))
+        }),
+        "{path} must explicitly state that only merge requires human action in the pull request delivery flow"
+    );
+    assert!(
+        documentation.split("\n\n").any(|paragraph| {
+            paragraph.contains("permission")
+                && paragraph.contains("defense in depth")
+                && paragraph.contains("not a sandbox")
+        }),
+        "{path} must document OpenCode permissions as defense in depth rather than a sandbox"
+    );
+}
+
+#[test]
 fn harness_documentation_makes_label_transitions_human_applied() {
     let path = "docs/AGENT_DELIVERY_HARNESS.md";
     let documentation = project_file(path).to_ascii_lowercase();
@@ -366,9 +631,9 @@ fn only_the_orchestrator_can_spawn_delivery_role_agents() {
             "{ORCHESTRATOR_AGENT} Task rules must begin with a broad deny"
         ));
     }
-    if task_rules.len() != 4 {
+    if task_rules.len() != 5 {
         violations.push(format!(
-            "{ORCHESTRATOR_AGENT} must have only one broad Task deny followed by the three role allows, found {task_rules:?}"
+            "{ORCHESTRATOR_AGENT} must have only one broad Task deny followed by the four role allows, found {task_rules:?}"
         ));
     }
 
@@ -382,11 +647,12 @@ fn only_the_orchestrator_can_spawn_delivery_role_agents() {
         "elbmesh-test-writer",
         "elbmesh-implementer",
         "elbmesh-reviewer",
+        "elbmesh-pr-publisher",
     ];
     expected_agents.sort_unstable();
     if allowed_agents != expected_agents {
         violations.push(format!(
-            "{ORCHESTRATOR_AGENT} may allow Task only for the three delivery roles, found {allowed_agents:?}"
+            "{ORCHESTRATOR_AGENT} may allow Task only for the four delivery roles, found {allowed_agents:?}"
         ));
     }
 
