@@ -12,6 +12,8 @@ Use this skill to explain consequences of an Action or Event.
 ```text
 docs/GOAL.md
 docs/GLOSSARY.md
+docs/DEVELOPMENT_WORKFLOW.md
+docs/HUMAN_DECISION_LOOP.md
 docs/AGENT_SKILLS.md
 docs/PHASED_DELIVERY_PLAN.md
 docs/IMPLEMENTATION_PLAN.md

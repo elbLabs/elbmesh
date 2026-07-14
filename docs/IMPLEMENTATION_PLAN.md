@@ -270,6 +270,7 @@ Skills to support:
 elbmesh-driver
 elbmesh-orchestrator
 elbmesh-test-writer
+elbmesh-pr-publisher
 elbmesh-implementer
 elbmesh-reviewer
 elbmesh-mr-reviewer

@@ -13,6 +13,7 @@ Use this skill to make confirmed failing tests pass with the smallest correct pr
 docs/GOAL.md
 docs/GLOSSARY.md
 docs/DEVELOPMENT_WORKFLOW.md
+docs/HUMAN_DECISION_LOOP.md
 docs/PHASED_DELIVERY_PLAN.md
 docs/AGENT_SKILLS.md
 docs/IMPLEMENTATION_PLAN.md
@@ -26,10 +27,12 @@ Implement behavior through explicit traits.
 Keep the implementation slice-focused.
 Keep the implementation inside the task card and active phase.
 Preserve documented vocabulary and boundaries.
-Use existing tests as the contract.
+Use accepted tests as the contract.
 Add only minimal scaffolding needed for the slice.
 Run required verification.
 ```
+
+Accepted tests and fixtures are immutable to Implementers. Implementer outputs must exclude supporting test fixtures.
 
 ## Preserve
 
@@ -44,6 +47,6 @@ No unplanned refactors.
 No speculative abstraction.
 ```
 
-## If Tests Seem Wrong
+## Accepted Test Conflicts
 
-Stop and report the mismatch to the Driver. Do not silently rewrite tests to match implementation preferences.
+If an accepted test or fixture conflicts with the task card or architecture, stop and report the conflict to the Orchestrator for human confirmation. Only after human confirmation may a fresh Test Writer revise accepted tests or fixtures; the Implementer must not revise them.

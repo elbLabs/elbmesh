@@ -13,8 +13,10 @@ Use this skill to verify a change against Elbmesh architecture rules.
 docs/GOAL.md
 docs/GLOSSARY.md
 docs/DEVELOPMENT_WORKFLOW.md
+docs/HUMAN_DECISION_LOOP.md
 docs/PHASED_DELIVERY_PLAN.md
 docs/AGENT_SKILLS.md
+docs/IMPLEMENTATION_PLAN.md
 docs/adr/
 ```
 

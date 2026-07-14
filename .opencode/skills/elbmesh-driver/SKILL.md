@@ -13,6 +13,7 @@ Use this skill to define the next smallest useful implementation slice and coord
 docs/GOAL.md
 docs/GLOSSARY.md
 docs/DEVELOPMENT_WORKFLOW.md
+docs/HUMAN_DECISION_LOOP.md
 docs/PHASED_DELIVERY_PLAN.md
 docs/AGENT_SKILLS.md
 docs/IMPLEMENTATION_PLAN.md

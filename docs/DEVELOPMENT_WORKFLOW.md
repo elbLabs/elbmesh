@@ -44,7 +44,7 @@ Responsibilities:
 Read the phased delivery plan before assigning work.
 Select the active phase and next smallest Issue.
 Create GitHub Issues with acceptance criteria and quality gates.
-Spawn Test Writer and Implementation Agents only for planned work.
+Spawn fresh Test Writer, PR Publisher, Implementation, and Review Agents only for planned work.
 Keep parallel work independent.
 Track dependencies, issue status, PR/MR status, verification, review, and merge state.
 Reject unplanned implementation or refactor work.
@@ -67,7 +67,7 @@ Define the smallest useful implementation slice.
 Write a task card with acceptance criteria.
 Identify architecture rules the slice must preserve.
 Assign or request test-writing work before implementation.
-Resolve conflicts between tests, docs, and ADRs.
+Report conflicts between tests, docs, and ADRs to the Orchestrator for human confirmation.
 Keep exactly one implementation direction active.
 ```
 
@@ -100,6 +100,28 @@ And this Receipt is returned
 And these journal records exist
 ```
 
+### PR Publisher Agent
+
+Skill: `elbmesh-pr-publisher`
+
+The PR Publisher owns automatic branch, commit, push, and draft-to-ready pull request publication. It does not author or modify repository files.
+
+Responsibilities:
+
+```text
+Inspect status and diffs before every publication action.
+Stage only exact paths from the preceding role report.
+Create and push a test-only red commit from accepted Test Writer paths.
+Open a draft pull request linked to the GitHub issue with red provenance and append complete red evidence to both issue and PR.
+Create and push a separate green commit from reported implementation/docs paths.
+Append cumulative green and readiness evidence to both issue and PR without rewriting accepted evidence.
+Mark the pull request ready only after no-blocker review and required CI.
+Return the pull request URL and residual risks.
+Never merge or push the base branch; only a human may review and merge.
+```
+
+The Publisher's Bash allowlist is pragmatic defense in depth, not a sandbox. Its prompt also prohibits shell separators, redirection, broad staging, unreported paths, and every merge mechanism.
+
 ### Implementation Agent
 
 Skill: `elbmesh-implementer`
@@ -112,16 +134,20 @@ Responsibilities:
 Preserve the documented vocabulary and boundaries.
 Implement behavior through explicit traits.
 Do not hide domain behavior behind macros.
-Do not change tests unless the Driver confirms the test is wrong.
+Treat accepted tests and fixtures as immutable.
 Keep implementation minimal and slice-focused.
 Run the required verification commands.
 ```
+
+Accepted tests and fixtures are immutable to Implementers, and Implementer outputs must exclude supporting test fixtures.
+
+If an accepted test or fixture conflicts with the task card or architecture, the Implementation Agent reports the conflict to the Orchestrator for human confirmation. Only after human confirmation may a fresh Test Writer revise accepted tests or fixtures; the Implementer must not revise them.
 
 ### Review Agent
 
 Skill: `elbmesh-reviewer`
 
-The Review Agent checks correctness, architecture fit, and documentation drift.
+The Review Agent is the single active final PR readiness role. `elbmesh-reviewer` checks correctness, architecture fit, documentation drift, PR evidence, and quality gates, then reports merge readiness or blockers. A human retains all merge authority.
 
 Responsibilities:
 
@@ -131,24 +157,23 @@ Check that tests prove the intended behavior.
 Check that docs were updated if architecture changed.
 Look for hidden external calls, replay impurity, cross-Resource mutation, and journal/event mixing.
 Confirm generated or derived docs remain in sync when generation exists.
+Inspect current-branch status, log, name-status diff, diff check, `codehud` diff, current PR metadata/body, current PR checks, and immutable red/green/publication evidence.
+Run or verify the exact formatting, Clippy, and full-test quality gates.
+Report final PR merge readiness only after findings and gate results.
 ```
 
-### MR Reviewer/Merger Agent
+### Compatibility MR Reviewer Skill
 
 Skill: `elbmesh-mr-reviewer`
 
-The MR Reviewer/Merger reviews complete MRs and merges only after all gates pass.
+The MR Reviewer is an optional compatibility/manual deep-review skill, not an additional required stage. It does not own or report merge readiness; only `elbmesh-reviewer` owns the final PR merge-readiness report in the canonical flow. A human performs the merge and retains all merge authority.
 
 Responsibilities:
 
 ```text
-Review the MR against its task card and phase.
-Verify tests were written for the changed behavior.
-Verify named errors and Rust quality rules.
-Run or inspect required verification commands.
-Request changes for unplanned work, missing tests, or architecture drift.
-Merge only when the MR satisfies quality gates.
-Record residual risks and follow-up tasks.
+Perform a manual deep review when explicitly requested.
+Return supplemental findings and quality-gate observations to the active Reviewer or human.
+Do not create an extra workflow handoff or readiness determination.
 ```
 
 ## MR Loop
@@ -158,14 +183,16 @@ Every implementation slice should become one GitHub Issue and one PR/MR unless t
 Follow this loop:
 
 1. Orchestrator selects the active phase and creates a GitHub Issue task card.
-2. Test Writer writes failing tests or a precise test plan.
-3. Orchestrator confirms tests match the architecture intent.
-4. Implementation Agent makes tests pass with minimal production code.
-5. Implementation Agent opens a PR/MR with verification results and links the issue.
-6. Review Agent or MR Reviewer/Merger reviews behavior, architecture rules, Rust quality, and docs.
-7. Implementation Agent addresses requested changes.
-8. MR Reviewer/Merger merges only when all gates pass.
-9. Orchestrator updates phase status, open questions, and next task dependencies.
+2. A fresh Test Writer writes failing tests and reports the exact red paths and proof.
+3. Orchestrator confirms the red proof matches the architecture intent.
+4. A fresh PR Publisher creates the issue branch, commits only accepted tests/fixtures as the red commit, pushes, automatically opens a linked draft pull request, and appends complete red evidence to both the issue and PR.
+5. A fresh Implementation Agent preserves accepted tests and makes them pass with the smallest production/docs change and complete green proof.
+6. A fresh PR Publisher commits only reported implementation/docs paths as a separate green commit, pushes, and appends cumulative green evidence to both the issue and PR.
+7. A fresh `elbmesh-reviewer` reviews the pull request, architecture rules, Rust quality, docs, and publication evidence without changing files, then reports final PR merge readiness or blockers.
+8. Blocking findings return to fresh Implementation, publication, and review sessions.
+9. After the Reviewer reports merge readiness with no blockers and required CI passes, a fresh PR Publisher appends cumulative readiness evidence to both the issue and PR, marks the pull request ready, and reports its URL.
+10. A human reviews and performs the merge; no agent has merge authority.
+11. Orchestrator requests human-applied issue-label updates and records phase status, open questions, and next dependencies.
 
 ## Phase Checkpoint Loop
 
@@ -202,6 +229,7 @@ Every MR must include:
 phase reference
 GitHub Issue reference
 tests added or changed
+separate red test and green implementation/docs commit provenance
 implementation summary
 verification commands and results
 documentation update or explicit no-docs-needed note
@@ -398,7 +426,7 @@ Formatting and lint gates pass or current limitation is documented.
 Docs are updated or explicitly not needed.
 ADR index is updated if an ADR was added.
 Open questions are updated if a decision remains unresolved.
-MR was reviewed and merged by a non-implementing agent.
+PR/MR was reviewed by a non-implementing agent, marked ready by a non-editing Publisher, and merged by a human.
 ```
 
 ## First Slice Recommendation

@@ -5,7 +5,7 @@ This plan groups implementation into phases. The Orchestrator uses it to create 
 ## Operating Rule
 
 ```text
-Plan phase -> create GitHub Issue -> write tests first -> implement one PR/MR -> review -> merge -> update issue and plan.
+Plan phase -> create GitHub Issue -> write tests first -> publish red commit and draft PR/MR -> implement -> publish green commit -> review -> mark ready -> human merge -> update issue and plan.
 ```
 
 Every Issue/PR pair must be small enough to review and large enough to prove one useful behavior.
@@ -135,7 +135,8 @@ Exit criteria:
 ```text
 The Orchestrator can create phase-scoped task cards.
 Implementation agents know the required docs and quality gates.
-MR Reviewer/Merger has explicit merge criteria.
+PR Publisher can automatically open a linked draft PR and mark it ready after review without merging.
+`elbmesh-reviewer` reports final PR merge readiness after explicit review criteria pass; a human performs the merge.
 Current tests pass.
 ```
 

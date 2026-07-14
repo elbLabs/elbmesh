@@ -1,11 +1,11 @@
 ---
 name: elbmesh-mr-reviewer
-description: Use when reviewing and merging Elbmesh MRs after implementation, checking tests, named errors, Rust quality gates, docs, and architecture boundaries.
+description: Use only as a compatibility/manual deep-review skill outside the canonical delivery sequence.
 ---
 
 # Elbmesh MR Reviewer
 
-Use this skill to review and merge phase-scoped PRs/MRs linked to GitHub Issues.
+Use this optional compatibility/manual skill for a requested deep review of a phase-scoped PR/MR linked to a GitHub Issue. It is not an additional required delivery stage and does not own or report merge readiness. Only `elbmesh-reviewer` reports final PR merge readiness in the canonical flow, and a human retains all merge authority.
 
 ## Read First
 
@@ -13,6 +13,7 @@ Use this skill to review and merge phase-scoped PRs/MRs linked to GitHub Issues.
 docs/GOAL.md
 docs/GLOSSARY.md
 docs/DEVELOPMENT_WORKFLOW.md
+docs/HUMAN_DECISION_LOOP.md
 docs/PHASED_DELIVERY_PLAN.md
 docs/AGENT_SKILLS.md
 docs/IMPLEMENTATION_PLAN.md
@@ -28,7 +29,7 @@ Check Rust quality and named error rules.
 Run or inspect verification commands.
 Reject unplanned behavior and unrelated refactors.
 Request changes for architecture drift or missing docs.
-Merge only when all gates pass.
+Return deep-review observations to the active `elbmesh-reviewer` or human without making a readiness determination.
 Record residual risks and follow-up tasks.
 ```
 
@@ -48,9 +49,9 @@ External calls are declared External Operations.
 Docs and skills are updated when needed.
 ```
 
-## Merge Rule
+## Compatibility Rule
 
-Do not merge if any quality gate fails, if scope is unplanned, or if architecture drift is unresolved.
+This skill must not merge and must not issue the final merge-readiness report. Flag failed quality gates, unplanned scope, and architecture drift as findings for the active `elbmesh-reviewer` or human. A human performs any merge only after `elbmesh-reviewer` reports readiness and required gates pass.
 
 ## Output
 
@@ -58,8 +59,8 @@ Return:
 
 ```text
 findings ordered by severity
-quality gate status
-merge or change-request decision
+quality gate observations
+deep-review findings for the active Reviewer or human
 required follow-up tasks
 residual risks
 ```

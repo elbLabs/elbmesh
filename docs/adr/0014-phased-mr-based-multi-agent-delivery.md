@@ -29,11 +29,14 @@ Use these roles:
 ```text
 Orchestrator: owns phases, task cards, MR queue, and sequencing.
 Test Writer: writes failing tests first for a task card.
+PR Publisher: creates the issue branch, publishes separate red and green commits, opens the linked draft PR, appends evidence, and marks it ready without editing files or merging.
 Implementation Agent: implements one planned MR at a time.
-MR Reviewer/Merger: reviews, requests changes, and merges only after gates pass.
+Reviewer (`elbmesh-reviewer`): performs the single active final PR review, requests changes, and reports merge readiness after gates pass; a human performs the merge and retains all merge authority.
 Doc Maintainer: keeps ADRs, glossary, plans, and skills aligned.
 Architecture Checker: verifies architecture rules before completion.
 ```
+
+`elbmesh-mr-reviewer` remains an optional compatibility/manual deep-review skill. It is not an additional required stage and does not own or report merge readiness; only `elbmesh-reviewer` owns the canonical final PR merge-readiness report.
 
 All work must belong to an explicit phase and task card before implementation starts.
 
@@ -88,7 +91,9 @@ The development process becomes part of the architecture.
 
 Agents can work in parallel only when the Orchestrator has created independent task cards and MR scopes.
 
-Review and merge are separate from implementation.
+The canonical Reviewer readiness report and the human merge are separate from implementation.
+
+Pull request publication is automatic after accepted role handoffs, while every merge remains a human action.
 
 Unplanned work is rejected even if technically correct.
 

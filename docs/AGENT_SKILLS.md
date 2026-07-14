@@ -43,7 +43,7 @@ architecture.manifest.json
 
 ### elbmesh-orchestrator
 
-Purpose: own phases, GitHub Issue task cards, PR/MR queue, dependencies, and multi-agent sequencing.
+Purpose: own phases, GitHub Issue task cards, automatic PR/MR publication handoffs, dependencies, and multi-agent sequencing.
 
 Use when:
 
@@ -68,6 +68,7 @@ Agent assignment
 Dependency notes
 Quality gates
 Merge readiness state
+Draft and ready pull request state
 Human decision requests
 ```
 
@@ -80,6 +81,7 @@ No PR/MR without tests or a test plan.
 No parallel work on conflicting modules or traits.
 No unplanned refactors.
 No silent architecture decisions when human input is required.
+No agent merge; merge authority remains human-only.
 ```
 
 ### elbmesh-driver
@@ -152,6 +154,41 @@ Assert only string errors when typed errors are available.
 Hide missing architecture decisions inside test fixtures.
 ```
 
+### elbmesh-pr-publisher
+
+Purpose: publish accepted role handoffs as an auditable draft-to-ready pull request without modifying files or merging.
+
+Use when:
+
+```text
+Accepted red proof needs a branch, test-only commit, push, and linked draft pull request.
+Accepted green proof needs a separate implementation/docs commit and push.
+A no-blocker review and passing CI allow the pull request to become ready.
+Complete red, green, and readiness evidence must be appended to the issue and pull request without rewriting prior comments.
+```
+
+Outputs:
+
+```text
+Issue branch and pushed revisions
+Separate red test and green implementation/docs commits
+Linked draft pull request
+Append-only cumulative red, green, and readiness evidence in the pull request and issue
+Ready pull request after no-blocker review and required CI
+Pull request URL and residual risks
+```
+
+Must preserve:
+
+```text
+No repository file modifications.
+Only exact role-reported paths are staged after status/diff verification.
+Red and green provenance remains distinct and immutable.
+No shell separators, redirection, broad staging, or unreported paths.
+OpenCode permissions are defense in depth, not a sandbox.
+No merge operation or base-branch push; only a human may review and merge.
+```
+
 ### elbmesh-implementer
 
 Purpose: implement the smallest production change that satisfies failing tests.
@@ -159,7 +196,7 @@ Purpose: implement the smallest production change that satisfies failing tests.
 Use when:
 
 ```text
-Tests exist and are confirmed by the Driver.
+Tests and fixtures exist and are accepted by the Orchestrator.
 The target slice is clear.
 The work belongs to the active phase and task card.
 ```
@@ -168,10 +205,13 @@ Outputs:
 
 ```text
 Production code
-Minimal supporting test fixtures
 Updated docs when behavior or architecture changed
 Verification results
 ```
+
+Accepted tests and fixtures are immutable to Implementers. Implementer outputs must exclude supporting test fixtures.
+
+If an accepted test or fixture conflicts with the task card or architecture, the Implementer reports the conflict to the Orchestrator for human confirmation. Only after human confirmation may a fresh Test Writer revise accepted tests or fixtures; the Implementer must not revise them.
 
 Must preserve:
 
@@ -181,17 +221,18 @@ No domain behavior hidden behind macros.
 No external calls outside declared External Operations.
 Replay/apply stays deterministic.
 Resource event streams contain only Resource Events.
+Accepted tests and fixtures stay immutable to Implementers.
 No unplanned refactors or speculative abstractions.
 ```
 
 ### elbmesh-reviewer
 
-Purpose: review changes for correctness, architecture drift, and missing tests.
+Purpose: perform the single active final PR review for correctness, architecture drift, missing tests, evidence validity, and merge readiness. A human retains all merge authority.
 
 Use when:
 
 ```text
-Implementation claims a task is complete.
+Green publication is complete and a pull request needs its final readiness review.
 An ADR or architecture rule may be affected.
 Infrastructure behavior changes.
 ```
@@ -204,6 +245,9 @@ Missing tests
 Architecture-rule violations
 Documentation drift
 Residual risks
+Exact inspection and quality command results
+Blocker status
+Final PR merge-readiness report
 ```
 
 Must check:
@@ -216,26 +260,28 @@ Journal/Event separation.
 External operation idempotency.
 View rebuildability.
 Docs/index updates.
+Current branch range, exact changed paths, PR metadata/body, checks, and immutable role evidence.
 ```
 
 ### elbmesh-mr-reviewer
 
-Purpose: review and merge phase-scoped MRs after quality gates pass.
+Purpose: provide optional compatibility/manual deep review of phase-scoped MRs outside the canonical role sequence.
+
+The compatibility/manual `elbmesh-mr-reviewer` skill is not an additional required stage and does not own or report merge readiness. Only `elbmesh-reviewer` owns the final PR merge-readiness report in the canonical flow; a human performs the merge and retains all merge authority.
 
 Use when:
 
 ```text
-An implementation agent marks an MR ready.
-An MR needs final architecture and Rust quality review.
-An MR needs merge or change-request decision.
+A human or active Reviewer explicitly requests supplemental deep review.
+Compatibility with an older manual MR-review workflow is needed.
 ```
 
 Outputs:
 
 ```text
 Findings ordered by severity
-Gate pass/fail status
-Merge decision
+Gate observations
+Supplemental deep-review report
 Required follow-up tasks
 Residual risks
 ```
@@ -377,6 +423,7 @@ Project-local opencode skill files:
 .opencode/skills/elbmesh-driver/SKILL.md
 .opencode/skills/elbmesh-orchestrator/SKILL.md
 .opencode/skills/elbmesh-test-writer/SKILL.md
+.opencode/skills/elbmesh-pr-publisher/SKILL.md
 .opencode/skills/elbmesh-implementer/SKILL.md
 .opencode/skills/elbmesh-reviewer/SKILL.md
 .opencode/skills/elbmesh-mr-reviewer/SKILL.md
