@@ -136,7 +136,7 @@ Exit criteria:
 The Orchestrator can create phase-scoped task cards.
 Implementation agents know the required docs and quality gates.
 PR Publisher can automatically open a linked draft PR and mark it ready after review without merging.
-MR Reviewer has explicit merge-readiness criteria; a human performs the merge.
+`elbmesh-reviewer` reports final PR merge readiness after explicit review criteria pass; a human performs the merge.
 Current tests pass.
 ```
 

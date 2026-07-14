@@ -164,7 +164,7 @@ Use when:
 Accepted red proof needs a branch, test-only commit, push, and linked draft pull request.
 Accepted green proof needs a separate implementation/docs commit and push.
 A no-blocker review and passing CI allow the pull request to become ready.
-Role evidence must be appended to the issue and pull request.
+Complete red, green, and readiness evidence must be appended to the issue and pull request without rewriting prior comments.
 ```
 
 Outputs:
@@ -173,7 +173,7 @@ Outputs:
 Issue branch and pushed revisions
 Separate red test and green implementation/docs commits
 Linked draft pull request
-Append-only role evidence in the pull request and issue
+Append-only cumulative red, green, and readiness evidence in the pull request and issue
 Ready pull request after no-blocker review and required CI
 Pull request URL and residual risks
 ```
@@ -227,12 +227,12 @@ No unplanned refactors or speculative abstractions.
 
 ### elbmesh-reviewer
 
-Purpose: review changes for correctness, architecture drift, and missing tests.
+Purpose: perform the single active final PR review for correctness, architecture drift, missing tests, evidence validity, and merge readiness. A human retains all merge authority.
 
 Use when:
 
 ```text
-Implementation claims a task is complete.
+Green publication is complete and a pull request needs its final readiness review.
 An ADR or architecture rule may be affected.
 Infrastructure behavior changes.
 ```
@@ -245,6 +245,9 @@ Missing tests
 Architecture-rule violations
 Documentation drift
 Residual risks
+Exact inspection and quality command results
+Blocker status
+Final PR merge-readiness report
 ```
 
 Must check:
@@ -257,26 +260,28 @@ Journal/Event separation.
 External operation idempotency.
 View rebuildability.
 Docs/index updates.
+Current branch range, exact changed paths, PR metadata/body, checks, and immutable role evidence.
 ```
 
 ### elbmesh-mr-reviewer
 
-Purpose: review phase-scoped MRs and report merge readiness after quality gates pass. A human performs the merge and retains all merge authority.
+Purpose: provide optional compatibility/manual deep review of phase-scoped MRs outside the canonical role sequence.
+
+The compatibility/manual `elbmesh-mr-reviewer` skill is not an additional required stage and does not own or report merge readiness. Only `elbmesh-reviewer` owns the final PR merge-readiness report in the canonical flow; a human performs the merge and retains all merge authority.
 
 Use when:
 
 ```text
-An implementation agent marks an MR ready.
-An MR needs final architecture and Rust quality review.
-An MR needs a merge-readiness or change-request recommendation.
+A human or active Reviewer explicitly requests supplemental deep review.
+Compatibility with an older manual MR-review workflow is needed.
 ```
 
 Outputs:
 
 ```text
 Findings ordered by severity
-Gate pass/fail status
-Merge-readiness report
+Gate observations
+Supplemental deep-review report
 Required follow-up tasks
 Residual risks
 ```

@@ -28,7 +28,7 @@ Confirm the human reports the issue at `status:tests-needed`, then spawn a fresh
 
 ## 2. Draft Pull Request Publication
 
-After accepting the red proof, spawn a fresh `elbmesh-pr-publisher` session to create the issue branch, stage only the accepted Test Writer test and fixture paths, create a separate red test-only commit, push the branch, and open a draft pull request linked to the issue. Require status/diff verification, exact path and commit provenance, and the pull request URL before implementation starts.
+After accepting the red proof, spawn a fresh `elbmesh-pr-publisher` session to create the issue branch, stage only the accepted Test Writer test and fixture paths, create a separate red test-only commit, push the branch, and open a draft pull request linked to the issue. Require status/diff verification, exact path and commit provenance, the pull request URL, and complete red evidence appended to both issue and PR before implementation starts.
 
 ## 3. Green Proof
 
@@ -38,16 +38,16 @@ Accept the green proof only when the focused test passes for the intended behavi
 
 ## 4. Green Publication
 
-After accepting green proof, spawn a fresh `elbmesh-pr-publisher` session to verify and stage only the reviewed implementation and documentation paths reported by the Implementer, create a green implementation/docs commit separate from the red commit, push it, and append the green evidence to the draft pull request. Require the resulting commit revision and pull request URL.
+After accepting green proof, spawn a fresh `elbmesh-pr-publisher` session to verify and stage only the reviewed implementation and documentation paths reported by the Implementer, create a green implementation/docs commit separate from the red commit, push it, and append cumulative green evidence to both the issue and draft pull request. Require the resulting commit revision and pull request URL.
 
 ## 5. Pull Request Review
 
-After green publication, report readiness and request that the human transition the issue to `status:review`. After confirmation, spawn a fresh `elbmesh-reviewer` session to review the pull request with the task card, complete branch/revision range, immutable role reports, focused evidence, full gate evidence, and documentation and architecture notes. Require findings first and do not ask the Reviewer to fix anything.
+After green publication, report readiness for the issue-label transition and request that the human transition the issue to `status:review`. After confirmation, spawn a fresh `elbmesh-reviewer` session to review the pull request with the task card, complete branch/revision range, immutable role reports, focused evidence, full gate evidence, and documentation and architecture notes. `elbmesh-reviewer` is the single active final PR review role and must report merge readiness after findings; do not ask the Reviewer to fix anything.
 
 ## 6. Ready Publication
 
-If review reports no blocking findings and required CI passes, spawn a fresh `elbmesh-pr-publisher` session to append the immutable review evidence, mark the pull request ready, and report its URL. If review finds blockers, send them to a fresh Implementer session, then repeat green proof, green publication, and pull request review with new task IDs before any ready transition.
+If the Reviewer reports merge readiness with no blocking findings and required CI passes, spawn a fresh `elbmesh-pr-publisher` session to append cumulative readiness evidence to both the issue and pull request, mark the pull request ready, and report its URL. If review finds blockers, send them to a fresh Implementer session, then repeat green proof, green publication, and pull request review with new task IDs before any ready transition.
 
 ## 7. Human Review And Merge
 
-The human performs final review and every merge operation. The Orchestrator and Publisher only report readiness; neither may merge or enable auto-merge. Only after the human reports the merge may the Orchestrator request that the human apply the label transition to `status:merged`.
+The human performs final review and every merge operation. The Reviewer reports PR merge readiness, the Orchestrator coordinates issue state, and the Publisher reports publication state and the PR URL; no agent may merge or enable auto-merge. Only after the human reports the merge may the Orchestrator request that the human apply the label transition to `status:merged`.

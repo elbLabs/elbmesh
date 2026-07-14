@@ -31,6 +31,8 @@ accepted Implementer report with exact implementation and documentation paths an
 Reviewer report with revision range, findings, CI state, and blocker status
 ```
 
+Each role handoff must include its role task ID and role session ID. Publication must retain the exact changed paths, red commit SHA, green commit SHA when available, exact commands, command results, review task ID when available, blocker status, and PR URL.
+
 ## Responsibilities
 
 ```text
@@ -40,7 +42,7 @@ Stage only exact paths reported by the role responsible for the current stage.
 Preserve role reports and commit provenance without rewriting them.
 Create a separate red test commit and green implementation/docs commit.
 Link the draft pull request to its issue.
-Append green and review evidence to the pull request and issue.
+Append complete red, green, and readiness evidence to both the pull request and issue.
 Mark the pull request ready only after a no-blocker review and required CI.
 Return the pull request URL and publication evidence.
 ```
@@ -49,13 +51,15 @@ Return the pull request URL and publication evidence.
 
 1. From the reported base, create the issue branch after confirming the worktree state.
 2. Stage only accepted Test Writer test and fixture paths, verify the cached diff, create the red test-only commit, and push.
-3. Open a draft pull request linked to or closing the issue. Carry the Test Writer provenance and red proof in the pull request body.
+3. Open a draft pull request linked to or closing the issue. Carry the Test Writer provenance and red proof in the pull request body, then append the complete red evidence in new comments on both the issue and pull request.
 4. After accepted green proof, stage only reported implementation and documentation paths, verify the cached diff, create the distinct green commit, and push.
-5. Append green proof in a new pull request comment; never replace accepted red evidence.
-6. After the Reviewer reports no blockers and required CI passes, append review evidence in new PR and issue comments and mark the pull request ready.
+5. Append green proof in new issue and pull request comments; never replace accepted red evidence.
+6. After the Reviewer reports merge readiness with no blockers and required CI passes, append readiness evidence in new issue and pull request comments and mark the pull request ready.
 7. Return the pull request URL, branch and commit revisions, evidence links, and residual risks to the Orchestrator.
 
 Rework repeats the Implementer, green publication, Reviewer, and readiness checks with fresh role sessions and new evidence. It does not rewrite accepted earlier commits or reports.
+
+Green and readiness evidence is append-only: append each as new comments on both the GitHub issue and pull request without rewriting prior evidence. Every cumulative comment records role task IDs, role session IDs, exact changed paths, red commit SHA, green commit SHA, exact commands, command results, review task ID, blocker status, and PR URL. A red comment may identify later fields as pending; the green comment adds green values, and the readiness comment includes all completed role provenance, reviewed range, findings, CI state, residual risks, and final values.
 
 ## Verification
 

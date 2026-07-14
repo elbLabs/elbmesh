@@ -41,10 +41,14 @@ Test Writer produces accepted red proof.
 PR Publisher creates the branch, red test-only commit, push, and linked draft PR.
 Implementer preserves accepted tests and produces green proof.
 PR Publisher creates and pushes the separate implementation/docs commit.
-Reviewer reviews the pull request and reports blockers.
-PR Publisher appends no-blocker evidence, marks the pull request ready, and reports its URL.
+`elbmesh-reviewer` performs the single active final PR review and reports merge readiness or blockers.
+PR Publisher appends the Reviewer evidence, marks a no-blocker pull request ready after required CI, and reports its URL.
 Human reviews and merges.
 ```
+
+The optional `elbmesh-mr-reviewer` compatibility/manual deep-review skill is not an additional required stage and does not own or report merge readiness. Only `elbmesh-reviewer` owns the final PR merge-readiness report in the canonical sequence.
+
+At each Publisher handoff, require append-only cumulative red, green, or readiness evidence on both the issue and pull request, including role task/session IDs, exact changed paths, red/green commit SHAs, exact commands and results, review task ID when available, blockers, and PR URL.
 
 Use a fresh role session at every handoff and rework step. The Orchestrator remains shell-free, requests human-applied issue-label transitions, and never publishes or merges directly.
 
