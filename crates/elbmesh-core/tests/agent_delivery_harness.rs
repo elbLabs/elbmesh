@@ -7,6 +7,18 @@ const TEST_WRITER_AGENT: &str = ".opencode/agents/elbmesh-test-writer.md";
 const IMPLEMENTER_AGENT: &str = ".opencode/agents/elbmesh-implementer.md";
 const REVIEWER_AGENT: &str = ".opencode/agents/elbmesh-reviewer.md";
 const PR_PUBLISHER_AGENT: &str = ".opencode/agents/elbmesh-pr-publisher.md";
+const REVIEWER_BASH_ALLOWLIST: [&str; 10] = [
+    "cargo fmt --check",
+    "cargo clippy --all-targets --all-features -- -D warnings",
+    "cargo test --all",
+    "git status --short --branch",
+    "git log --oneline --decorate origin/main..HEAD",
+    "git diff --name-status origin/main...HEAD",
+    "git diff --check origin/main...HEAD",
+    "codehud . --diff origin/main",
+    "gh pr view --json number,title,body,state,isDraft,baseRefName,headRefName,url",
+    "gh pr checks",
+];
 
 #[test]
 fn project_config_selects_the_primary_elbmesh_orchestrator() {
@@ -142,6 +154,113 @@ fn orchestrator_automates_pull_request_delivery_with_fresh_role_sessions() {
 }
 
 #[test]
+fn canonical_active_flow_assigns_merge_readiness_only_to_reviewer() {
+    let paths = [
+        REVIEWER_AGENT,
+        ".opencode/skills/elbmesh-reviewer/SKILL.md",
+        ".opencode/agents/elbmesh-orchestrator.md",
+        ".opencode/skills/elbmesh-orchestrator/SKILL.md",
+        "docs/adr/0014-phased-mr-based-multi-agent-delivery.md",
+        "docs/DEVELOPMENT_WORKFLOW.md",
+        "docs/AGENT_SKILLS.md",
+    ];
+    let mr_reviewer_names = ["elbmesh-mr-reviewer", "mr reviewer"];
+    let mut violations = Vec::new();
+
+    for path in paths {
+        let document = project_file(path).to_ascii_lowercase();
+        let paragraphs: Vec<_> = document.split("\n\n").collect();
+        let canonical_reviewer_reports_readiness = paragraphs.iter().any(|paragraph| {
+            paragraph.contains("elbmesh-reviewer")
+                && paragraph.contains("report")
+                && paragraph.contains("merge readiness")
+        });
+        if !canonical_reviewer_reports_readiness {
+            violations.push(format!(
+                "{path} must assign the final PR merge-readiness report to `elbmesh-reviewer`"
+            ));
+        }
+
+        let mentions_mr_reviewer = paragraphs.iter().any(|paragraph| {
+            mr_reviewer_names
+                .iter()
+                .any(|name| paragraph.contains(name))
+        });
+        if !mentions_mr_reviewer {
+            continue;
+        }
+
+        let marks_mr_reviewer_as_noncanonical = paragraphs.iter().any(|paragraph| {
+            mr_reviewer_names
+                .iter()
+                .any(|name| paragraph.contains(name))
+                && ["compatibility", "manual"]
+                    .iter()
+                    .any(|marker| paragraph.contains(marker))
+                && [
+                    "not required",
+                    "not a required",
+                    "optional",
+                    "not an additional",
+                ]
+                .iter()
+                .any(|marker| paragraph.contains(marker))
+        });
+        if !marks_mr_reviewer_as_noncanonical {
+            violations.push(format!(
+                "{path} mentions `elbmesh-mr-reviewer` without marking it as a compatibility/manual skill that is not an additional required stage"
+            ));
+        }
+
+        let assigns_readiness = |text: &str| {
+            text.contains("merge readiness")
+                || (text.contains("readiness") && text.contains("merge"))
+        };
+        let denies_readiness_ownership = |text: &str| {
+            [
+                "does not own",
+                "does not report",
+                "must not own",
+                "must not report",
+                "no readiness ownership",
+                "only `elbmesh-reviewer`",
+                "only elbmesh-reviewer",
+            ]
+            .iter()
+            .any(|marker| text.contains(marker))
+        };
+        let mut mr_reviewer_owns_readiness = paragraphs.iter().any(|paragraph| {
+            mr_reviewer_names
+                .iter()
+                .any(|name| paragraph.contains(name))
+                && assigns_readiness(paragraph)
+                && !denies_readiness_ownership(paragraph)
+        });
+        for heading in ["### elbmesh-mr-reviewer", "### mr reviewer"] {
+            let Some(section_start) = document.find(heading) else {
+                continue;
+            };
+            let section = &document[section_start + heading.len()..];
+            let section = &section[..section.find("\n### ").unwrap_or(section.len())];
+            if assigns_readiness(section) && !denies_readiness_ownership(section) {
+                mr_reviewer_owns_readiness = true;
+            }
+        }
+        if mr_reviewer_owns_readiness {
+            violations.push(format!(
+                "{path} gives `elbmesh-mr-reviewer` merge-readiness ownership"
+            ));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "canonical Reviewer role violations:\n- {}",
+        violations.join("\n- ")
+    );
+}
+
+#[test]
 fn pr_publisher_is_a_non_editing_delivery_subagent_with_auditable_handoffs() {
     let (frontmatter, body) = agent_file(PR_PUBLISHER_AGENT);
     assert_agent_mode(PR_PUBLISHER_AGENT, &frontmatter, "subagent");
@@ -200,6 +319,75 @@ fn pr_publisher_is_a_non_editing_delivery_subagent_with_auditable_handoffs() {
                 && (paragraph.contains("pr") || paragraph.contains("pull request"))
         }),
         "{PR_PUBLISHER_AGENT} must return the pull request URL"
+    );
+}
+
+#[test]
+fn publisher_green_and_readiness_evidence_is_append_only_on_issue_and_pull_request() {
+    let paths = [
+        PR_PUBLISHER_AGENT,
+        ".opencode/skills/elbmesh-pr-publisher/SKILL.md",
+        "docs/AGENT_DELIVERY_HARNESS.md",
+    ];
+    let required_evidence_fields: [(&str, &[&str]); 10] = [
+        (
+            "role task IDs",
+            &["role task id", "role task/session id", "task/session id"],
+        ),
+        ("role session IDs", &["role session id", "task/session id"]),
+        ("exact changed paths", &["exact changed path"]),
+        ("red commit SHA", &["red commit sha"]),
+        ("green commit SHA", &["green commit sha"]),
+        ("exact commands", &["exact command"]),
+        (
+            "command results",
+            &[
+                "command result",
+                "commands/results",
+                "command/results",
+                "commands and results",
+            ],
+        ),
+        ("review task ID", &["review task id", "reviewer task id"]),
+        ("blocker status", &["blocker status"]),
+        ("PR URL", &["pr url", "pull request url"]),
+    ];
+    let mut violations = Vec::new();
+
+    for path in paths {
+        let document = project_file(path).to_ascii_lowercase();
+        let has_append_only_green_and_readiness_evidence =
+            document.split("\n\n").any(|paragraph| {
+                paragraph.contains("green")
+                    && paragraph.contains("readiness")
+                    && (paragraph.contains("append-only")
+                        || (paragraph.contains("append") && paragraph.contains("without rewrit")))
+                    && paragraph.contains("issue")
+                    && (paragraph.contains("pull request") || paragraph.contains("pr"))
+                    && paragraph.contains("comment")
+            });
+        if !has_append_only_green_and_readiness_evidence {
+            violations.push(format!(
+                "{path} must append green and readiness evidence as new comments on both the GitHub issue and pull request without rewriting prior evidence"
+            ));
+        }
+
+        for (field, alternatives) in required_evidence_fields {
+            if !alternatives
+                .iter()
+                .any(|alternative| document.contains(alternative))
+            {
+                violations.push(format!(
+                    "{path} append-only publication evidence is missing {field}"
+                ));
+            }
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "PR Publisher evidence contract violations:\n- {}",
+        violations.join("\n- ")
     );
 }
 
@@ -673,13 +861,8 @@ fn only_the_orchestrator_can_spawn_delivery_role_agents() {
 }
 
 #[test]
-fn reviewer_bash_allows_only_exact_quality_commands() {
+fn reviewer_bash_allows_only_exact_review_and_quality_commands() {
     let (frontmatter, _) = agent_file(REVIEWER_AGENT);
-    let required_quality_commands = [
-        "cargo fmt --check",
-        "cargo clippy --all-targets --all-features -- -D warnings",
-        "cargo test --all",
-    ];
     let mut violations = Vec::new();
 
     if !edit_is_denied(&frontmatter) {
@@ -704,18 +887,18 @@ fn reviewer_bash_allows_only_exact_quality_commands() {
         .map(|(pattern, _)| pattern.as_str())
         .collect();
     allowed_commands.sort_unstable();
-    let mut expected_commands = required_quality_commands;
+    let mut expected_commands = REVIEWER_BASH_ALLOWLIST;
     expected_commands.sort_unstable();
     if allowed_commands != expected_commands {
         violations.push(format!(
-            "Bash allow rules must be the exact required quality commands, found {allowed_commands:?}"
+            "Bash allow rules must be only the exact current-branch review and quality commands, found {allowed_commands:?}"
         ));
     }
 
-    for command in required_quality_commands {
+    for command in REVIEWER_BASH_ALLOWLIST {
         if permission_decision(&frontmatter, "bash", command).as_deref() != Some("allow") {
             violations.push(format!(
-                "required quality command is not allowed exactly: {command}"
+                "required review or quality command is not allowed exactly: {command}"
             ));
         }
     }
@@ -725,6 +908,14 @@ fn reviewer_bash_allows_only_exact_quality_commands() {
         "git diff --output=review.patch",
         "git show --output=review.txt HEAD",
         "cargo test --all > review.txt",
+        "git add -- crates/elbmesh-core/src/lib.rs",
+        "gh pr comment 148 --body \"ready\"",
+        "git status --short --branch --porcelain=v2",
+        "git log --oneline --decorate origin/main..HEAD --format=full",
+        "git diff --name-status origin/main...HEAD --output=review.patch",
+        "codehud . --diff origin/main --json",
+        "gh pr view --json number,title,body,state,isDraft,baseRefName,headRefName,url --jq .url",
+        "gh pr checks --watch",
     ] {
         if effective_agent_permission(&frontmatter, "bash", command) == "allow" {
             violations.push(format!("Bash bypass remains allowed: {command}"));
@@ -742,15 +933,6 @@ fn reviewer_bash_allows_only_exact_quality_commands() {
 fn reviewer_and_orchestrator_permissions_are_effectively_read_only() {
     let (reviewer_frontmatter, _) = agent_file(REVIEWER_AGENT);
     let (orchestrator_frontmatter, _) = agent_file(ORCHESTRATOR_AGENT);
-    let expected_reviewer_bash_rules = [
-        ("*", "deny"),
-        ("cargo fmt --check", "allow"),
-        (
-            "cargo clippy --all-targets --all-features -- -D warnings",
-            "allow",
-        ),
-        ("cargo test --all", "allow"),
-    ];
     let reviewer_bash_rules = permission_rules(&reviewer_frontmatter, "bash");
     let reviewer_bash_rules: Vec<_> = reviewer_bash_rules
         .iter()
@@ -758,9 +940,22 @@ fn reviewer_and_orchestrator_permissions_are_effectively_read_only() {
         .collect();
     let mut violations = Vec::new();
 
-    if reviewer_bash_rules.as_slice() != expected_reviewer_bash_rules {
+    if reviewer_bash_rules.first().copied() != Some(("*", "deny")) {
         violations.push(format!(
-            "{REVIEWER_AGENT} Bash rules must be broad deny followed only by the exact three quality-gate allows, found {reviewer_bash_rules:?}"
+            "{REVIEWER_AGENT} Bash rules must begin with broad deny, found {reviewer_bash_rules:?}"
+        ));
+    }
+    let mut reviewer_allow_rules: Vec<_> = reviewer_bash_rules
+        .iter()
+        .filter(|(_, action)| *action == "allow")
+        .map(|(pattern, _)| *pattern)
+        .collect();
+    reviewer_allow_rules.sort_unstable();
+    let mut expected_reviewer_allow_rules = REVIEWER_BASH_ALLOWLIST;
+    expected_reviewer_allow_rules.sort_unstable();
+    if reviewer_allow_rules != expected_reviewer_allow_rules {
+        violations.push(format!(
+            "{REVIEWER_AGENT} Bash rules must contain only the exact review and quality-gate allows, found {reviewer_allow_rules:?}"
         ));
     }
 
@@ -1105,6 +1300,38 @@ fn harness_discloses_direct_user_subagent_invocation_boundary() {
     assert!(
         discloses_boundary,
         "{path} must disclose that direct user @-invocation is an out-of-band human capability that Task permissions cannot prevent"
+    );
+}
+
+#[test]
+fn harness_documents_147_148_as_a_publisher_bootstrap_exception() {
+    let path = "docs/AGENT_DELIVERY_HARNESS.md";
+    let documentation = project_file(path).to_ascii_lowercase();
+    let documents_current_exception = documentation.split("\n\n").any(|paragraph| {
+        paragraph.contains("#147")
+            && paragraph.contains("#148")
+            && paragraph.contains("bootstrap exception")
+            && paragraph.contains("initial")
+            && (paragraph.contains("pull request") || paragraph.contains("pr"))
+            && paragraph.contains("exist")
+            && paragraph.contains("before")
+            && paragraph.contains("publisher")
+            && paragraph.contains("introduc")
+    });
+    let requires_future_publisher_sequence = documentation.split("\n\n").any(|paragraph| {
+        paragraph.contains("future")
+            && (paragraph.contains("all") || paragraph.contains("every"))
+            && paragraph.contains("sequence")
+            && contains_in_order(paragraph, &["red", "publisher", "green", "publisher"])
+    });
+
+    assert!(
+        documents_current_exception,
+        "{path} must identify issue #147 / draft PR #148 as a bootstrap exception whose initial PR existed before the Publisher role was introduced"
+    );
+    assert!(
+        requires_future_publisher_sequence,
+        "{path} must require all future runs to follow the red-Publisher then green-Publisher sequence"
     );
 }
 
