@@ -29,6 +29,7 @@ Use these roles:
 ```text
 Orchestrator: owns phases, task cards, MR queue, and sequencing.
 Test Writer: writes failing tests first for a task card.
+PR Publisher: creates the issue branch, publishes separate red and green commits, opens the linked draft PR, appends evidence, and marks it ready without editing files or merging.
 Implementation Agent: implements one planned MR at a time.
 MR Reviewer: reviews, requests changes, and reports merge readiness after gates pass; a human performs the merge and retains all merge authority.
 Doc Maintainer: keeps ADRs, glossary, plans, and skills aligned.
@@ -89,6 +90,8 @@ The development process becomes part of the architecture.
 Agents can work in parallel only when the Orchestrator has created independent task cards and MR scopes.
 
 Review and the human merge are separate from implementation.
+
+Pull request publication is automatic after accepted role handoffs, while every merge remains a human action.
 
 Unplanned work is rejected even if technically correct.
 

@@ -44,7 +44,7 @@ Responsibilities:
 Read the phased delivery plan before assigning work.
 Select the active phase and next smallest Issue.
 Create GitHub Issues with acceptance criteria and quality gates.
-Spawn Test Writer and Implementation Agents only for planned work.
+Spawn fresh Test Writer, PR Publisher, Implementation, and Review Agents only for planned work.
 Keep parallel work independent.
 Track dependencies, issue status, PR/MR status, verification, review, and merge state.
 Reject unplanned implementation or refactor work.
@@ -99,6 +99,28 @@ Then these Resource Events are appended
 And this Receipt is returned
 And these journal records exist
 ```
+
+### PR Publisher Agent
+
+Skill: `elbmesh-pr-publisher`
+
+The PR Publisher owns automatic branch, commit, push, and draft-to-ready pull request publication. It does not author or modify repository files.
+
+Responsibilities:
+
+```text
+Inspect status and diffs before every publication action.
+Stage only exact paths from the preceding role report.
+Create and push a test-only red commit from accepted Test Writer paths.
+Open a draft pull request linked to the GitHub issue with red provenance.
+Create and push a separate green commit from reported implementation/docs paths.
+Append green and review evidence without rewriting accepted evidence.
+Mark the pull request ready only after no-blocker review and required CI.
+Return the pull request URL and residual risks.
+Never merge or push the base branch; only a human may review and merge.
+```
+
+The Publisher's Bash allowlist is pragmatic defense in depth, not a sandbox. Its prompt also prohibits shell separators, redirection, broad staging, unreported paths, and every merge mechanism.
 
 ### Implementation Agent
 
@@ -162,14 +184,16 @@ Every implementation slice should become one GitHub Issue and one PR/MR unless t
 Follow this loop:
 
 1. Orchestrator selects the active phase and creates a GitHub Issue task card.
-2. Test Writer writes failing tests or a precise test plan.
-3. Orchestrator confirms tests match the architecture intent.
-4. Implementation Agent makes tests pass with minimal production code.
-5. Implementation Agent opens a PR/MR with verification results and links the issue.
-6. Review Agent or MR Reviewer reviews behavior, architecture rules, Rust quality, and docs.
-7. Implementation Agent addresses requested changes.
-8. MR Reviewer reports merge readiness when all gates pass; a human performs the merge.
-9. Orchestrator updates phase status, open questions, and next task dependencies.
+2. A fresh Test Writer writes failing tests and reports the exact red paths and proof.
+3. Orchestrator confirms the red proof matches the architecture intent.
+4. A fresh PR Publisher creates the issue branch, commits only accepted tests/fixtures as the red commit, pushes, and automatically opens a linked draft pull request.
+5. A fresh Implementation Agent preserves accepted tests and makes them pass with the smallest production/docs change and complete green proof.
+6. A fresh PR Publisher commits only reported implementation/docs paths as a separate green commit, pushes, and appends green evidence.
+7. A fresh Review Agent reviews the pull request, architecture rules, Rust quality, and docs without changing files.
+8. Blocking findings return to fresh Implementation, publication, and review sessions.
+9. After a no-blocker review and required CI, a fresh PR Publisher appends review evidence, marks the pull request ready, and reports its URL.
+10. A human reviews and performs the merge; no agent has merge authority.
+11. Orchestrator requests human-applied issue-label updates and records phase status, open questions, and next dependencies.
 
 ## Phase Checkpoint Loop
 
@@ -206,6 +230,7 @@ Every MR must include:
 phase reference
 GitHub Issue reference
 tests added or changed
+separate red test and green implementation/docs commit provenance
 implementation summary
 verification commands and results
 documentation update or explicit no-docs-needed note
@@ -402,7 +427,7 @@ Formatting and lint gates pass or current limitation is documented.
 Docs are updated or explicitly not needed.
 ADR index is updated if an ADR was added.
 Open questions are updated if a decision remains unresolved.
-MR was reviewed by a non-implementing agent, which reported merge readiness, and merged by a human.
+PR/MR was reviewed by a non-implementing agent, marked ready by a non-editing Publisher, and merged by a human.
 ```
 
 ## First Slice Recommendation

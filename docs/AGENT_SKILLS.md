@@ -43,7 +43,7 @@ architecture.manifest.json
 
 ### elbmesh-orchestrator
 
-Purpose: own phases, GitHub Issue task cards, PR/MR queue, dependencies, and multi-agent sequencing.
+Purpose: own phases, GitHub Issue task cards, automatic PR/MR publication handoffs, dependencies, and multi-agent sequencing.
 
 Use when:
 
@@ -68,6 +68,7 @@ Agent assignment
 Dependency notes
 Quality gates
 Merge readiness state
+Draft and ready pull request state
 Human decision requests
 ```
 
@@ -80,6 +81,7 @@ No PR/MR without tests or a test plan.
 No parallel work on conflicting modules or traits.
 No unplanned refactors.
 No silent architecture decisions when human input is required.
+No agent merge; merge authority remains human-only.
 ```
 
 ### elbmesh-driver
@@ -150,6 +152,41 @@ Must not:
 Implement production behavior just to make tests pass.
 Assert only string errors when typed errors are available.
 Hide missing architecture decisions inside test fixtures.
+```
+
+### elbmesh-pr-publisher
+
+Purpose: publish accepted role handoffs as an auditable draft-to-ready pull request without modifying files or merging.
+
+Use when:
+
+```text
+Accepted red proof needs a branch, test-only commit, push, and linked draft pull request.
+Accepted green proof needs a separate implementation/docs commit and push.
+A no-blocker review and passing CI allow the pull request to become ready.
+Role evidence must be appended to the issue and pull request.
+```
+
+Outputs:
+
+```text
+Issue branch and pushed revisions
+Separate red test and green implementation/docs commits
+Linked draft pull request
+Append-only role evidence in the pull request and issue
+Ready pull request after no-blocker review and required CI
+Pull request URL and residual risks
+```
+
+Must preserve:
+
+```text
+No repository file modifications.
+Only exact role-reported paths are staged after status/diff verification.
+Red and green provenance remains distinct and immutable.
+No shell separators, redirection, broad staging, or unreported paths.
+OpenCode permissions are defense in depth, not a sandbox.
+No merge operation or base-branch push; only a human may review and merge.
 ```
 
 ### elbmesh-implementer
@@ -381,6 +418,7 @@ Project-local opencode skill files:
 .opencode/skills/elbmesh-driver/SKILL.md
 .opencode/skills/elbmesh-orchestrator/SKILL.md
 .opencode/skills/elbmesh-test-writer/SKILL.md
+.opencode/skills/elbmesh-pr-publisher/SKILL.md
 .opencode/skills/elbmesh-implementer/SKILL.md
 .opencode/skills/elbmesh-reviewer/SKILL.md
 .opencode/skills/elbmesh-mr-reviewer/SKILL.md
