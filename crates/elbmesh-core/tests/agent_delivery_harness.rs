@@ -8,6 +8,15 @@ const IMPLEMENTER_AGENT: &str = ".opencode/agents/elbmesh-implementer.md";
 const REVIEWER_AGENT: &str = ".opencode/agents/elbmesh-reviewer.md";
 const PR_PUBLISHER_AGENT: &str = ".opencode/agents/elbmesh-pr-publisher.md";
 const RUST_CI_WORKFLOW: &str = ".github/workflows/rust-ci.yml";
+const ISSUE_BRANCH: &str = "workflow/issue-121-dependency-roadmap-and-status-automation";
+const TO_IMPLEMENTATION_COMMAND: &str =
+    "gh issue edit 121 --remove-label status:review --add-label status:implementation";
+const TO_REVIEW_COMMAND: &str =
+    "gh issue edit 121 --remove-label status:implementation --add-label status:review";
+const STATUS_TRANSITION_ALLOW_PATTERNS: [&str; 2] = [
+    "gh issue edit * --remove-label status:review --add-label status:implementation",
+    "gh issue edit * --remove-label status:implementation --add-label status:review",
+];
 const REVIEWER_BASH_ALLOWLIST: [&str; 10] = [
     "cargo fmt --check",
     "cargo clippy --all-targets --all-features -- -D warnings",
@@ -500,16 +509,6 @@ fn pr_publisher_permissions_allow_publication_but_deny_direct_merge() {
         violations.push("Bash rules must begin with a broad deny".to_owned());
     }
 
-    if !bash_rules
-        .iter()
-        .any(|(pattern, action)| pattern == "gh issue edit *" && action == "allow")
-    {
-        violations.push(
-            "Bash rules must narrowly allow `gh issue edit *` for automatic status transitions"
-                .to_owned(),
-        );
-    }
-
     for (operation, command) in [
         ("create the issue branch", "git switch -c issue-147"),
         ("inspect status", "git status --short"),
@@ -523,25 +522,12 @@ fn pr_publisher_permissions_allow_publication_but_deny_direct_merge() {
             "git commit -m \"test: add red proof\"",
         ),
         (
-            "push the issue branch",
-            "git push --set-upstream origin HEAD",
-        ),
-        (
             "open the draft pull request",
             "gh pr create --draft --title \"Issue 147\" --body \"Closes #147\"",
         ),
-        ("push the green commit", "git push origin HEAD"),
         (
             "publish evidence",
             "gh pr comment 148 --body \"Green proof\"",
-        ),
-        (
-            "set implementation status after red publication",
-            "gh issue edit 121 --remove-label status:review --add-label status:implementation",
-        ),
-        (
-            "set review status after review readiness gates",
-            "gh issue edit 121 --remove-label status:implementation --add-label status:review",
         ),
         ("mark the pull request ready", "gh pr ready 148"),
     ] {
@@ -558,7 +544,6 @@ fn pr_publisher_permissions_allow_publication_but_deny_direct_merge() {
         "git merge --continue",
         "gh pr merge 148",
         "gh pr merge 148 --auto",
-        "git push origin main",
     ] {
         let decision = effective_agent_permission(&frontmatter, "bash", command);
         if decision != "deny" {
@@ -571,6 +556,165 @@ fn pr_publisher_permissions_allow_publication_but_deny_direct_merge() {
     assert!(
         violations.is_empty(),
         "{PR_PUBLISHER_AGENT} publication permissions are defense in depth and must expose only the required non-merging delivery operations:\n- {}",
+        violations.join("\n- ")
+    );
+}
+
+#[test]
+fn publisher_push_permissions_deny_branch_sensitive_head_aliases() {
+    let (frontmatter, _) = agent_file(PR_PUBLISHER_AGENT);
+    let mut violations = Vec::new();
+
+    for command in [
+        format!("git push --set-upstream origin {ISSUE_BRANCH}"),
+        format!("git push origin {ISSUE_BRANCH}"),
+    ] {
+        let decision = effective_agent_permission(&frontmatter, "bash", &command);
+        if decision != "allow" {
+            violations.push(format!(
+                "named issue-branch publication resolves to {decision} instead of allow: {command}"
+            ));
+        }
+    }
+
+    for command in [
+        "git push origin HEAD".to_owned(),
+        "git push --set-upstream origin HEAD".to_owned(),
+        "git push origin main".to_owned(),
+        "git push origin refs/heads/main".to_owned(),
+        "git push --set-upstream origin main".to_owned(),
+        "git push --set-upstream origin refs/heads/main".to_owned(),
+        "git push -u origin main".to_owned(),
+        "git push --force origin main".to_owned(),
+        "git push --force-with-lease origin main".to_owned(),
+        "git push origin +main".to_owned(),
+        "git push origin +refs/heads/main:refs/heads/main".to_owned(),
+        format!("git push origin {ISSUE_BRANCH}:main"),
+        format!("git push origin {ISSUE_BRANCH}:refs/heads/main"),
+        format!("git push --force origin {ISSUE_BRANCH}"),
+        format!("git push --force-with-lease origin {ISSUE_BRANCH}"),
+        format!("git push origin {ISSUE_BRANCH} --force"),
+    ] {
+        let decision = effective_agent_permission(&frontmatter, "bash", &command);
+        if decision != "deny" {
+            violations.push(format!(
+                "branch-sensitive, base-branch, or force push resolves to {decision} instead of deny: {command}"
+            ));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "{PR_PUBLISHER_AGENT} must allow explicit issue-branch publication while denying HEAD aliases, base refspecs, and force variants under last-match permission evaluation:\n- {}",
+        violations.join("\n- ")
+    );
+}
+
+#[test]
+fn publisher_issue_edit_permissions_allow_only_two_status_transitions() {
+    let (frontmatter, _) = agent_file(PR_PUBLISHER_AGENT);
+    let bash_rules = permission_rules(&frontmatter, "bash");
+    let mut violations = Vec::new();
+    let issue_edit_allow_patterns: Vec<_> = bash_rules
+        .iter()
+        .filter(|(pattern, action)| pattern.starts_with("gh issue edit ") && action == "allow")
+        .map(|(pattern, _)| pattern.as_str())
+        .collect();
+
+    if issue_edit_allow_patterns != STATUS_TRANSITION_ALLOW_PATTERNS {
+        violations.push(format!(
+            "the only issue-edit allow patterns must be the two complete remove/add transitions; found {issue_edit_allow_patterns:?}"
+        ));
+    }
+
+    for command in [
+        TO_IMPLEMENTATION_COMMAND,
+        TO_REVIEW_COMMAND,
+        "gh issue edit 987 --remove-label status:review --add-label status:implementation",
+        "gh issue edit 987 --remove-label status:implementation --add-label status:review",
+    ] {
+        let decision = effective_agent_permission(&frontmatter, "bash", command);
+        if decision != "allow" {
+            violations.push(format!(
+                "complete mutually exclusive status transition resolves to {decision} instead of allow: {command}"
+            ));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "{PR_PUBLISHER_AGENT} issue-edit permissions must expose only the two complete status transitions under last-match evaluation:\n- {}",
+        violations.join("\n- ")
+    );
+}
+
+#[test]
+fn publisher_issue_edit_permissions_deny_unrelated_mutations() {
+    let (frontmatter, _) = agent_file(PR_PUBLISHER_AGENT);
+    let mut violations = Vec::new();
+
+    for command in [
+        "gh issue edit 121 --title \"Unrelated retitle\"",
+        "gh issue edit 121 --body \"Unrelated body\"",
+        "gh issue edit 121 --body-file notes.md",
+        "gh issue edit 121 --add-assignee @me",
+        "gh issue edit 121 --remove-assignee @me",
+        "gh issue edit 121 --milestone next",
+        "gh issue edit 121 --remove-milestone",
+        "gh issue edit 121 --add-project Roadmap",
+        "gh issue edit 121 --remove-project Roadmap",
+        "gh issue edit 121 --add-label unrelated",
+        "gh issue edit 121 --remove-label unrelated",
+        "gh issue edit 121 --repo another/repository --remove-label status:review --add-label status:implementation",
+        "gh issue edit 121 --title \"Retitle\" --remove-label status:review --add-label status:implementation",
+        "gh issue edit 121 --remove-label status:review --add-label status:implementation --body \"Also mutate body\"",
+        "gh issue edit 121 --add-label unrelated --remove-label status:review --add-label status:implementation",
+        "gh issue edit 121 --remove-label unrelated --remove-label status:review --add-label status:implementation",
+    ] {
+        let decision = effective_agent_permission(&frontmatter, "bash", command);
+        if decision != "deny" {
+            violations.push(format!(
+                "unrelated or mixed issue mutation resolves to {decision} instead of deny: {command}"
+            ));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "{PR_PUBLISHER_AGENT} must deny title/body/assignee/milestone/project/repository/arbitrary-label mutations, including mutations mixed into a status transition:\n- {}",
+        violations.join("\n- ")
+    );
+}
+
+#[test]
+fn publisher_status_transitions_cannot_leave_simultaneous_statuses() {
+    let (frontmatter, _) = agent_file(PR_PUBLISHER_AGENT);
+    let mut violations = Vec::new();
+
+    for command in [
+        "gh issue edit 121 --add-label status:implementation",
+        "gh issue edit 121 --add-label status:review",
+        "gh issue edit 121 --remove-label status:implementation",
+        "gh issue edit 121 --remove-label status:review",
+        "gh issue edit 121 --add-label status:implementation --add-label status:review",
+        "gh issue edit 121 --add-label status:implementation,status:review",
+        "gh issue edit 121 --remove-label status:implementation --remove-label status:review",
+        "gh issue edit 121 --remove-label status:review --add-label status:implementation --add-label status:review",
+        "gh issue edit 121 --remove-label status:implementation --add-label status:review --add-label status:implementation",
+        "gh issue edit 121 --add-label status:blocked",
+        "gh issue edit 121 --remove-label status:review --add-label status:blocked",
+    ] {
+        let decision = effective_agent_permission(&frontmatter, "bash", command);
+        if decision != "deny" {
+            violations.push(format!(
+                "incomplete, simultaneous, or arbitrary status mutation resolves to {decision} instead of deny: {command}"
+            ));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "{PR_PUBLISHER_AGENT} status permissions must enforce exactly one active status by denying add-only, remove-only, simultaneous, and arbitrary-status forms:\n- {}",
         violations.join("\n- ")
     );
 }
@@ -748,6 +892,27 @@ fn publisher_automates_issue_status_transitions_with_delivery_prerequisites() {
 
     for path in paths {
         let document = project_file(path).to_ascii_lowercase();
+        for command in [
+            "gh issue edit <issue> --remove-label status:review --add-label status:implementation",
+            "gh issue edit <issue> --remove-label status:implementation --add-label status:review",
+        ] {
+            if !document.contains(command) {
+                violations.push(format!(
+                    "{path} must state the exact paired status transition `{command}`"
+                ));
+            }
+        }
+
+        if !document.split("\n\n").any(|paragraph| {
+            paragraph.contains("exactly one")
+                && paragraph.contains("status:implementation")
+                && paragraph.contains("status:review")
+        }) {
+            violations.push(format!(
+                "{path} must state that exactly one of status:implementation and status:review is active"
+            ));
+        }
+
         let sets_implementation_after_red = document.split("\n\n").any(|paragraph| {
             paragraph.contains("red")
                 && paragraph.contains("status:implementation")
@@ -773,6 +938,12 @@ fn publisher_automates_issue_status_transitions_with_delivery_prerequisites() {
         if !sets_review_after_readiness_gates {
             violations.push(format!(
                 "{path} must set `status:review` only with no-blocker Reviewer evidence and required CI while marking the pull request ready"
+            ));
+        }
+
+        if !document.contains("only a human") || !document.contains("merge") {
+            violations.push(format!(
+                "{path} must retain human-only merge authority while documenting status transitions"
             ));
         }
     }

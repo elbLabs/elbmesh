@@ -221,8 +221,8 @@ fn publisher_automates_issue_status_transitions_without_merge_authority() {
 
     for rule in [
         "\"*\": deny",
-        "\"gh issue edit *\": allow",
-        "\"git push origin main\": deny",
+        "\"gh issue edit * --remove-label status:review --add-label status:implementation\": allow",
+        "\"gh issue edit * --remove-label status:implementation --add-label status:review\": allow",
         "\"git merge\": deny",
         "\"git merge *\": deny",
         "\"gh pr merge\": deny",
@@ -235,13 +235,27 @@ fn publisher_automates_issue_status_transitions_without_merge_authority() {
         }
     }
 
-    let broad_deny = bash_rules.find("\"*\": deny");
-    let issue_edit = bash_rules.find("\"gh issue edit *\": allow");
-    if !matches!((broad_deny, issue_edit), (Some(deny), Some(allow)) if deny < allow) {
+    if bash_rules
+        .lines()
+        .any(|line| line.trim() == "\"gh issue edit *\": allow")
+    {
         violations.push(
-            "Publisher Bash permissions must place narrow gh issue edit allowance after broad deny"
-                .to_owned(),
+            "Publisher Bash permissions must not allow broad `gh issue edit *` mutation".to_owned(),
         );
+    }
+
+    let broad_deny = bash_rules.find("\"*\": deny");
+    for transition in [
+        "\"gh issue edit * --remove-label status:review --add-label status:implementation\": allow",
+        "\"gh issue edit * --remove-label status:implementation --add-label status:review\": allow",
+    ] {
+        let transition = bash_rules.find(transition);
+        if !matches!((broad_deny, transition), (Some(deny), Some(allow)) if deny < allow) {
+            violations.push(
+                "Publisher Bash permissions must place each complete status-transition allowance after the broad deny"
+                    .to_owned(),
+            );
+        }
     }
 
     let publisher_skill_body = read_project_file(publisher_skill);
@@ -250,6 +264,25 @@ fn publisher_automates_issue_status_transitions_without_merge_authority() {
         (publisher_skill, publisher_skill_body.as_str()),
     ] {
         let normalized = document.to_ascii_lowercase();
+        for command in [
+            "gh issue edit <issue> --remove-label status:review --add-label status:implementation",
+            "gh issue edit <issue> --remove-label status:implementation --add-label status:review",
+        ] {
+            if !normalized.contains(command) {
+                violations.push(format!(
+                    "{path} must document the exact paired transition `{command}`"
+                ));
+            }
+        }
+        if !has_paragraph_with_all(
+            &normalized,
+            &["exactly one", "status:implementation", "status:review"],
+            &["active", "present", "applied"],
+        ) {
+            violations.push(format!(
+                "{path} must require exactly one active workflow status"
+            ));
+        }
         if !has_paragraph_with_all(
             &normalized,
             &["red", "status:implementation"],
