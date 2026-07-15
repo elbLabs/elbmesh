@@ -762,10 +762,7 @@ fn level_two_sections(document: &str) -> Vec<(String, String)> {
     sections
 }
 
-fn find_section<'a>(
-    sections: &'a [(String, String)],
-    predicate: impl Fn(&str) -> bool,
-) -> Option<&'a str> {
+fn find_section(sections: &[(String, String)], predicate: impl Fn(&str) -> bool) -> Option<&str> {
     sections
         .iter()
         .find(|(heading, _)| predicate(heading))
