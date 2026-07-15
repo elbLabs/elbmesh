@@ -192,7 +192,7 @@ Follow this loop:
 8. Blocking findings return to fresh Implementation, publication, and review sessions.
 9. After the Reviewer reports merge readiness with no blockers and required CI passes, a fresh PR Publisher appends cumulative readiness evidence to both the issue and PR, marks the pull request ready, and reports its URL.
 10. A human reviews and performs the merge; no agent has merge authority.
-11. Orchestrator requests human-applied issue-label updates and records phase status, open questions, and next dependencies.
+11. Orchestrator requests human-applied issue-label updates and records phase status, open questions, and next dependencies. After merge, the human replaces the active status label with `status:merged` so queue inspection reflects the merge.
 
 ## Phase Checkpoint Loop
 
@@ -238,6 +238,21 @@ known limitations or follow-up tasks
 ```
 
 An MR must not include unplanned refactors or unrelated cleanup. If cleanup is needed, the Orchestrator creates a separate GitHub Issue.
+
+### Enforced Pull Request Gates
+
+GitHub enforces the ADR 0014 quality and review gates on pull requests targeting `main`:
+
+```text
+The Rust CI workflow runs for pull request changes and when a draft becomes ready.
+The required Rust CI check runs cargo fmt --check.
+The required Rust CI check runs cargo clippy --all-targets --all-features -- -D warnings.
+The required Rust CI check runs cargo test --all.
+GitHub blocks the normal merge path until Rust CI passes.
+GitHub requires at least one approving review; a pull request author cannot approve their own change.
+```
+
+Repository enforcement does not replace local verification or the role handoffs in the MR loop. The Implementation Agent still runs every gate, the independent Reviewer still reports readiness, and only a human may merge.
 
 ## GitHub Issue Rules
 

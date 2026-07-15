@@ -82,9 +82,7 @@ fn github_pull_request_enforcement_has_main_branch_rules() {
         .unwrap_or_default();
     let required_check_contexts: Vec<_> = rules
         .iter()
-        .filter(|rule| {
-            rule.get("type").and_then(Value::as_str) == Some("required_status_checks")
-        })
+        .filter(|rule| rule.get("type").and_then(Value::as_str) == Some("required_status_checks"))
         .filter_map(|rule| rule.pointer("/parameters/required_status_checks"))
         .filter_map(Value::as_array)
         .flatten()
