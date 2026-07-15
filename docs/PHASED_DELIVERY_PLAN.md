@@ -26,6 +26,8 @@ Clippy passes with warnings denied once configured.
 Docs are updated when architecture, workflow, or vocabulary changes.
 No unplanned refactors or future-proof abstractions.
 Abstractions exist only to protect a boundary, support an adapter, or remove real duplication.
+Pull requests targeting main cannot merge until required Rust CI passes.
+Pull requests targeting main require at least one approving review independent of the author.
 ```
 
 Recommended verification commands:
@@ -128,6 +130,7 @@ docs/PHASED_DELIVERY_PLAN.md
 ADRs 0001-0014
 .opencode/skills/*/SKILL.md
 workspace and elbmesh-core crate
+pull request Rust CI and enforced main-branch quality/review rules
 ```
 
 Exit criteria:
@@ -137,6 +140,8 @@ The Orchestrator can create phase-scoped task cards.
 Implementation agents know the required docs and quality gates.
 PR Publisher can automatically open a linked draft PR and mark it ready after review without merging.
 `elbmesh-reviewer` reports final PR merge readiness after explicit review criteria pass; a human performs the merge.
+GitHub blocks the normal merge path until required Rust formatting, Clippy, and test checks pass and one independent approval exists.
+Merged issues carry `status:merged` when the operational queue is inspected.
 Current tests pass.
 ```
 
