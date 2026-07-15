@@ -1,4 +1,4 @@
-use std::{fs, path::Path};
+use std::{fs, path::Path, process::Command};
 
 use serde_json::Value;
 
@@ -7,6 +7,7 @@ const TEST_WRITER_AGENT: &str = ".opencode/agents/elbmesh-test-writer.md";
 const IMPLEMENTER_AGENT: &str = ".opencode/agents/elbmesh-implementer.md";
 const REVIEWER_AGENT: &str = ".opencode/agents/elbmesh-reviewer.md";
 const PR_PUBLISHER_AGENT: &str = ".opencode/agents/elbmesh-pr-publisher.md";
+const RUST_CI_WORKFLOW: &str = ".github/workflows/rust-ci.yml";
 const REVIEWER_BASH_ALLOWLIST: [&str; 10] = [
     "cargo fmt --check",
     "cargo clippy --all-targets --all-features -- -D warnings",
@@ -19,6 +20,102 @@ const REVIEWER_BASH_ALLOWLIST: [&str; 10] = [
     "gh pr view --json number,title,body,state,isDraft,baseRefName,headRefName,url",
     "gh pr checks",
 ];
+
+#[test]
+fn github_pull_request_enforcement_has_rust_ci_workflow() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join(RUST_CI_WORKFLOW);
+    let workflow = fs::read_to_string(&path).unwrap_or_else(|error| {
+        panic!(
+            "pull request Rust CI workflow `{RUST_CI_WORKFLOW}` must exist and be readable: {error}"
+        )
+    });
+    let lines: Vec<_> = workflow.lines().map(str::trim).collect();
+
+    assert!(
+        lines.iter().any(|line| {
+            *line == "pull_request:"
+                || *line == "on: pull_request"
+                || (line.starts_with("on: [") && line.contains("pull_request"))
+        }),
+        "{RUST_CI_WORKFLOW} must trigger for pull_request events"
+    );
+
+    for command in [
+        "cargo fmt --check",
+        "cargo clippy --all-targets --all-features -- -D warnings",
+        "cargo test --all",
+    ] {
+        assert!(
+            workflow.contains(command),
+            "{RUST_CI_WORKFLOW} must run required Rust gate `{command}`"
+        );
+    }
+}
+
+#[test]
+#[ignore = "live GitHub ruleset contract; run explicitly with authenticated gh"]
+fn github_pull_request_enforcement_has_main_branch_rules() {
+    let output = Command::new("gh")
+        .args(["api", "repos/elbLabs/elbmesh/rules/branches/main"])
+        .output()
+        .expect("run `gh api repos/elbLabs/elbmesh/rules/branches/main`");
+
+    assert!(
+        output.status.success(),
+        "`gh api repos/elbLabs/elbmesh/rules/branches/main` must succeed before rules can be verified: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let response: Value = serde_json::from_slice(&output.stdout)
+        .unwrap_or_else(|error| panic!("GitHub branch rules response must be valid JSON: {error}"));
+    let rules = response
+        .as_array()
+        .expect("GitHub branch rules response must be a JSON array");
+    let approval_count = rules
+        .iter()
+        .filter(|rule| rule.get("type").and_then(Value::as_str) == Some("pull_request"))
+        .filter_map(|rule| rule.pointer("/parameters/required_approving_review_count"))
+        .filter_map(Value::as_u64)
+        .max()
+        .unwrap_or_default();
+    let required_check_contexts: Vec<_> = rules
+        .iter()
+        .filter(|rule| {
+            rule.get("type").and_then(Value::as_str) == Some("required_status_checks")
+        })
+        .filter_map(|rule| rule.pointer("/parameters/required_status_checks"))
+        .filter_map(Value::as_array)
+        .flatten()
+        .filter_map(|check| check.get("context").and_then(Value::as_str))
+        .collect();
+    let has_required_rust_ci = required_check_contexts.iter().any(|context| {
+        let context = context.to_ascii_lowercase();
+        context.contains("rust") && (context.contains("ci") || context.contains("quality"))
+    }) || ["fmt", "clippy", "test"].iter().all(|marker| {
+        required_check_contexts
+            .iter()
+            .any(|context| context.to_ascii_lowercase().contains(marker))
+    });
+    let mut violations = Vec::new();
+
+    if approval_count < 1 {
+        violations.push("no pull_request rule requires at least one approving review".to_owned());
+    }
+    if !has_required_rust_ci {
+        violations.push(format!(
+            "no required_status_checks rule requires the Rust CI checks; contexts were {required_check_contexts:?}"
+        ));
+    }
+
+    assert!(
+        violations.is_empty(),
+        "GitHub API returned successfully, but `main` does not enforce CI and independent review:\n- {}\nresponse: {}",
+        violations.join("\n- "),
+        String::from_utf8_lossy(&output.stdout)
+    );
+}
 
 #[test]
 fn project_config_selects_the_primary_elbmesh_orchestrator() {
