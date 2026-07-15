@@ -1,4 +1,4 @@
-use std::{fs, path::Path, process::Command};
+use std::{collections::BTreeSet, fs, path::Path, process::Command};
 
 use serde_json::Value;
 
@@ -255,7 +255,7 @@ fn canonical_active_flow_assigns_merge_readiness_only_to_reviewer() {
         ".opencode/skills/elbmesh-reviewer/SKILL.md",
         ".opencode/agents/elbmesh-orchestrator.md",
         ".opencode/skills/elbmesh-orchestrator/SKILL.md",
-        "docs/adr/0014-phased-mr-based-multi-agent-delivery.md",
+        "docs/AGENT_DELIVERY_HARNESS.md",
         "docs/DEVELOPMENT_WORKFLOW.md",
         "docs/AGENT_SKILLS.md",
     ];
@@ -500,6 +500,16 @@ fn pr_publisher_permissions_allow_publication_but_deny_direct_merge() {
         violations.push("Bash rules must begin with a broad deny".to_owned());
     }
 
+    if !bash_rules
+        .iter()
+        .any(|(pattern, action)| pattern == "gh issue edit *" && action == "allow")
+    {
+        violations.push(
+            "Bash rules must narrowly allow `gh issue edit *` for automatic status transitions"
+                .to_owned(),
+        );
+    }
+
     for (operation, command) in [
         ("create the issue branch", "git switch -c issue-147"),
         ("inspect status", "git status --short"),
@@ -524,6 +534,14 @@ fn pr_publisher_permissions_allow_publication_but_deny_direct_merge() {
         (
             "publish evidence",
             "gh pr comment 148 --body \"Green proof\"",
+        ),
+        (
+            "set implementation status after red publication",
+            "gh issue edit 121 --remove-label status:review --add-label status:implementation",
+        ),
+        (
+            "set review status after review readiness gates",
+            "gh issue edit 121 --remove-label status:implementation --add-label status:review",
         ),
         ("mark the pull request ready", "gh pr ready 148"),
     ] {
@@ -643,7 +661,8 @@ fn harness_agent_skills_include_canonical_required_reading() {
         "docs/GLOSSARY.md",
         "docs/DEVELOPMENT_WORKFLOW.md",
         "docs/HUMAN_DECISION_LOOP.md",
-        "docs/PHASED_DELIVERY_PLAN.md",
+        "docs/DELIVERY_ROADMAP.md",
+        "docs/AGENT_SKILLS.md",
         "docs/IMPLEMENTATION_PLAN.md",
         "docs/adr/",
     ];
@@ -681,7 +700,8 @@ fn every_concrete_elbmesh_skill_includes_canonical_required_reading() {
         "docs/GLOSSARY.md",
         "docs/DEVELOPMENT_WORKFLOW.md",
         "docs/HUMAN_DECISION_LOOP.md",
-        "docs/PHASED_DELIVERY_PLAN.md",
+        "docs/DELIVERY_ROADMAP.md",
+        "docs/AGENT_SKILLS.md",
         "docs/IMPLEMENTATION_PLAN.md",
         "docs/adr/",
     ];
@@ -719,75 +739,59 @@ fn every_concrete_elbmesh_skill_includes_canonical_required_reading() {
 }
 
 #[test]
-fn canonical_queue_docs_keep_label_mutations_human_applied() {
+fn publisher_automates_issue_status_transitions_with_delivery_prerequisites() {
     let paths = [
-        "docs/HUMAN_DECISION_LOOP.md",
-        "docs/adr/0015-use-github-issues-as-operational-queue.md",
+        PR_PUBLISHER_AGENT,
+        ".opencode/skills/elbmesh-pr-publisher/SKILL.md",
     ];
     let mut violations = Vec::new();
 
     for path in paths {
         let document = project_file(path).to_ascii_lowercase();
-        let has_shell_free_handoff = document.split("\n\n").any(|paragraph| {
-            paragraph.contains("orchestrator")
-                && (paragraph.contains("issue-label transition")
-                    || paragraph.contains("label transition"))
-                && paragraph.contains("report")
-                && paragraph.contains("request")
-                && paragraph.contains("human")
-                && paragraph.contains("appl")
-                && paragraph.contains("label mutation")
-                && [
-                    "bash is denied",
-                    "bash denied",
-                    "no shell",
-                    "without shell",
-                    "shell-free",
-                ]
-                .iter()
-                .any(|term| paragraph.contains(term))
+        let sets_implementation_after_red = document.split("\n\n").any(|paragraph| {
+            paragraph.contains("red")
+                && paragraph.contains("status:implementation")
+                && ["set", "keep", "transition", "move"]
+                    .iter()
+                    .any(|term| paragraph.contains(term))
         });
-        if !has_shell_free_handoff {
+        if !sets_implementation_after_red {
             violations.push(format!(
-                "{path} must state that the shell-free Orchestrator reports and requests issue-label transitions while a human applies label mutations"
+                "{path} must automatically set or keep `status:implementation` after accepted red publication"
             ));
         }
 
-        let manages_desired_queue_state = document.split("\n\n").any(|paragraph| {
-            paragraph.contains("orchestrator")
-                && paragraph.contains("manag")
-                && paragraph.contains("desired queue state")
+        let sets_review_after_readiness_gates = document.split("\n\n").any(|paragraph| {
+            paragraph.contains("reviewer")
+                && paragraph.contains("ci")
+                && paragraph.contains("ready")
+                && paragraph.contains("status:review")
+                && ["no blocker", "no-blocker", "no blocking"]
+                    .iter()
+                    .any(|term| paragraph.contains(term))
         });
-        if !manages_desired_queue_state {
+        if !sets_review_after_readiness_gates {
             violations.push(format!(
-                "{path} must preserve the Orchestrator's responsibility to manage desired queue state"
+                "{path} must set `status:review` only with no-blocker Reviewer evidence and required CI while marking the pull request ready"
             ));
-        }
-
-        for line in document.lines() {
-            if grants_orchestrator_direct_label_mutation(line) {
-                violations.push(format!(
-                    "{path} grants direct label mutation authority to the Orchestrator: `{}`",
-                    line.trim()
-                ));
-            }
         }
     }
 
     assert!(
         violations.is_empty(),
-        "canonical issue-label authority violations:\n- {}",
+        "Publisher issue-status automation violations:\n- {}",
         violations.join("\n- ")
     );
 }
 
 #[test]
-fn harness_documentation_keeps_merge_authority_human_and_tracks_issue_transitions() {
+fn harness_documentation_keeps_human_merge_and_tracks_automated_issue_statuses() {
     let path = "docs/AGENT_DELIVERY_HARNESS.md";
     let documentation = project_file(path).to_ascii_lowercase();
+    let paragraphs: Vec<_> = documentation.split("\n\n").collect();
 
     assert!(
-        documentation.split("\n\n").any(|paragraph| {
+        paragraphs.iter().any(|paragraph| {
             ["human", "merge", "authorit"]
                 .iter()
                 .all(|term| paragraph.contains(term))
@@ -795,19 +799,50 @@ fn harness_documentation_keeps_merge_authority_human_and_tracks_issue_transition
         "{path} must state that merge authority remains human"
     );
 
-    let labels = [
-        "status:tests-needed",
-        "status:tests-ready",
-        "status:implementation",
-        "status:review",
-        "status:merged",
-    ];
+    let observed_statuses: BTreeSet<_> = documentation
+        .split(|character: char| {
+            !(character.is_ascii_alphanumeric() || character == ':' || character == '-')
+        })
+        .filter(|token| token.starts_with("status:") && token.len() > "status:".len())
+        .collect();
+    assert_eq!(
+        observed_statuses,
+        BTreeSet::from(["status:implementation", "status:review"]),
+        "{path} must use only the two active issue statuses"
+    );
+
     assert!(
-        documentation.split("\n\n").any(|paragraph| {
-            (paragraph.contains("transition") || paragraph.contains("->"))
-                && contains_in_order(paragraph, &labels)
+        paragraphs.iter().any(|paragraph| {
+            paragraph.contains("publisher")
+                && paragraph.contains("red")
+                && paragraph.contains("status:implementation")
+                && ["set", "keep", "transition", "move"]
+                    .iter()
+                    .any(|term| paragraph.contains(term))
         }),
-        "{path} must document the normal issue-label transition from tests-needed through human-approved merge"
+        "{path} must assign the post-red `status:implementation` transition to the Publisher"
+    );
+    assert!(
+        paragraphs.iter().any(|paragraph| {
+            paragraph.contains("publisher")
+                && paragraph.contains("reviewer")
+                && paragraph.contains("ci")
+                && paragraph.contains("ready")
+                && paragraph.contains("status:review")
+                && ["no blocker", "no-blocker", "no blocking"]
+                    .iter()
+                    .any(|term| paragraph.contains(term))
+        }),
+        "{path} must assign `status:review` to the Publisher only after no-blocker Reviewer evidence and required CI"
+    );
+    assert!(
+        paragraphs.iter().any(|paragraph| {
+            paragraph.contains("github")
+                && paragraph.contains("merged")
+                && paragraph.contains("closed")
+                && paragraph.contains("state")
+        }),
+        "{path} must use merged/closed GitHub state instead of a merged status label"
     );
 }
 
@@ -848,40 +883,37 @@ fn harness_documents_automatic_pull_request_creation_and_human_only_merge() {
 }
 
 #[test]
-fn harness_documentation_makes_label_transitions_human_applied() {
+fn harness_documentation_uses_dependency_order_without_an_active_phase_gate() {
     let path = "docs/AGENT_DELIVERY_HARNESS.md";
     let documentation = project_file(path).to_ascii_lowercase();
-    let labels = [
-        "status:tests-needed",
-        "status:tests-ready",
-        "status:implementation",
-        "status:review",
-        "status:merged",
+    let forbidden_phase_contracts = [
+        "## phase contract",
+        "active phase",
+        "planned phase",
+        "phase-scoped",
+        "red phase",
+        "green phase",
+        "review phase",
     ];
-    let transition_paragraph = documentation
-        .split("\n\n")
-        .find(|paragraph| contains_in_order(paragraph, &labels))
-        .unwrap_or_else(|| panic!("{path} must preserve the normal issue-label transition"));
-    let shell_free_handoff = transition_paragraph.contains("orchestrator")
-        && transition_paragraph.contains("report")
-        && transition_paragraph.contains("request")
-        && transition_paragraph.contains("human")
-        && ["human applies", "human performs", "human makes"]
-            .iter()
-            .any(|term| transition_paragraph.contains(term))
-        && [
-            "bash is denied",
-            "bash denied",
-            "no shell",
-            "without shell",
-            "shell-free",
-        ]
+    let retained: Vec<_> = forbidden_phase_contracts
         .iter()
-        .any(|term| transition_paragraph.contains(term));
+        .copied()
+        .filter(|term| documentation.contains(term))
+        .collect();
 
     assert!(
-        shell_free_handoff,
-        "{path} must state that the shell-free Orchestrator reports readiness and requests each label transition while the human applies it"
+        retained.is_empty(),
+        "{path} must not retain active phase gates: {retained:?}"
+    );
+    assert!(
+        documentation.split("\n\n").any(|paragraph| {
+            paragraph.contains("dependency")
+                && paragraph.contains("github issue")
+                && ["order", "sequence"]
+                    .iter()
+                    .any(|term| paragraph.contains(term))
+        }),
+        "{path} must describe dependency-ordered GitHub Issue delivery"
     );
 }
 
@@ -1200,7 +1232,7 @@ fn orchestrator_cannot_implement_or_merge() {
 }
 
 #[test]
-fn orchestrator_denies_all_bash_and_reports_transitions_to_the_human() {
+fn orchestrator_denies_all_bash_and_delegates_status_transitions_to_the_publisher() {
     let (frontmatter, body) = agent_file(ORCHESTRATOR_AGENT);
     let mut violations = Vec::new();
 
@@ -1218,7 +1250,7 @@ fn orchestrator_denies_all_bash_and_reports_transitions_to_the_human() {
 
     for command in [
         "git status",
-        "gh issue edit 147 --remove-label status:tests-needed --add-label status:tests-ready",
+        "gh issue edit 147 --remove-label status:implementation --add-label status:review",
         "git\tmerge implementation",
         "git -c merge.ff=only merge implementation",
         "gh\tpr merge 147 --auto",
@@ -1234,22 +1266,25 @@ fn orchestrator_denies_all_bash_and_reports_transitions_to_the_human() {
     }
 
     let body = body.to_ascii_lowercase();
-    let reports_transitions = body.split("\n\n").any(|paragraph| {
-        paragraph.contains("label")
-            && paragraph.contains("transition")
-            && paragraph.contains("report")
-            && paragraph.contains("human")
-            && ["bash", "shell", "command"]
-                .iter()
-                .any(|term| paragraph.contains(term))
-            && ["do not", "must not", "cannot", "never", "rather than"]
-                .iter()
-                .any(|term| paragraph.contains(term))
-    });
-    if !reports_transitions {
+    let delegates_transitions = body.contains("publisher")
+        && body.contains("status:implementation")
+        && body.contains("status:review")
+        && ["delegate", "owns", "sets", "changes"]
+            .iter()
+            .any(|term| body.contains(term));
+    if !delegates_transitions {
         violations.push(
-            "guidance must make coordination and label transitions reports for the human rather than shell mutations"
+            "guidance must delegate automatic `status:implementation` and `status:review` transitions to the Publisher"
                 .to_owned(),
+        );
+    }
+
+    if body
+        .split("\n\n")
+        .any(paragraph_requires_human_label_transition)
+    {
+        violations.push(
+            "guidance must not request routine human-applied issue-label transitions".to_owned(),
         );
     }
 
@@ -1574,45 +1609,23 @@ fn contains_in_order(text: &str, markers: &[&str]) -> bool {
     true
 }
 
-fn grants_orchestrator_direct_label_mutation(line: &str) -> bool {
-    let words: Vec<_> = line
-        .split(|character: char| !character.is_ascii_alphabetic())
-        .filter(|word| !word.is_empty())
-        .collect();
-    let mutation_verbs = [
-        "add", "adds", "adding", "apply", "applies", "applying", "change", "changes", "changing",
-        "edit", "edits", "editing", "manage", "manages", "managing", "mutate", "mutates",
-        "mutating", "remove", "removes", "removing", "set", "sets", "setting", "update", "updates",
-        "updating",
-    ];
-    let negations = ["cannot", "never", "no", "not", "rather", "without"];
+fn paragraph_requires_human_label_transition(paragraph: &str) -> bool {
+    let describes_human_gate = paragraph.contains("human")
+        && paragraph.contains("label")
+        && (paragraph.contains("transition") || paragraph.contains("mutation"))
+        && (paragraph.contains("request") || paragraph.contains("appl"));
+    let rejects_human_gate = [
+        "does not ask",
+        "must not ask",
+        "no human-applied",
+        "without human-applied",
+        "not require human",
+        "publisher, not",
+    ]
+    .iter()
+    .any(|term| paragraph.contains(term));
 
-    if words
-        .first()
-        .is_some_and(|word| mutation_verbs.contains(word))
-        && words
-            .iter()
-            .take(4)
-            .any(|word| ["label", "labels"].contains(word))
-    {
-        return true;
-    }
-
-    let Some(orchestrator) = words.iter().position(|word| *word == "orchestrator") else {
-        return false;
-    };
-
-    words
-        .iter()
-        .enumerate()
-        .skip(orchestrator + 1)
-        .filter(|(_, word)| ["label", "labels"].contains(word))
-        .any(|(label, _)| {
-            let authority = &words[orchestrator + 1..label];
-            authority.iter().any(|word| mutation_verbs.contains(word))
-                && !authority.contains(&"human")
-                && !authority.iter().any(|word| negations.contains(word))
-        })
+    describes_human_gate && !rejects_human_gate
 }
 
 #[derive(Debug)]
