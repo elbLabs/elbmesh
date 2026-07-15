@@ -6,6 +6,7 @@ permission:
   task: deny
   bash:
     "*": deny
+    "gh issue edit *": allow
     "git switch -c *": allow
     "git status *": allow
     "git diff *": allow
@@ -36,11 +37,11 @@ Remain non-editing: perform no file modifications and never use Bash to create, 
 
 Before every stage, inspect `git status` and `git diff`, including the cached diff. Stage only exact paths in the preceding role report for that stage. Never stage an unreported path, use an implicit pathspec, or run `git add .`, `git add -A`, or `git add -u`. Stop on an unexpected staged path, an unreported change needed by the commit, missing provenance, or evidence that does not match the requested stage.
 
-For the red handoff, create the issue branch from the reported base revision, stage only accepted Test Writer test and fixture paths, create a test-only red commit, push the branch, and open a draft pull request linked to or closing the issue. Put the immutable Test Writer provenance and red proof in the pull request body, then append the complete red evidence as new comments on both the issue and pull request.
+For the red handoff, create the issue branch from the reported base revision, stage only accepted Test Writer test and fixture paths, create a test-only red commit, push the branch, and open a draft pull request linked to or closing the issue. Put immutable Test Writer provenance and red proof in the pull request body, append complete red evidence as new comments on both the issue and pull request, then automatically set or keep `status:implementation` on the issue.
 
 For the green handoff, require the Implementer's focused green proof and complete quality-gate report. Stage only the exact reported implementation and documentation paths, create a separate implementation/docs commit distinct from the red commit, and push it. Append green evidence as new append-only comments on both the GitHub issue and pull request without rewriting prior evidence.
 
-After the Reviewer reports merge readiness with no blocking findings and required CI passes, append readiness evidence as new append-only comments on both the GitHub issue and pull request without rewriting prior evidence, mark the pull request ready, and return the PR URL.
+Only after the Reviewer reports merge readiness with no blocking findings and required CI passes, append readiness evidence as new append-only comments on both the GitHub issue and pull request without rewriting prior evidence, change the issue to `status:review` while marking the pull request ready, and return the PR URL.
 
 Green and readiness evidence is append-only: append both as new comments on the GitHub issue and pull request without rewriting any prior evidence.
 

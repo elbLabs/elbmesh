@@ -1,50 +1,43 @@
 # Human Decision Loop
 
-The human should not be asked to review routine implementation details. Human input is most valuable when the team needs semantic judgment, prioritization, or an architecture trade-off.
+Routine agent delivery is autonomous. A human is not asked to apply issue labels, confirm red/green handoffs, or approve intermediate publication; the planned human interaction in the pull request flow is final review and merge.
 
-## When To Ask The Human
+This loop is an exception for semantic conflicts that agents cannot safely resolve from the expanded GitHub Issue, accepted tests, ADRs, glossary, and architecture rules. When invoked, delivery stops until the decision is recorded. It does not become a routine gate.
 
-Ask for human input at these gates:
+## When A Decision Is Required
 
-```text
-Phase start: confirm the next phase is still the right priority.
-Task shaping: confirm business semantics and acceptance criteria for a new issue.
-Domain boundary: decide Resource vs Component, Event naming, View scope, or Reaction graph shape.
-External boundary: decide source of truth, freshness, External Operation semantics, or provider metadata.
-Policy decision: decide whether a rule blocks, requires approval, or only warns.
-Architecture trade-off: choose between minimal implementation and added abstraction.
-Scope conflict: decide whether newly discovered work belongs in the current issue or a follow-up.
-Review escalation: resolve disagreement between implementer and reviewer.
-Demo checkpoint: confirm behavior is understandable and useful before advancing phases.
-```
-
-Do not ask the human about:
+Use a Human Decision Request only for:
 
 ```text
-routine formatting
-obvious compiler errors
-small internal naming choices that do not affect the model
-mechanical test fixes
-implementation details already decided by ADRs
+Business or domain semantics not fixed by the issue.
+Resource versus Component ownership.
+Action/Event naming with different domain meaning.
+Source of truth, freshness, Policy, or External Operation semantics.
+An architecture trade-off with materially different consequences.
+A scope conflict that changes acceptance criteria or issue dependencies.
+A conflict between accepted tests/fixtures and the task card or architecture.
+A Reviewer escalation that cannot be resolved from existing contracts.
+A capability/milestone checkpoint that exposes a product decision.
 ```
+
+Do not ask the human about formatting, compiler errors, mechanical fixes, normal test/implementation/publication handoffs, routine issue-label mutation, or implementation details already decided by ADRs.
 
 ## Decision Request Format
 
-Every human decision request must be short, concrete, and option-based.
-
-Use this format:
+Every request is short, concrete, option-based, and linked to the relevant GitHub Issue.
 
 ```markdown
 # Decision Needed: <short title>
 
 ## Why You Are Being Asked
 
-<One or two sentences explaining why this is a human/domain decision, not routine implementation.>
+<Why this is semantic judgment rather than routine implementation.>
 
-## Context
+## Dependency And Capability Context
 
-- Phase:
 - Issue/PR:
+- Depends on / blocks:
+- Capability or milestone:
 - Relevant docs/ADRs:
 - Current blocker:
 
@@ -74,7 +67,7 @@ Choose Option A because ...
 
 ## Default If You Do Not Care
 
-If this is not important to you, the Orchestrator will choose Option A.
+If this is not important, the Orchestrator recommends Option A; work remains stopped until the decision is recorded.
 
 ## Decision Needed
 
@@ -90,67 +83,27 @@ Present at most three options by default.
 Recommend one option.
 Explain consequences in domain/product language first.
 Mention implementation consequences second.
-Avoid jargon unless it is already in the glossary.
-State the default if the human does not care.
-Capture the answer in the issue or ADR.
-Create or update an ADR if the decision changes architecture.
+Use glossary vocabulary.
+State what issue dependency or acceptance criterion changes.
+Capture the answer in the issue and an ADR when architecture changes.
 ```
 
-## Examples
+The Orchestrator remains shell-free. It coordinates the decision record but does not mutate GitHub state. A decision does not require a workflow status change; delivery stays in the implementation status while stopped and resumes with fresh role sessions when the recorded contract is complete.
 
-### Resource Boundary
+## Accepted-Test Conflict Handling
+
+Accepted tests and fixtures are immutable to Implementers. If one conflicts with the task card or architecture, the Implementer reports the conflict to the Orchestrator for human confirmation and stops. Only after human confirmation may a fresh Test Writer revise the accepted test or fixture; the Implementer never revises it.
+
+## Response Handling
+
+After the human answers the exceptional request, the Orchestrator:
 
 ```text
-Decision: Is Order Confirmation a Resource or a Component of Sales Order?
-
-Option A (Recommended): Resource
-Meaning: It has its own lifecycle, events, external identity, and actions.
-Consequence: Cross-document flow uses Reactions.
-
-Option B: Component
-Meaning: It only changes inside Sales Order.
-Consequence: Simpler now, but harder if it later needs independent approval, download, sync, or audit.
+Confirms the decision is recorded in the GitHub Issue or pull request.
+Delegates ADR creation or supersession when architecture changes.
+Delegates acceptance-criteria and explicit-dependency updates when needed.
+Passes the exact changed contract to fresh role sessions.
+Delegates any later routine issue-status publication to the Publisher.
 ```
 
-### External Freshness
-
-```text
-Decision: Should Invoice status be observed_on_action or live_on_read?
-
-Option A (Recommended for v1): observed_on_action
-Meaning: Store what we observed during explicit Actions.
-Consequence: Replay remains deterministic and no background sync is needed.
-
-Option B: live_on_read
-Meaning: Query LexOffice when humans/agents view the Invoice.
-Consequence: More current read experience, but needs enrichment design and external read handling.
-```
-
-### Scope Control
-
-```text
-Decision: Should ActionJournal be added before Manifest validation?
-
-Option A (Recommended): Finish ActionJournal first
-Meaning: Build audit/recovery foundation before architecture checks.
-Consequence: External Operations and Reactions have a place to record execution state later.
-
-Option B: Start Manifest validation first
-Meaning: Strengthen architecture checks before more runtime work.
-Consequence: Slower path to external operation runtime.
-```
-
-## Human Response Handling
-
-After the human answers, the Orchestrator manages desired queue state.
-Because Bash is denied, the shell-free Orchestrator reports readiness and requests each issue-label transition; a human applies every label mutation.
-
-The Orchestrator must:
-
-```text
-Record the decision in the GitHub issue or PR.
-Report the desired issue-label transition from status:blocked/status:decision-needed to the next actionable status and request that the human apply it.
-Create or update an ADR if the decision affects architecture.
-Update task acceptance criteria if needed.
-Tell the next assigned agent exactly what changed.
-```
+The normal final step remains human review and merge. Only a human performs a merge.

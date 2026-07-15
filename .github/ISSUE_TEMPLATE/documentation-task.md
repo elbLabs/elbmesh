@@ -2,7 +2,7 @@
 name: Documentation Task
 about: ADR, workflow, glossary, plan, or agent-skill documentation work
 title: "[Docs] "
-labels: ["status:planned", "type:docs"]
+labels: ["status:implementation", "type:docs"]
 assignees: ""
 ---
 
@@ -20,7 +20,7 @@ Why is the change needed?
 - [ ] `docs/GOAL.md`
 - [ ] `docs/GLOSSARY.md`
 - [ ] `docs/DEVELOPMENT_WORKFLOW.md`
-- [ ] `docs/PHASED_DELIVERY_PLAN.md`
+- [ ] `docs/DELIVERY_ROADMAP.md`
 - [ ] `docs/AGENT_SKILLS.md`
 - [ ] `docs/IMPLEMENTATION_PLAN.md`
 - [ ] `docs/adr/`
@@ -29,6 +29,12 @@ Why is the change needed?
 ## Acceptance Criteria
 
 -
+
+## Dependencies And Capability Context
+
+- Depends on:
+- Blocks:
+- Capability or milestone:
 
 ## Quality Gates
 

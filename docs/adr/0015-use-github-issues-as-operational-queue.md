@@ -1,6 +1,6 @@
 # ADR 0015: Use GitHub Issues as the Operational Queue
 
-Status: Accepted
+Status: Superseded by ADR 0017
 
 Date: 2026-07-04
 
