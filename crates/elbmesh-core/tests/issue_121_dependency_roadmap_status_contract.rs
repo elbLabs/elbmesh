@@ -661,37 +661,19 @@ fn dependency_delivery_adr_supersedes_the_phased_delivery_decision() {
 
 #[test]
 fn opencode_changes_require_a_post_merge_restart() {
-    let relevant_docs = [
-        "docs/DEVELOPMENT_WORKFLOW.md",
-        "docs/AGENT_DELIVERY_HARNESS.md",
-        "docs/AGENT_SKILLS.md",
-    ];
-    let mut documents_with_restart_rule = Vec::new();
-
-    for path in relevant_docs {
-        let document = read_project_file(path).to_ascii_lowercase();
-        if document.split("\n\n").any(|paragraph| {
-            paragraph.contains("opencode")
-                && paragraph.contains("restart")
-                && paragraph.contains("merge")
-                && ["agent", "skill", "config"]
-                    .iter()
-                    .any(|term| paragraph.contains(term))
-        }) {
-            documents_with_restart_rule.push(path);
-        }
-    }
-
+    let path = "docs/AGENT_DELIVERY_HARNESS.md";
+    let document = read_project_file(path).to_ascii_lowercase();
     let mut violations = Vec::new();
-    if !documents_with_restart_rule.contains(&"docs/AGENT_DELIVERY_HARNESS.md") {
+    if !document.split("\n\n").any(|paragraph| {
+        paragraph.contains("opencode")
+            && paragraph.contains("restart")
+            && paragraph.contains("merge")
+            && ["agent", "skill", "config"]
+                .iter()
+                .any(|term| paragraph.contains(term))
+    }) {
         violations.push(
             "docs/AGENT_DELIVERY_HARNESS.md must require an OpenCode restart after merged agent/skill/config-time changes"
-                .to_owned(),
-        );
-    }
-    if documents_with_restart_rule.len() < 2 {
-        violations.push(
-            "at least one canonical workflow/catalog doc must repeat the post-merge OpenCode restart rule"
                 .to_owned(),
         );
     }

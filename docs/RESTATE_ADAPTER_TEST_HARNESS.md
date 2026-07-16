@@ -1,59 +1,30 @@
 # Restate Adapter Test Harness
 
-Restate live tests are feature-gated so default test runs do not require a local Restate runtime.
+Restate support is feature-gated; default tests require no live runtime.
 
-## Feature Flags
+## Features
 
-```text
-restate-adapter: compiles Restate adapter code.
-restate-tests: enables Restate integration tests and includes restate-adapter.
-```
+| Feature | Purpose |
+| --- | --- |
+| `restate-adapter` | Compile Restate adapter code |
+| `restate-tests` | Enable integration tests and include `restate-adapter` |
 
-Default `cargo test --all` must keep passing without Restate.
+Live tests skip when `ELBMESH_RESTATE_URL` is unset.
 
-## Running Tests
+## Commands
 
-Run the default suite:
+Default and harness-only checks:
 
 ```bash
 cargo test --all
-```
-
-Run Restate-gated harness tests without a live runtime:
-
-```bash
 cargo test -p elbmesh-core --features restate-tests --test restate_harness
 ```
 
-Live Restate tests must call the shared test harness before connecting. If `ELBMESH_RESTATE_URL` is not set, the test reports the skip and returns without failing.
-
-Example environment:
-
-```text
-ELBMESH_RESTATE_URL=http://127.0.0.1:8080
-ELBMESH_RESTATE_ADMIN_URL=http://127.0.0.1:9070
-ELBMESH_RESTATE_SERVICE_ADVERTISE_HOST=host.docker.internal
-```
-
-`ELBMESH_RESTATE_URL` is the Restate ingress URL. `ELBMESH_RESTATE_ADMIN_URL` defaults to `http://127.0.0.1:9070`. `ELBMESH_RESTATE_SERVICE_ADVERTISE_HOST` defaults to `127.0.0.1`; set it to `host.docker.internal` when Restate runs in Docker and tests run on the host. The compose service maps `host.docker.internal` through Docker's `host-gateway` for Linux compatibility.
-
-## Docker-Backed Local Restate
-
-Start a local Restate server:
+Start Restate and run live contracts:
 
 ```bash
 docker compose up -d restate
-```
 
-If another Restate server already uses admin port `9070`, override the host admin port:
-
-```bash
-ELBMESH_RESTATE_ADMIN_PORT=9071 docker compose up -d restate
-```
-
-Run the live adapter tests against that server:
-
-```bash
 ELBMESH_RESTATE_URL=http://127.0.0.1:8080 \
 ELBMESH_RESTATE_ADMIN_URL=http://127.0.0.1:9070 \
 ELBMESH_RESTATE_SERVICE_ADVERTISE_HOST=host.docker.internal \
@@ -63,29 +34,16 @@ ELBMESH_RESTATE_URL=http://127.0.0.1:8080 \
 ELBMESH_RESTATE_ADMIN_URL=http://127.0.0.1:9070 \
 ELBMESH_RESTATE_SERVICE_ADVERTISE_HOST=host.docker.internal \
 cargo test -p elbmesh-core --features restate-tests --test action_context_external_operation live_restate_operation_journal_retry_after_append_failure_reuses_completed_external_operation
-```
 
-When using `ELBMESH_RESTATE_ADMIN_PORT=9071`, set `ELBMESH_RESTATE_ADMIN_URL=http://127.0.0.1:9071` in the test commands.
-
-Stop the local server:
-
-```bash
 docker compose down
 ```
 
-These live commands should fail if Docker is not running or if `ELBMESH_RESTATE_URL` points at no Restate ingress. A feature-gated test run without `ELBMESH_RESTATE_URL` still skips live adapter work by design.
+`ELBMESH_RESTATE_ADMIN_URL` defaults to `http://127.0.0.1:9070`. If that port is occupied, start with `ELBMESH_RESTATE_ADMIN_PORT=9071` and use the matching admin URL. Use `host.docker.internal` when Restate runs in Docker and tests run on the host.
 
-## Adapter Boundaries
+A configured but unreachable runtime is a failure; an unset ingress URL is a deliberate skip.
 
-The live harness starts the elbmesh Rust SDK endpoint in-process, registers it with Restate Admin API, then drives `RestateOperationJournal` through Restate ingress.
+## Boundary
 
-Runtime lanes remain separate:
+The harness starts the Rust SDK endpoint, registers it through the Admin API, and drives `RestateOperationJournal` through ingress. The virtual object is `ElbmeshOperationJournal`, keyed by `operation_id`.
 
-```text
-Resource Events stay in Resource streams.
-OperationJournal records stay in the Restate OperationJournal object state.
-Provider diagnostics stay out of Resource Events.
-Generated visibility artifacts are not written as Resource Events.
-```
-
-The Restate virtual object is named `ElbmeshOperationJournal` and is keyed by `operation_id`.
+Resource Events remain in Resource streams; OperationJournal state remains in Restate; provider diagnostics and generated visibility artifacts remain outside Resource Events.
