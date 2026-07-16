@@ -1,351 +1,77 @@
 # Implementation Plan
 
-This plan captures the first implementation path for the event-sourcing framework. It is intentionally strict to keep v1 buildable.
+This document owns technical scope. [DELIVERY_ROADMAP.md](DELIVERY_ROADMAP.md) owns capability dependencies; GitHub Issues own executable work.
 
-Delivery context is maintained in [Delivery Roadmap](DELIVERY_ROADMAP.md). Expanded GitHub Issues and their explicit dependencies are the delivery source of truth; the Orchestrator does not create work directly from this technical plan.
+## Target
 
-## V1 Goal
+Build a Rust architecture substrate that executes typed Resource Actions, stores Resource Events, runs durable external operations, dispatches Reactions, projects Views, and generates capability contracts for humans and agents.
 
-Build a Rust event-sourcing framework that can execute typed Resource Actions, append Resource Events to NATS, run durable external operations through Restate, project Views into NATS KV, and expose generated capability documentation for humans and agents.
+Canonical terms and invariants are defined in [GLOSSARY.md](GLOSSARY.md) and [GOAL.md](GOAL.md).
 
-The first acceptance example is:
+## Runtime Layers
+
+### Typed Core
+
+- `Resource`, `Action`, `Event`, `Handle<Action>`, and `Apply<Event>`.
+- `ActionExecutor` and `ActionContext`.
+- Typed domain/runtime failures and Action receipts.
+- Given/when/then Resource scenarios.
+
+### Persistence And Visibility
+
+- `EventStore` for Resource Events.
+- Separate `ActionJournal`, `OperationJournal`, and `ReactionJournal` ports.
+- Shared message metadata, schema identity, correlation, causation, and stream identity.
+- In-memory reference implementations and reusable adapter contracts.
+
+### Coordination And Reads
+
+- Typed Event-to-Action Reactions through `ActionExecutor`.
+- Deterministic Reaction and downstream Action identity.
+- `ViewStore`, projections, declared indexes, and simple `get_by_id`/`list_by_index_prefix` Queries.
+
+### External Execution
+
+- Declared `ExternalOperation` contracts with typed request/response/failure types.
+- Deterministic operation identity and idempotency keys.
+- OperationJournal reuse before provider retry.
+- Restate hidden behind framework adapters.
+
+### Infrastructure Adapters
+
+- NATS-backed EventStore, journals, and ViewStore behind feature flags.
+- Explicit key/subject encoding and shared contract tests.
+- Default builds and tests require no live NATS or Restate runtime.
+
+### Manifest And Generation
+
+- Architecture manifest definitions and named validation findings.
+- Generated capability Markdown/JSON and Rust binding stubs.
+- Shared manifest hash and generator version.
+- Drift checks between manifest-derived artifacts.
+
+Generated code declares contracts and boilerplate. Developers write Action handling, Event apply logic, projections, and external response mapping.
+
+### Tooling
+
+Planned tooling should expose architecture checks, flow explanations, and guided manifest changes without becoming a second source of truth.
+
+## Reference Capability
 
 ```text
 Offer -> Sales Order -> Order Confirmation -> Invoice
 ```
 
-with a mocked external API for LexOffice-like document creation.
-
-## Non-Goals
-
-```text
-No hard domain delete.
-No arbitrary query engine.
-No background sync.
-No live external enrichment in v1.
-No cyclic Reaction graphs.
-No generic compensation engine.
-No handwritten Restate usage in domain handlers.
-No generated business behavior by default.
-```
-
-## Architecture Slices
-
-### 1. Core Traits
-
-Define the typed framework contracts:
-
-```text
-Resource
-Handle<Action>
-Apply<Event>
-Project<Event>
-ActionExecutor
-EventStore
-ActionJournal
-OperationJournal
-ReactionJournal
-ExternalOperation
-ViewStore
-QueryEngine
-```
-
-V1 developer behavior should use explicit trait impls.
-
-### 2. Message Envelope And Metadata
-
-Define a shared message envelope for Resource Events and execution journals.
-
-Required metadata:
-
-```text
-message_id
-message_type
-message_version
-resource_type
-resource_id
-stream_type
-correlation_id
-causation_id
-action_id
-actor_id
-occurred_at
-schema_id
-schema_version
-```
-
-Add operation-specific metadata where needed:
-
-```text
-operation_id
-external_system
-external_operation
-idempotency_key
-```
-
-### 3. NATS Event Store
-
-Implement Resource Event append and replay on NATS JetStream.
-
-Requirements:
-
-```text
-append Events to one Resource stream
-load Events for one Resource
-support optimistic concurrency or expected version
-preserve per-Resource ordering
-store metadata in headers/envelope
-```
-
-### 4. Execution Journals
-
-Implement NATS-backed execution journals:
-
-```text
-actions
-operations
-reactions
-```
-
-Only Resource Events are used for replay. Journals support audit, idempotency, and recovery.
-
-### 5. Action Runtime
-
-Implement `ActionExecutor`.
-
-Flow:
-
-```text
-receive Action
-record Action called
-load Resource Events
-replay Resource State
-evaluate policy hooks
-execute typed handler
-perform declared External Operations through context when needed
-append Resource Events
-record Receipt or failure
-return Receipt
-```
-
-Action rules:
-
-```text
-Action targets exactly one Resource.
-Action appends Events to exactly one Resource stream.
-Failed/denied Actions do not append Resource Events unless modelled explicitly.
-```
-
-### 6. Restate Execution Adapter
-
-Use Restate as mandatory v1 durable execution runtime.
-
-Hide Restate behind framework APIs.
-
-External operation flow:
-
-```text
-reserve operation
-call external API with idempotency key
-journal operation success/failure
-append Resource Event
-retry append if it fails without repeating successful external call
-```
-
-### 7. External Operation Support
-
-Implement declared External Operations for Actions.
-
-Requirements:
-
-```text
-operation identity
-idempotency key
-request/response metadata
-selected domain facts mapped into Events
-raw provider diagnostics stored in Operation Journal or Object Store if needed
-```
-
-### 8. Reaction Runtime
-
-Implement typed `Event -> Action` Reactions.
-
-V1 rules:
-
-```text
-one Event may trigger many Reactions
-cycles forbidden
-conditions are pure
-reactions subscribe only to successful Resource Events
-reaction execution calls ActionExecutor
-```
-
-Restate should durably run Reaction execution.
-
-### 9. Views And Queries
-
-Implement materialized Views on NATS KV.
-
-Storage:
-
-```text
-View documents: NATS KV
-View indexes: NATS KV
-Projection checkpoints: NATS KV
-Large payloads/files: NATS Object Store
-```
-
-Query primitives:
-
-```text
-get_by_id
-list_by_index_prefix
-```
-
-Projection rules:
-
-```text
-Views may subscribe to Events from many Resource types.
-Projection code is handwritten Rust.
-Projection updates are idempotent.
-Checkpoint only after view/index writes succeed.
-```
-
-### 10. Macros And Generated Bindings
-
-Provide Rust macros/codegen helpers for generated contracts.
-
-Generated artifacts should include:
-
-```text
-Action DTOs
-Event DTOs
-Receipt DTOs
-Resource IDs
-Component structs
-Action/Event enums
-schema IDs and versions
-NATS metadata bindings
-External Operation declarations
-policy hook bindings
-dispatch boilerplate
-capability docs
-```
-
-Developers write:
-
-```text
-Handle<Action> impls
-Apply<Event> impls
-Project<Event> impls
-external response mapping
-```
-
-### 11. Capability Documentation
-
-Generate both human and machine-readable capability docs from the same manifest.
-
-Outputs:
-
-```text
-RESOURCE_CAPABILITIES.md
-resource-capabilities.json
-```
-
-Both must include a manifest hash and generator version to keep them in sync.
-
-### 12. Agent Skills And Architecture Checks
-
-Make the repository agentically usable.
-
-Canonical skill catalog:
-
-```text
-docs/AGENT_SKILLS.md
-```
-
-Skills to support:
-
-```text
-elbmesh-driver
-elbmesh-orchestrator
-elbmesh-test-writer
-elbmesh-pr-publisher
-elbmesh-implementer
-elbmesh-reviewer
-elbmesh-mr-reviewer
-elbmesh-doc-maintainer
-elbmesh-architecture-checker
-elbmesh-flow-explainer
-elbmesh-manifest-editor
-```
-
-Concrete project-local opencode skills:
-
-```text
-.opencode/skills/*/SKILL.md
-```
-
-Until generation exists, the catalog and concrete skill files must be updated together. Later, the skill files should be generated from or checked against the manifest/docs.
-
-The architecture checker should eventually become:
-
-```text
-elbmesh check-architecture
-```
-
-The flow explainer should eventually become:
-
-```text
-elbmesh explain-flow
-```
-
-### 13. Acceptance Example
-
-Build an example app with:
-
-```text
-Resources: Offer, Sales Order, Order Confirmation, Invoice
-Actions: Create Offer, Accept Offer, Create Sales Order, Create Order Confirmation, Create Invoice
-Events: Offer Created, Offer Accepted, Sales Order Created, Order Confirmation Created, Invoice Created
-Reactions: Offer Accepted -> Create Sales Order -> Sales Order Created -> Create Order Confirmation -> Order Confirmation Created -> Create Invoice
-View: Receivable or Document Flow Status
-Mock External API: LexOffice-like document endpoint
-```
-
-The hard acceptance test should prove:
-
-```text
-External API call succeeds.
-Resource Event append initially fails.
-Restate retries append.
-External API is not called twice.
-Invoice Created is recorded exactly once.
-```
-
-## Open Questions
-
-```text
-Exact manifest format and whether it is authored directly or generated by a modeller.
-Exact optimistic concurrency mechanism with NATS JetStream.
-Exact schema versioning and upcasting strategy beyond v1 direct Apply per Event version.
-Whether generated Rust files are checked into consuming repositories or generated at build time.
-How policy hooks are represented for DMN and FGA.
-How Claims/Reservations for external references should be implemented in v1.
-```
-
-## Suggested Capability Dependencies
-
-1. Define core traits and message envelope.
-2. Implement in-memory EventStore and ActionExecutor for fast tests.
-3. Implement NATS EventStore.
-4. Implement Action Journal and Operation Journal.
-5. Implement Restate-backed external operation execution.
-6. Build the Offer-to-Invoice example without Reactions.
-7. Add Reaction runtime and connect the example graph.
-8. Add NATS KV ViewStore and one View.
-9. Add macro/codegen helpers.
-10. Add generated capability docs.
-11. Add generated or checked agent skill packaging.
-
-Treat this list as technical dependency guidance, not a queue. For delivery sequencing, use expanded GitHub Issues and their explicit dependency links as the source of truth, with `docs/DELIVERY_ROADMAP.md` providing capability and milestone context.
+The proof includes typed Resources/Actions/Events, cross-Resource Reactions, one View, a mocked LexOffice-like provider, generated capability artifacts, and retry after provider success plus Resource Event append failure.
+
+## Remaining Decisions
+
+- ActionJournal replay and duplicate Action semantics.
+- Partial commit recovery when terminal journaling fails.
+- Projection checkpoint and durable subscription semantics.
+- Manifest authoring and generated-file ownership in consuming repositories.
+- Schema upcasting beyond direct v1 handlers.
+- Policy representation for DMN/FGA integrations.
+- Provider registration and generated binding boundaries.
+
+No hard delete, cyclic Reaction graph, arbitrary query engine, background sync, live read enrichment, generic compensation engine, handwritten Restate calls in handlers, or generated business behavior belongs in v1.
