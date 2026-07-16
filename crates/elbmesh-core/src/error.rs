@@ -206,6 +206,48 @@ pub enum ResourceError {
     Apply(String),
 }
 
+impl ResourceError {
+    pub(crate) fn code(&self) -> &'static str {
+        match self {
+            Self::UnsupportedEvent { .. } => "resource.unsupported_event",
+            Self::Deserialization { .. } => "resource.deserialization",
+            Self::Apply(_) => "resource.apply",
+        }
+    }
+
+    pub(crate) fn details(&self) -> serde_json::Value {
+        match self {
+            Self::UnsupportedEvent {
+                resource_type,
+                message_type,
+                schema_version,
+            } => serde_json::json!({
+                "error_type": "ResourceError",
+                "error_variant": "UnsupportedEvent",
+                "resource_type": resource_type,
+                "message_type": message_type,
+                "schema_version": schema_version,
+            }),
+            Self::Deserialization {
+                message_type,
+                schema_version,
+                source,
+            } => serde_json::json!({
+                "error_type": "ResourceError",
+                "error_variant": "Deserialization",
+                "message_type": message_type,
+                "schema_version": schema_version,
+                "source": source.to_string(),
+            }),
+            Self::Apply(reason) => serde_json::json!({
+                "error_type": "ResourceError",
+                "error_variant": "Apply",
+                "reason": reason,
+            }),
+        }
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum EventStoreError {
     #[error("concurrency conflict on stream '{stream}': expected version {expected}, actual version {actual}")]
@@ -255,6 +297,110 @@ pub enum EventStoreError {
 
     #[error("event store failed: {0}")]
     Other(String),
+}
+
+impl EventStoreError {
+    pub(crate) fn code(&self) -> &'static str {
+        match self {
+            Self::ConcurrencyConflict { .. } => "event_store.concurrency_conflict",
+            Self::WrongEventStream { .. } => "event_store.wrong_event_stream",
+            Self::WrongEventStreamType { .. } => "event_store.wrong_event_stream_type",
+            Self::NatsConnect { .. } => "event_store.nats_connect",
+            Self::NatsBucket { .. } => "event_store.nats_bucket",
+            Self::StreamSerialization { .. } => "event_store.stream_serialization",
+            Self::StreamDeserialization { .. } => "event_store.stream_deserialization",
+            Self::NatsLoad { .. } => "event_store.nats_load",
+            Self::NatsAppend { .. } => "event_store.nats_append",
+            Self::Other(_) => "event_store.other",
+        }
+    }
+
+    pub(crate) fn details(&self) -> serde_json::Value {
+        match self {
+            Self::ConcurrencyConflict {
+                stream,
+                expected,
+                actual,
+            } => serde_json::json!({
+                "error_type": "EventStoreError",
+                "error_variant": "ConcurrencyConflict",
+                "stream": stream,
+                "expected": expected,
+                "actual": actual,
+            }),
+            Self::WrongEventStream {
+                stream,
+                expected_resource_type,
+                expected_resource_id,
+                actual_resource_type,
+                actual_resource_id,
+            } => serde_json::json!({
+                "error_type": "EventStoreError",
+                "error_variant": "WrongEventStream",
+                "stream": stream,
+                "expected_resource_type": expected_resource_type,
+                "expected_resource_id": expected_resource_id,
+                "actual_resource_type": actual_resource_type,
+                "actual_resource_id": actual_resource_id,
+            }),
+            Self::WrongEventStreamType {
+                stream,
+                expected_stream_type,
+                actual_stream_type,
+            } => serde_json::json!({
+                "error_type": "EventStoreError",
+                "error_variant": "WrongEventStreamType",
+                "stream": stream,
+                "expected_stream_type": expected_stream_type,
+                "actual_stream_type": actual_stream_type,
+            }),
+            Self::NatsConnect { reason } => serde_json::json!({
+                "error_type": "EventStoreError",
+                "error_variant": "NatsConnect",
+                "reason": reason,
+            }),
+            Self::NatsBucket { bucket, reason } => serde_json::json!({
+                "error_type": "EventStoreError",
+                "error_variant": "NatsBucket",
+                "bucket": bucket,
+                "reason": reason,
+            }),
+            Self::StreamSerialization { stream, reason } => serde_json::json!({
+                "error_type": "EventStoreError",
+                "error_variant": "StreamSerialization",
+                "stream": stream,
+                "reason": reason,
+            }),
+            Self::StreamDeserialization {
+                stream,
+                revision,
+                reason,
+            } => serde_json::json!({
+                "error_type": "EventStoreError",
+                "error_variant": "StreamDeserialization",
+                "stream": stream,
+                "revision": revision,
+                "reason": reason,
+            }),
+            Self::NatsLoad { stream, reason } => serde_json::json!({
+                "error_type": "EventStoreError",
+                "error_variant": "NatsLoad",
+                "stream": stream,
+                "reason": reason,
+            }),
+            Self::NatsAppend { stream, reason } => serde_json::json!({
+                "error_type": "EventStoreError",
+                "error_variant": "NatsAppend",
+                "stream": stream,
+                "reason": reason,
+            }),
+            Self::Other(reason) => serde_json::json!({
+                "error_type": "EventStoreError",
+                "error_variant": "Other",
+                "reason": reason,
+            }),
+        }
+    }
 }
 
 #[derive(Debug, Error)]

@@ -312,9 +312,11 @@ where
                             &action_metadata,
                             &resource_id,
                             ActionFailureClassification::HandlerRuntime,
+                            error.code(),
+                            error.details(),
                         )
                         .await;
-                        return Err(error);
+                        return Err(HandlerError::Runtime(error).into());
                     }
                 };
 
@@ -333,6 +335,8 @@ where
                     &action_metadata,
                     &resource_id,
                     ActionFailureClassification::EventStore,
+                    error.code(),
+                    error.details(),
                 )
                 .await;
                 return Err(error.into());
@@ -350,6 +354,8 @@ where
                     &action_metadata,
                     &resource_id,
                     ActionFailureClassification::Resource,
+                    error.code(),
+                    error.details(),
                 )
                 .await;
                 return Err(error.into());
@@ -385,6 +391,8 @@ where
                     &action_metadata,
                     &resource_id,
                     ActionFailureClassification::HandlerRuntime,
+                    error.code(),
+                    error.details(),
                 )
                 .await;
                 return Err(HandlerError::Runtime(error).into());
@@ -416,6 +424,8 @@ where
                         &action_metadata,
                         &resource_id,
                         ActionFailureClassification::EventStore,
+                        error.code(),
+                        error.details(),
                     )
                     .await;
                     return Err(error.into());
@@ -459,6 +469,8 @@ async fn append_action_failed<R>(
     action_metadata: &ActionMetadata,
     resource_id: &str,
     failure_classification: ActionFailureClassification,
+    failure_code: &str,
+    failure_details: serde_json::Value,
 ) where
     R: Resource,
 {
@@ -467,7 +479,13 @@ async fn append_action_failed<R>(
         let _ = action_journal
             .append(
                 journal_stream,
-                action_failed_record::<R>(action_metadata, resource_id, failure_classification),
+                action_failed_record::<R>(
+                    action_metadata,
+                    resource_id,
+                    failure_classification,
+                    failure_code,
+                    failure_details,
+                ),
             )
             .await;
     }
@@ -477,14 +495,13 @@ fn action_called_record<R, A>(
     action_metadata: &ActionMetadata,
     resource_id: &str,
     action: &A,
-) -> Result<ActionJournalRecord, ExecutionError<<R as Handle<A>>::Error>>
+) -> Result<ActionJournalRecord, ActionError>
 where
-    R: Resource + Handle<A>,
+    R: Resource,
     A: Action<Resource = R>,
 {
-    let payload = serde_json::to_value(action)
-        .map_err(|err| ActionError::Serialization(err.to_string()))
-        .map_err(crate::HandlerError::from)?;
+    let payload =
+        serde_json::to_value(action).map_err(|err| ActionError::Serialization(err.to_string()))?;
 
     Ok(ActionJournalRecord::ActionCalled {
         metadata: action_journal_metadata(
@@ -527,6 +544,8 @@ fn action_failed_record<R>(
     action_metadata: &ActionMetadata,
     resource_id: &str,
     failure_classification: ActionFailureClassification,
+    failure_code: &str,
+    failure_details: serde_json::Value,
 ) -> ActionJournalRecord
 where
     R: Resource,
@@ -540,7 +559,10 @@ where
             action_metadata,
         ),
         failure_classification,
-        failure_details: serde_json::json!({}),
+        failure_details: serde_json::json!({
+            "failure_code": failure_code,
+            "failure_details": failure_details,
+        }),
     }
 }
 
