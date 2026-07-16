@@ -6,14 +6,15 @@ permission:
   task: deny
   bash:
     "*": deny
-    "gh issue edit *": allow
+    "gh issue edit * --remove-label status:review --add-label status:implementation": allow
+    "gh issue edit * --remove-label status:implementation --add-label status:review": allow
     "git switch -c *": allow
     "git status *": allow
     "git diff *": allow
     "git add -- *": allow
     "git commit -m *": allow
-    "git push --set-upstream origin HEAD": allow
-    "git push origin HEAD": allow
+    "git push --set-upstream origin workflow/issue-121-dependency-roadmap-and-status-automation": allow
+    "git push origin workflow/issue-121-dependency-roadmap-and-status-automation": allow
     "gh issue view *": allow
     "gh issue comment *": allow
     "gh pr create --draft *": allow
@@ -22,7 +23,24 @@ permission:
     "gh pr checks *": allow
     "gh pr comment *": allow
     "gh pr ready *": allow
+    "gh issue edit * --* --remove-label status:review --add-label status:implementation": deny
+    "gh issue edit * --* --remove-label status:implementation --add-label status:review": deny
+    "gh issue edit * -* --remove-label status:review --add-label status:implementation": deny
+    "gh issue edit * -* --remove-label status:implementation --add-label status:review": deny
+    "git push origin HEAD": deny
+    "git push --set-upstream origin HEAD": deny
     "git push origin main": deny
+    "git push origin refs/heads/main": deny
+    "git push --set-upstream origin main": deny
+    "git push --set-upstream origin refs/heads/main": deny
+    "git push -u origin main": deny
+    "git push --force *": deny
+    "git push --force-with-lease *": deny
+    "git push * --force": deny
+    "git push * --force-with-lease": deny
+    "git push origin +*": deny
+    "git push origin *:main": deny
+    "git push origin *:refs/heads/main": deny
     "git merge": deny
     "git merge *": deny
     "gh pr merge": deny
@@ -37,7 +55,16 @@ Remain non-editing: perform no file modifications and never use Bash to create, 
 
 Before every stage, inspect `git status` and `git diff`, including the cached diff. Stage only exact paths in the preceding role report for that stage. Never stage an unreported path, use an implicit pathspec, or run `git add .`, `git add -A`, or `git add -u`. Stop on an unexpected staged path, an unreported change needed by the commit, missing provenance, or evidence that does not match the requested stage.
 
+Push this issue only through the explicit named branch form `git push origin workflow/issue-121-dependency-roadmap-and-status-automation` or, when establishing its upstream, `git push --set-upstream origin workflow/issue-121-dependency-roadmap-and-status-automation`. Never push through `HEAD`, a force option, a refspec, or a base-branch name, and never push the base branch.
+
 For the red handoff, create the issue branch from the reported base revision, stage only accepted Test Writer test and fixture paths, create a test-only red commit, push the branch, and open a draft pull request linked to or closing the issue. Put immutable Test Writer provenance and red proof in the pull request body, append complete red evidence as new comments on both the issue and pull request, then automatically set or keep `status:implementation` on the issue.
+
+Exactly one of `status:implementation` and `status:review` must be active on the issue. Use only these complete paired transitions, which remove the opposite status before adding the target status; never use add-only, remove-only, simultaneous-status, arbitrary-label, or mixed issue-edit forms:
+
+```bash
+gh issue edit <issue> --remove-label status:review --add-label status:implementation
+gh issue edit <issue> --remove-label status:implementation --add-label status:review
+```
 
 For the green handoff, require the Implementer's focused green proof and complete quality-gate report. Stage only the exact reported implementation and documentation paths, create a separate implementation/docs commit distinct from the red commit, and push it. Append green evidence as new append-only comments on both the GitHub issue and pull request without rewriting prior evidence.
 

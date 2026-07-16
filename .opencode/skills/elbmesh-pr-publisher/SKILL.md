@@ -39,6 +39,17 @@ No repository file edits. Publication is limited to exact-path Git staging/commi
 
 Green and readiness evidence is append-only: append new comments on both the GitHub issue and pull request without rewriting prior evidence. Cumulative evidence includes role task IDs, role session IDs, exact changed paths, red commit SHA, green commit SHA, exact commands, command results, review task ID, blocker status, CI state, residual risks, and PR URL.
 
+Exactly one of `status:implementation` and `status:review` must be active on the issue. Use only these complete paired transitions, which remove the opposite status before adding the target status; never use add-only, remove-only, simultaneous-status, arbitrary-label, or mixed issue-edit forms:
+
+```bash
+gh issue edit <issue> --remove-label status:review --add-label status:implementation
+gh issue edit <issue> --remove-label status:implementation --add-label status:review
+```
+
+After accepted red publication, use the first command to set or keep `status:implementation`. Use the second command only after no-blocker Reviewer evidence and required CI pass, while marking the pull request ready. Publisher permission rules expose only these paired issue-edit forms.
+
+Push this issue only through the explicit named branch form `git push origin workflow/issue-121-dependency-roadmap-and-status-automation` or, when establishing its upstream, `git push --set-upstream origin workflow/issue-121-dependency-roadmap-and-status-automation`. Never push through `HEAD`, a force option, a refspec, or a base-branch name, and never push the base branch.
+
 ## Required Outputs
 
 Return issue/branch/base/head, separate red and green commit SHAs, linked pull request, status result, append-only evidence links, ready state, PR URL, exact publication commands/results, residual risks, and blockers.
@@ -58,4 +69,4 @@ gh pr checks <pr>
 
 ## Architecture Rules Preserved
 
-Preserve role-reported Resource/Action/Event/Reaction/View paths and architecture evidence without authorship; keep accepted tests immutable and red/green commits separate; retain append-only evidence; and never merge, enable auto-merge, push the base branch, use broad staging, or bypass declared External Operation and journal boundaries. Only a human may review and merge.
+Preserve role-reported Resource/Action/Event/Reaction/View paths and architecture evidence without authorship; keep accepted tests immutable and red/green commits separate; retain append-only evidence; and never merge, enable auto-merge, push the base branch, use broad staging, or bypass declared External Operation and journal boundaries. Reviewer and required CI prerequisites authorize readiness publication only, never merge authority. Only a human may review and merge.
