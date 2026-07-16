@@ -6,29 +6,26 @@ permission:
   task: deny
   bash:
     "*": deny
-    "gh issue edit * --remove-label status:review --add-label status:implementation": allow
-    "gh issue edit * --remove-label status:implementation --add-label status:review": allow
     "git switch -c *": allow
     "git status *": allow
+    "git branch --show-current": allow
     "git diff *": allow
     "git add -- *": allow
     "git commit -m *": allow
-    "git push --set-upstream origin workflow/issue-121-dependency-roadmap-and-status-automation": allow
-    "git push origin workflow/issue-121-dependency-roadmap-and-status-automation": allow
+    "git push origin HEAD": allow
+    "git push --set-upstream origin HEAD": allow
     "gh issue view *": allow
     "gh issue comment *": allow
+    "gh issue edit *": allow
     "gh pr create --draft *": allow
     "gh pr view *": allow
     "gh pr edit *": allow
     "gh pr checks *": allow
     "gh pr comment *": allow
     "gh pr ready *": allow
-    "gh issue edit * --* --remove-label status:review --add-label status:implementation": deny
-    "gh issue edit * --* --remove-label status:implementation --add-label status:review": deny
-    "gh issue edit * -* --remove-label status:review --add-label status:implementation": deny
-    "gh issue edit * -* --remove-label status:implementation --add-label status:review": deny
-    "git push origin HEAD": deny
-    "git push --set-upstream origin HEAD": deny
+    "gh pr edit --base *": deny
+    "gh pr edit * --base *": deny
+    "gh pr edit * --base=*": deny
     "git push origin main": deny
     "git push origin refs/heads/main": deny
     "git push --set-upstream origin main": deny
@@ -53,9 +50,17 @@ Load and use the `elbmesh-pr-publisher` skill. Read its required documents, the 
 
 Remain non-editing: perform no file modifications and never use Bash to create, rewrite, delete, or format a file. Never use shell separators, pipes, redirection, command substitution, scripts, or interpreter commands. Run one permitted command at a time.
 
+Before any push or GitHub mutation, complete the mandatory provenance preflight. Verify that the current branch is non-`main` and exactly matches the branch reported in the task-card provenance, verify that the pull request head matches that same reported branch, and verify that the target issue matches the issue task-card provenance. Stop on any branch, pull-request, issue, or other provenance mismatch.
+
 Before every stage, inspect `git status` and `git diff`, including the cached diff. Stage only exact paths in the preceding role report for that stage. Never stage an unreported path, use an implicit pathspec, or run `git add .`, `git add -A`, or `git add -u`. Stop on an unexpected staged path, an unreported change needed by the commit, missing provenance, or evidence that does not match the requested stage.
 
-Push this issue only through the explicit named branch form `git push origin workflow/issue-121-dependency-roadmap-and-status-automation` or, when establishing its upstream, `git push --set-upstream origin workflow/issue-121-dependency-roadmap-and-status-automation`. Never push through `HEAD`, a force option, a refspec, or a base-branch name, and never push the base branch.
+After that preflight succeeds, publish the verified current branch only with `git push origin HEAD` or, when establishing its upstream, `git push --set-upstream origin HEAD`. The command stays generic; do not hardcode an issue branch or introduce a typed push helper.
+
+Direct literal `main` pushes, force pushes, refspec pushes to the base, and all other base-branch publication paths are prohibited. Pull request base edits are also prohibited.
+
+The broad `gh issue edit *` permission is intentionally accepted for autonomous publication, but operational behavior remains restricted to the exact paired status commands below. OpenCode permissions are defense in depth, not a sandbox. GitHub branch protection, required CI, and independent review are the hard boundary for repository acceptance.
+
+The human explicitly accepts the residual risk of wrong issue mutation created by broad issue-edit autonomy. The mandatory issue provenance preflight reduces that residual risk but cannot eliminate it.
 
 For the red handoff, create the issue branch from the reported base revision, stage only accepted Test Writer test and fixture paths, create a test-only red commit, push the branch, and open a draft pull request linked to or closing the issue. Put immutable Test Writer provenance and red proof in the pull request body, append complete red evidence as new comments on both the issue and pull request, then automatically set or keep `status:implementation` on the issue.
 

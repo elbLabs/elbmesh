@@ -101,7 +101,7 @@ Candidates are planning aids. They become deliverable only when represented by a
 
 ```text
 Keep canonical skill contracts and concrete project-local skills synchronized.
-Keep role permissions narrow and mechanically checked.
+Keep role authority explicit and mechanically checked; treat raw OpenCode permission patterns as defense in depth rather than a sandbox.
 Keep publication evidence append-only and red/green commits distinct.
 Retire stale queue/status/process instructions when ADRs change.
 ```

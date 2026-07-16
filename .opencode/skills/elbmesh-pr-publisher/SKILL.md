@@ -28,14 +28,19 @@ Require issue/branch/base provenance, exact role-reported paths, accepted red/gr
 
 ## Permitted Edit Surface
 
-No repository file edits. Publication is limited to exact-path Git staging/commit/push and narrowly allowed issue/pull-request operations. Never use a shell path to author or rewrite files.
+No repository file edits. Publication is limited to exact-path Git staging/commit/push and issue/pull-request operations allowed by the agent frontmatter. Never use a shell path to author or rewrite files.
+
+The broad `gh issue edit *` permission is intentionally accepted for autonomous publication, but operational behavior remains restricted to the exact paired status commands below. OpenCode permissions are defense in depth, not a sandbox. GitHub branch protection, required CI, and independent review are the hard boundary for repository acceptance.
+
+The human explicitly accepts the residual risk of wrong issue mutation created by broad issue-edit autonomy. The mandatory issue provenance preflight reduces that residual risk but cannot eliminate it.
 
 ## Allowed Publication Lifecycle
 
-1. Verify branch/base/head, status, working diff, cached diff, and exact role path set.
-2. Stage only accepted test/fixture paths, create/push a separate red test-only commit, open a linked draft pull request, append red evidence, and automatically set or keep `status:implementation`.
-3. Stage only Implementer-reported implementation/documentation paths, create/push the distinct green commit, and append cumulative green evidence.
-4. Only after no-blocker Reviewer evidence and required CI pass, append readiness evidence, change the issue to `status:review` while marking the pull request ready, and return its URL.
+1. Before any push or GitHub mutation, complete a provenance preflight: verify that the current branch is non-`main` and exactly matches the branch reported in task-card provenance, verify that the pull request head matches that same branch, and verify that the target issue matches the issue task-card provenance. Stop on any branch, pull-request, issue, or other provenance mismatch.
+2. Verify base/head, status, working diff, cached diff, and exact role path set.
+3. Stage only accepted test/fixture paths, create/push a separate red test-only commit, open a linked draft pull request, append red evidence, and automatically set or keep `status:implementation`.
+4. Stage only Implementer-reported implementation/documentation paths, create/push the distinct green commit, and append cumulative green evidence.
+5. Only after no-blocker Reviewer evidence and required CI pass, append readiness evidence, change the issue to `status:review` while marking the pull request ready, and return its URL.
 
 Green and readiness evidence is append-only: append new comments on both the GitHub issue and pull request without rewriting prior evidence. Cumulative evidence includes role task IDs, role session IDs, exact changed paths, red commit SHA, green commit SHA, exact commands, command results, review task ID, blocker status, CI state, residual risks, and PR URL.
 
@@ -46,9 +51,11 @@ gh issue edit <issue> --remove-label status:review --add-label status:implementa
 gh issue edit <issue> --remove-label status:implementation --add-label status:review
 ```
 
-After accepted red publication, use the first command to set or keep `status:implementation`. Use the second command only after no-blocker Reviewer evidence and required CI pass, while marking the pull request ready. Publisher permission rules expose only these paired issue-edit forms.
+After accepted red publication, use the first command to set or keep `status:implementation`. Use the second command only after no-blocker Reviewer evidence and required CI pass, while marking the pull request ready. The broader permission exists only to enable autonomous publication; these paired forms remain the required operational behavior.
 
-Push this issue only through the explicit named branch form `git push origin workflow/issue-121-dependency-roadmap-and-status-automation` or, when establishing its upstream, `git push --set-upstream origin workflow/issue-121-dependency-roadmap-and-status-automation`. Never push through `HEAD`, a force option, a refspec, or a base-branch name, and never push the base branch.
+After the provenance preflight succeeds, publish the verified current branch only with `git push origin HEAD` or, when establishing its upstream, `git push --set-upstream origin HEAD`. Keep the command generic rather than hardcoding an issue branch or introducing a typed push helper.
+
+Direct literal `main` pushes, force pushes, refspec pushes to the base, all other base-branch publication paths, and pull request base edits are prohibited.
 
 ## Required Outputs
 
@@ -60,6 +67,7 @@ Use only commands allowed by the agent frontmatter, including exact-path variant
 
 ```bash
 git status --short --branch
+git branch --show-current
 git diff -- <reported-path>
 git diff --cached -- <reported-path>
 gh issue view <issue>
@@ -69,4 +77,4 @@ gh pr checks <pr>
 
 ## Architecture Rules Preserved
 
-Preserve role-reported Resource/Action/Event/Reaction/View paths and architecture evidence without authorship; keep accepted tests immutable and red/green commits separate; retain append-only evidence; and never merge, enable auto-merge, push the base branch, use broad staging, or bypass declared External Operation and journal boundaries. Reviewer and required CI prerequisites authorize readiness publication only, never merge authority. Only a human may review and merge.
+Preserve role-reported Resource/Action/Event/Reaction/View paths and architecture evidence without authorship; keep accepted tests immutable and red/green commits separate; retain append-only evidence; and never merge, enable auto-merge, push the base branch, edit the pull request base, use broad staging, or bypass declared External Operation and journal boundaries. Reviewer and required CI prerequisites authorize readiness publication only, never merge authority. Only a human may review and merge.

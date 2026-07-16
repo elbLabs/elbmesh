@@ -133,13 +133,13 @@ Preserves: tests before implementation; immutable accepted tests; separate red t
 
 Purpose: publish accepted role reports as an auditable draft-to-ready pull request and automate the two issue-status transitions without editing repository files.
 
-Permitted edit surface: no repository file edits; only exact-path Git staging/commit/push and narrowly allowed issue/pull-request publication state.
+Permitted edit surface: no repository file edits; only exact-path Git staging/commit/push and agent-frontmatter-allowed issue/pull-request publication state. The broad `gh issue edit *` permission supports autonomy, while instructions require the exact paired status transitions.
 
-Required outputs: branch/base/head provenance, separate red and green commits, linked pull request, append-only cumulative evidence links, issue-status result, ready state, URL, and residual risks.
+Required outputs: issue/branch/base/head provenance and preflight result, separate red and green commits, linked pull request, append-only cumulative evidence links, issue-status result, ready state, URL, accepted wrong-issue mutation risk, and other residual risks.
 
-Exact verification: `git status --short --branch`, exact-path `git diff`/cached-diff inspection, `gh issue view <issue>`, `gh pr view <pr>`, and `gh pr checks <pr>` within the agent allowlist.
+Exact verification: before any push or GitHub mutation, use `git branch --show-current`, `gh issue view <issue>`, and `gh pr view <pr>` to verify that the current non-`main` branch matches task-card provenance, the pull request head matches that branch, and the issue matches task-card provenance; stop on any mismatch. Also run `git status --short --branch`, exact-path `git diff`/cached-diff inspection, and `gh pr checks <pr>` within the agent allowlist. A successful preflight permits only generic `git push origin HEAD` or `git push --set-upstream origin HEAD` publication.
 
-Preserves: exact role path ownership; accepted red/green provenance; no file authorship; no broad staging or shell bypass; Resource/Action/Event/Reaction/View architecture evidence; append-only comments; no base push, merge, or auto-merge. After accepted red publication, set or keep `status:implementation`. Only after no-blocker Reviewer evidence and required CI pass, change to `status:review` while marking the pull request ready. Only a human may merge.
+Preserves: exact role path ownership; accepted red/green provenance; no file authorship; no broad staging or shell bypass; Resource/Action/Event/Reaction/View architecture evidence; append-only comments; no hardcoded branch or typed push helper; and no direct base push, force push, base refspec, pull request base edit, merge, or auto-merge. After accepted red publication, set or keep `status:implementation`. Only after no-blocker Reviewer evidence and required CI pass, change to `status:review` while marking the pull request ready. OpenCode permissions are defense in depth, not a sandbox; GitHub branch protection, required CI, and independent review are the hard boundary. The human accepts the residual risk of wrong issue mutation from broad issue-edit autonomy. Only a human may merge.
 
 ### elbmesh-reviewer
 

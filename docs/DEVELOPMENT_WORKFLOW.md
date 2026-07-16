@@ -97,7 +97,11 @@ Return the pull request URL and residual risks.
 Never merge, enable auto-merge, or push the base branch; only a human may merge.
 ```
 
-The Publisher's narrow Bash permissions are defense in depth, not a sandbox. Its instructions also prohibit shell separators, redirection, broad staging, scripts, unreported paths, base-branch pushes, and every merge mechanism.
+Before any push or GitHub mutation, the Publisher verifies that the current non-`main` branch matches reported task-card provenance, the pull request head matches that branch, and the target issue matches issue task-card provenance; it stops on any mismatch. The verified branch is published through generic `git push origin HEAD` or `git push --set-upstream origin HEAD`, never through a hardcoded issue branch or typed helper.
+
+The Publisher's OpenCode Bash permissions permit that generic fast path and broad `gh issue edit *` autonomy. They are defense in depth, not a sandbox. Instructions retain the exact paired status operations and prohibit shell separators, redirection, broad staging, scripts, unreported paths, direct literal base-branch pushes, force pushes, base refspec pushes, pull request base edits, and every merge mechanism.
+
+The human explicitly accepts the residual risk of wrong issue mutation from broad issue-edit autonomy. Mandatory provenance preflight reduces but cannot eliminate that risk. GitHub branch protection, required CI, and independent review are the hard boundary for repository acceptance.
 
 ### Implementer Agent
 

@@ -45,7 +45,9 @@ status:review
 
 The implementation status covers test authoring, accepted red publication, implementation, accepted green publication, agent review, and rework. The Publisher sets or keeps it after accepted red publication.
 
-The Publisher changes the issue to the review status only while marking the pull request ready, and only after no-blocker Reviewer evidence and required CI pass. Test Writer, Implementer, Reviewer, and Orchestrator remain non-publishing. The Publisher receives only a narrow `gh issue edit *` allowance; merge commands, auto-merge, and base-branch pushes remain denied.
+The Publisher changes the issue to the review status only while marking the pull request ready, and only after no-blocker Reviewer evidence and required CI pass. Test Writer, Implementer, Reviewer, and Orchestrator remain non-publishing. The Publisher has an explicitly broad `gh issue edit *` allowance for autonomy, while its required operational behavior still uses only complete paired transitions that remove the opposite status before adding the target status. Merge commands, auto-merge, pull request base edits, direct literal base-branch pushes, force pushes, and base refspec pushes remain denied.
+
+Before any push or GitHub mutation, the Publisher verifies that the current non-`main` branch equals the branch in task-card provenance, the pull request head matches that branch, and the target issue matches issue task-card provenance. It stops on any mismatch. After successful preflight, the generic `git push origin HEAD` and `git push --set-upstream origin HEAD` forms provide the autonomous fast path without a typed helper or hardcoded branch.
 
 GitHub merged/closed state records completion. No completion status label is used.
 
@@ -61,12 +63,16 @@ Routine issue-status publication is automatic and owned by the Publisher. The Or
 
 The normal human interaction is final review and merge. A genuine semantic conflict may stop work and invoke the Human Decision Loop; it does not authorize an agent to rewrite accepted tests or make an architecture decision silently.
 
+The human explicitly accepts the residual risk of wrong issue mutation from broad `gh issue edit *` autonomy. Mandatory provenance preflight reduces but does not eliminate that risk. OpenCode permission patterns are defense in depth, not a sandbox; GitHub branch protection, required CI, and independent review are the hard boundary for repository acceptance.
+
 ## Consequences
 
 - GitHub Issues and explicit dependencies determine delivery order without a duplicated queue.
 - Capability/milestone checkpoints happen when evidence is useful rather than on a fixed cadence.
 - The two labels express whether agents are still delivering or the pull request is ready for human review.
 - The role that verifies publication evidence performs the corresponding status mutation.
+- Generic current-branch publication avoids per-issue hardcoding while mandatory provenance checks stop mismatched publication.
+- Broad issue-edit autonomy carries the explicitly accepted residual wrong-issue mutation risk.
 - Shell-free coordination, immutable tests, separate red/green commits, independent review, CI, append-only evidence, and human-only merge remain intact.
 - Project-local OpenCode agent/skill/config-time changes take effect only after the merged changes are loaded by quitting and restarting OpenCode.
 

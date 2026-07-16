@@ -51,13 +51,15 @@ GitHub merged/closed state records completion instead of a merged status label. 
 
 The Reviewer is read-only and may run only exact current-branch/PR inspection and quality commands. `elbmesh-reviewer` is the single active final pull request role that reports merge readiness or blockers. Findings return to fresh Implementer, Publisher, and Reviewer sessions.
 
-The Publisher is non-editing. It verifies status/diffs, stages only exact role-reported paths, commits/pushes those paths, creates/updates the pull request, appends evidence, applies the two authorized issue-status changes, and marks a qualified pull request ready. It cannot merge, enable auto-merge, or push the base branch.
+The Publisher is non-editing. Before any push or GitHub mutation, it verifies that the current non-`main` branch matches reported task-card provenance, the pull request head matches that branch, and the target issue matches issue task-card provenance; it stops on any mismatch. It then verifies status/diffs, stages only exact role-reported paths, commits and pushes the verified current branch through generic `HEAD`, creates/updates the pull request, appends evidence, applies the two authorized issue-status changes, and marks a qualified pull request ready. It cannot merge, enable auto-merge, edit the pull request base, or push the base branch.
 
 Human merge authority is absolute. The only human action in routine pull request delivery is final review and merge; no agent has merge authority. Readiness evidence and ready state are invitations for human review, not approval to merge.
 
 ## Permission Boundary
 
-OpenCode permission rules constrain tool calls, not the operating-system account or hosting controls. Path-based Edit and Bash rules are broad-first and narrow-last because the last matching OpenCode rule wins. Permissions are defense in depth, not a sandbox: CI, branch protection, human review, exact-path status/diff checks, and role instructions remain necessary. Shell access never bypasses an Edit denial.
+OpenCode permission rules constrain tool calls, not the operating-system account or hosting controls. Path-based Edit and Bash rules are broad-first and narrow-last because the last matching OpenCode rule wins. The Publisher permission set intentionally allows `git push origin HEAD`, `git push --set-upstream origin HEAD`, and broad `gh issue edit *` after the broad deny, then places direct-base, force, base-refspec, pull-request-base-edit, and merge denials later so they win.
+
+OpenCode permissions are defense in depth, not a sandbox. GitHub branch protection, required CI, and independent review are the hard boundary for repository acceptance; exact-path status/diff checks and role instructions remain necessary. The human explicitly accepts the residual risk of wrong issue mutation created by broad issue-edit autonomy. Mandatory issue provenance preflight reduces but cannot eliminate that risk. Shell access never bypasses an Edit denial.
 
 Direct user `@`-invocation or `@`-mention of a subagent is an out-of-band human capability that Task permissions cannot prevent. Task permissions govern agent tool calls, not the user's direct subagent selection.
 
