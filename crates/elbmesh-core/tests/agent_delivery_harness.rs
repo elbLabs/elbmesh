@@ -559,6 +559,161 @@ fn pr_publisher_permissions_allow_publication_but_deny_direct_merge() {
 }
 
 #[test]
+fn publisher_pr_edit_permissions_deny_every_base_change_form() {
+    let (frontmatter, _) = agent_file(PR_PUBLISHER_AGENT);
+    let mut violations = Vec::new();
+
+    for command in [
+        "gh pr edit 152 --title \"Update delivery evidence\"",
+        "gh pr edit --body \"Current cumulative evidence\"",
+        "gh pr edit https://github.com/elbLabs/elbmesh/pull/152 --add-label reviewable",
+    ] {
+        let decision = effective_agent_permission(&frontmatter, "bash", command);
+        if decision != "allow" {
+            violations.push(format!(
+                "non-base pull-request edit resolves to {decision} instead of allow: {command}"
+            ));
+        }
+    }
+
+    for (form, command) in [
+        (
+            "long separated without selector",
+            "gh pr edit --base release/2026-q3",
+        ),
+        (
+            "long separated after numeric selector",
+            "gh pr edit 152 --base integration",
+        ),
+        (
+            "long separated before numeric selector",
+            "gh pr edit --base next 152",
+        ),
+        (
+            "long separated after URL selector",
+            "gh pr edit https://github.com/elbLabs/elbmesh/pull/152 --base stable",
+        ),
+        (
+            "long separated before URL selector",
+            "gh pr edit --base release/candidate https://github.com/elbLabs/elbmesh/pull/152",
+        ),
+        (
+            "long separated among extra options",
+            "gh pr edit 152 --title \"Retarget\" --base staging --add-label urgent",
+        ),
+        (
+            "long assignment without selector",
+            "gh pr edit --base=release/2026-q4",
+        ),
+        (
+            "long assignment after numeric selector",
+            "gh pr edit 152 --base=integration-next",
+        ),
+        (
+            "long assignment before numeric selector",
+            "gh pr edit --base=next-stable 152",
+        ),
+        (
+            "long assignment after URL selector",
+            "gh pr edit https://github.com/elbLabs/elbmesh/pull/152 --base=stable/2026",
+        ),
+        (
+            "long assignment before URL selector",
+            "gh pr edit --base=release/candidate https://github.com/elbLabs/elbmesh/pull/152",
+        ),
+        (
+            "long assignment among extra options",
+            "gh pr edit --add-label urgent --base=staging 152 --remove-label backlog",
+        ),
+        (
+            "short separated without selector",
+            "gh pr edit -B release/2026-q3",
+        ),
+        (
+            "short separated after numeric selector",
+            "gh pr edit 152 -B integration",
+        ),
+        (
+            "short separated before numeric selector",
+            "gh pr edit -B next 152",
+        ),
+        (
+            "short separated after URL selector",
+            "gh pr edit https://github.com/elbLabs/elbmesh/pull/152 -B stable",
+        ),
+        (
+            "short separated before URL selector",
+            "gh pr edit -B release/candidate https://github.com/elbLabs/elbmesh/pull/152",
+        ),
+        (
+            "short separated among extra options",
+            "gh pr edit 152 --title \"Retarget\" -B staging --add-label urgent",
+        ),
+        (
+            "short assignment without selector",
+            "gh pr edit -B=release/2026-q4",
+        ),
+        (
+            "short assignment after numeric selector",
+            "gh pr edit 152 -B=integration-next",
+        ),
+        (
+            "short assignment before numeric selector",
+            "gh pr edit -B=next-stable 152",
+        ),
+        (
+            "short assignment after URL selector",
+            "gh pr edit https://github.com/elbLabs/elbmesh/pull/152 -B=stable/2026",
+        ),
+        (
+            "short assignment before URL selector",
+            "gh pr edit -B=release/candidate https://github.com/elbLabs/elbmesh/pull/152",
+        ),
+        (
+            "short assignment among extra options",
+            "gh pr edit --add-label urgent -B=staging 152 --remove-label backlog",
+        ),
+        (
+            "short attached without selector",
+            "gh pr edit -Brelease/2026-q3",
+        ),
+        (
+            "short attached after numeric selector",
+            "gh pr edit 152 -Bintegration",
+        ),
+        (
+            "short attached before numeric selector",
+            "gh pr edit -Bnext 152",
+        ),
+        (
+            "short attached after URL selector",
+            "gh pr edit https://github.com/elbLabs/elbmesh/pull/152 -Bstable",
+        ),
+        (
+            "short attached before URL selector",
+            "gh pr edit -Brelease/candidate https://github.com/elbLabs/elbmesh/pull/152",
+        ),
+        (
+            "short attached among extra options",
+            "gh pr edit 152 --title \"Retarget\" -Bstaging --add-label urgent",
+        ),
+    ] {
+        let decision = effective_agent_permission(&frontmatter, "bash", command);
+        if decision != "deny" {
+            violations.push(format!(
+                "{form} base change resolves to {decision} instead of deny: {command}"
+            ));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "{PR_PUBLISHER_AGENT} must deny every valid pull-request base-change form while retaining required non-base edits under effective last-match permissions:\n- {}",
+        violations.join("\n- ")
+    );
+}
+
+#[test]
 fn publisher_push_permissions_allow_preflighted_head_but_deny_base_and_force_pushes() {
     let (frontmatter, _) = agent_file(PR_PUBLISHER_AGENT);
     let mut violations = Vec::new();
