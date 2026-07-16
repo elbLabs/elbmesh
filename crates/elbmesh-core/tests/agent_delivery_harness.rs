@@ -3,11 +3,22 @@ use std::{collections::BTreeSet, fs, path::Path, process::Command};
 use serde_json::Value;
 
 const ORCHESTRATOR_AGENT: &str = ".opencode/agents/elbmesh-orchestrator.md";
+const OPERATIONS_AGENT: &str = ".opencode/agents/elbmesh-operations.md";
 const TEST_WRITER_AGENT: &str = ".opencode/agents/elbmesh-test-writer.md";
 const IMPLEMENTER_AGENT: &str = ".opencode/agents/elbmesh-implementer.md";
 const REVIEWER_AGENT: &str = ".opencode/agents/elbmesh-reviewer.md";
 const PR_PUBLISHER_AGENT: &str = ".opencode/agents/elbmesh-pr-publisher.md";
+const OPERATIONS_SKILL: &str = ".opencode/skills/elbmesh-operations/SKILL.md";
 const RUST_CI_WORKFLOW: &str = ".github/workflows/rust-ci.yml";
+const OPERATIONS_BASH_ALLOWLIST: [&str; 7] = [
+    "gh issue create *",
+    "gh issue view *",
+    "git fetch",
+    "git fetch origin",
+    "git worktree list",
+    "git worktree list *",
+    "git worktree add *",
+];
 const REVIEWER_BASH_ALLOWLIST: [&str; 10] = [
     "cargo fmt --check",
     "cargo clippy --all-targets --all-features -- -D warnings",
@@ -133,6 +144,148 @@ fn project_config_selects_the_primary_elbmesh_orchestrator() {
 }
 
 #[test]
+fn operations_subagent_has_only_issue_and_worktree_setup_permissions() {
+    let (frontmatter, body) = agent_file(OPERATIONS_AGENT);
+    assert_agent_mode(OPERATIONS_AGENT, &frontmatter, "subagent");
+    assert_skill_reference(OPERATIONS_AGENT, &body, "elbmesh-operations");
+
+    let mut violations = Vec::new();
+    if !edit_is_denied(&frontmatter) {
+        violations.push("Edit is not denied".to_owned());
+    }
+    if permission_default_action(&frontmatter, "task").as_deref() != Some("deny") {
+        violations.push("Task is not explicitly denied".to_owned());
+    }
+
+    let bash_rules = permission_rules(&frontmatter, "bash");
+    if bash_rules
+        .first()
+        .map(|(pattern, action)| (pattern.as_str(), action.as_str()))
+        != Some(("*", "deny"))
+    {
+        violations.push(format!(
+            "Bash rules must begin with a broad deny, found {bash_rules:?}"
+        ));
+    }
+    let mut allowed_commands: Vec<_> = bash_rules
+        .iter()
+        .filter(|(_, action)| action == "allow")
+        .map(|(pattern, _)| pattern.as_str())
+        .collect();
+    allowed_commands.sort_unstable();
+    let mut expected_commands = OPERATIONS_BASH_ALLOWLIST;
+    expected_commands.sort_unstable();
+    if allowed_commands != expected_commands {
+        violations.push(format!(
+            "Bash allows must contain only issue create/view, fetch, and worktree list/add patterns, found {allowed_commands:?}"
+        ));
+    }
+
+    for command in [
+        "gh issue create --title 'Task' --body 'Complete task card'",
+        "gh issue view 123",
+        "git fetch",
+        "git fetch origin",
+        "git worktree list",
+        "git worktree list --porcelain",
+        "git worktree add -b issue-123 ../elbmesh-issue-123 origin/main",
+    ] {
+        if permission_decision(&frontmatter, "bash", command).as_deref() != Some("allow") {
+            violations.push(format!("required setup command is not allowed: {command}"));
+        }
+    }
+
+    for command in [
+        "gh issue create --title 'Task' --body 'Body' --label status:implementation",
+        "gh issue create -l bug --title 'Task' --body 'Body'",
+        "gh issue edit 123 --add-label status:review",
+        "gh issue close 123",
+        "gh pr create --draft --title 'Task' --body 'Body'",
+        "gh pr comment 148 --body 'ready'",
+        "gh pr merge 148",
+        "git status --short --branch",
+        "git commit -m 'bootstrap'",
+        "git push origin HEAD",
+        "git merge implementation",
+        "git branch -D issue-123",
+        "git worktree remove ../elbmesh-issue-123",
+        "git worktree add --force ../elbmesh-issue-123 issue-123",
+        "git worktree add -B issue-123 ../elbmesh-issue-123 origin/main",
+        "printf bypass > docs/AGENT_SKILLS.md",
+    ] {
+        if effective_agent_permission(&frontmatter, "bash", command) != "deny" {
+            violations.push(format!("prohibited command is not denied: {command}"));
+        }
+    }
+
+    for path in [
+        "crates/elbmesh-core/src/lib.rs",
+        "docs/AGENT_SKILLS.md",
+        ".opencode/agents/elbmesh-orchestrator.md",
+    ] {
+        if effective_agent_permission(&frontmatter, "edit", path) != "deny" {
+            violations.push(format!("repository path remains editable: {path}"));
+        }
+    }
+
+    assert_contains_all(
+        OPERATIONS_AGENT,
+        &body,
+        &[
+            "task card",
+            "issue",
+            "worktree",
+            "one permitted command at a time",
+            "no file modifications",
+            "nested task",
+        ],
+    );
+    assert!(
+        violations.is_empty(),
+        "{OPERATIONS_AGENT} narrow operations permission violations:\n- {}",
+        violations.join("\n- ")
+    );
+}
+
+#[test]
+fn orchestrator_delegates_issue_and_worktree_setup_to_operations() {
+    let (_, body) = agent_file(ORCHESTRATOR_AGENT);
+    let body = body.to_ascii_lowercase();
+
+    assert!(
+        body.split("\n\n").any(|paragraph| {
+            paragraph.contains("fresh")
+                && paragraph.contains("spawn")
+                && paragraph.contains("elbmesh-operations")
+                && paragraph.contains("issue")
+                && paragraph.contains("worktree")
+        }),
+        "{ORCHESTRATOR_AGENT} must delegate issue creation and worktree setup to a fresh elbmesh-operations session"
+    );
+}
+
+#[test]
+fn operations_contract_is_synchronized_across_agent_skill_and_active_docs() {
+    for path in [
+        OPERATIONS_AGENT,
+        OPERATIONS_SKILL,
+        "docs/AGENT_SKILLS.md",
+        "docs/DEVELOPMENT_WORKFLOW.md",
+        "docs/AGENT_DELIVERY_HARNESS.md",
+    ] {
+        let document = project_file(path);
+        assert_contains_all(path, &document, &["operations", "issue", "worktree"]);
+    }
+
+    let catalog = project_file("docs/AGENT_SKILLS.md");
+    assert_contains_all(
+        "docs/AGENT_SKILLS.md",
+        &catalog,
+        &["### elbmesh-operations"],
+    );
+}
+
+#[test]
 fn orchestrator_sequences_fresh_role_sessions_after_red_and_green_gates() {
     let (_, body) = agent_file(ORCHESTRATOR_AGENT);
     let body = body.to_ascii_lowercase();
@@ -255,9 +408,7 @@ fn canonical_active_flow_assigns_merge_readiness_only_to_reviewer() {
         ".opencode/skills/elbmesh-reviewer/SKILL.md",
         ".opencode/agents/elbmesh-orchestrator.md",
         ".opencode/skills/elbmesh-orchestrator/SKILL.md",
-        "docs/AGENT_DELIVERY_HARNESS.md",
         "docs/DEVELOPMENT_WORKFLOW.md",
-        "docs/AGENT_SKILLS.md",
     ];
     let mr_reviewer_names = ["elbmesh-mr-reviewer", "mr reviewer"];
     let mut violations = Vec::new();
@@ -422,7 +573,6 @@ fn publisher_green_and_readiness_evidence_is_append_only_on_issue_and_pull_reque
     let paths = [
         PR_PUBLISHER_AGENT,
         ".opencode/skills/elbmesh-pr-publisher/SKILL.md",
-        "docs/AGENT_DELIVERY_HARNESS.md",
     ];
     let required_evidence_fields: [(&str, &[&str]); 10] = [
         (
@@ -1001,6 +1151,7 @@ fn harness_agent_skills_include_canonical_required_reading() {
     ];
     let skill_paths = [
         ".opencode/skills/elbmesh-orchestrator/SKILL.md",
+        OPERATIONS_SKILL,
         ".opencode/skills/elbmesh-test-writer/SKILL.md",
         ".opencode/skills/elbmesh-pr-publisher/SKILL.md",
         ".opencode/skills/elbmesh-implementer/SKILL.md",
@@ -1041,6 +1192,7 @@ fn every_concrete_elbmesh_skill_includes_canonical_required_reading() {
     let skill_paths = [
         ".opencode/skills/elbmesh-driver/SKILL.md",
         ".opencode/skills/elbmesh-orchestrator/SKILL.md",
+        OPERATIONS_SKILL,
         ".opencode/skills/elbmesh-test-writer/SKILL.md",
         ".opencode/skills/elbmesh-pr-publisher/SKILL.md",
         ".opencode/skills/elbmesh-implementer/SKILL.md",
@@ -1145,8 +1297,8 @@ fn publisher_automates_issue_status_transitions_with_delivery_prerequisites() {
 }
 
 #[test]
-fn harness_documentation_keeps_human_merge_and_tracks_automated_issue_statuses() {
-    let path = "docs/AGENT_DELIVERY_HARNESS.md";
+fn canonical_workflow_keeps_human_merge_and_tracks_automated_issue_statuses() {
+    let path = "docs/DEVELOPMENT_WORKFLOW.md";
     let documentation = project_file(path).to_ascii_lowercase();
     let paragraphs: Vec<_> = documentation.split("\n\n").collect();
 
@@ -1171,29 +1323,17 @@ fn harness_documentation_keeps_human_merge_and_tracks_automated_issue_statuses()
         "{path} must use only the two active issue statuses"
     );
 
-    assert!(
-        paragraphs.iter().any(|paragraph| {
-            paragraph.contains("publisher")
-                && paragraph.contains("red")
-                && paragraph.contains("status:implementation")
-                && ["set", "keep", "transition", "move"]
-                    .iter()
-                    .any(|term| paragraph.contains(term))
-        }),
-        "{path} must assign the post-red `status:implementation` transition to the Publisher"
-    );
-    assert!(
-        paragraphs.iter().any(|paragraph| {
-            paragraph.contains("publisher")
-                && paragraph.contains("reviewer")
-                && paragraph.contains("ci")
-                && paragraph.contains("ready")
-                && paragraph.contains("status:review")
-                && ["no blocker", "no-blocker", "no blocking"]
-                    .iter()
-                    .any(|term| paragraph.contains(term))
-        }),
-        "{path} must assign `status:review` to the Publisher only after no-blocker Reviewer evidence and required CI"
+    assert_contains_all(
+        path,
+        &documentation,
+        &[
+            "publisher",
+            "red publication",
+            "status:implementation",
+            "status:review",
+            "reviewer reports no blockers",
+            "required ci passes",
+        ],
     );
     assert!(
         paragraphs.iter().any(|paragraph| {
@@ -1207,8 +1347,8 @@ fn harness_documentation_keeps_human_merge_and_tracks_automated_issue_statuses()
 }
 
 #[test]
-fn harness_documents_automatic_pull_request_creation_and_human_only_merge() {
-    let path = "docs/AGENT_DELIVERY_HARNESS.md";
+fn workflow_documents_automatic_pull_request_creation_and_human_only_merge() {
+    let path = "docs/DEVELOPMENT_WORKFLOW.md";
     let documentation = project_file(path).to_ascii_lowercase();
 
     assert!(
@@ -1232,19 +1372,20 @@ fn harness_documents_automatic_pull_request_creation_and_human_only_merge() {
         }),
         "{path} must explicitly state that only merge requires human action in the pull request delivery flow"
     );
+    let harness = project_file("docs/AGENT_DELIVERY_HARNESS.md").to_ascii_lowercase();
     assert!(
-        documentation.split("\n\n").any(|paragraph| {
+        harness.split("\n\n").any(|paragraph| {
             paragraph.contains("permission")
                 && paragraph.contains("defense in depth")
                 && paragraph.contains("not a sandbox")
         }),
-        "{path} must document OpenCode permissions as defense in depth rather than a sandbox"
+        "docs/AGENT_DELIVERY_HARNESS.md must document OpenCode permissions as defense in depth rather than a sandbox"
     );
 }
 
 #[test]
-fn harness_documentation_uses_dependency_order_without_an_active_phase_gate() {
-    let path = "docs/AGENT_DELIVERY_HARNESS.md";
+fn roadmap_uses_dependency_order_without_an_active_phase_gate() {
+    let path = "docs/DELIVERY_ROADMAP.md";
     let documentation = project_file(path).to_ascii_lowercase();
     let forbidden_phase_contracts = [
         "## phase contract",
@@ -1278,7 +1419,7 @@ fn harness_documentation_uses_dependency_order_without_an_active_phase_gate() {
 }
 
 #[test]
-fn only_the_orchestrator_can_spawn_delivery_role_agents() {
+fn only_the_orchestrator_can_spawn_delivery_and_operations_role_agents() {
     let config = project_file("opencode.json");
     let config: Value = serde_json::from_str(&config)
         .unwrap_or_else(|error| panic!("opencode.json must be valid JSON: {error}"));
@@ -1288,7 +1429,13 @@ fn only_the_orchestrator_can_spawn_delivery_role_agents() {
         violations.push("opencode.json must deny Task by default".to_owned());
     }
 
-    for path in [TEST_WRITER_AGENT, IMPLEMENTER_AGENT, REVIEWER_AGENT] {
+    for path in [
+        OPERATIONS_AGENT,
+        TEST_WRITER_AGENT,
+        PR_PUBLISHER_AGENT,
+        IMPLEMENTER_AGENT,
+        REVIEWER_AGENT,
+    ] {
         let (frontmatter, _) = agent_file(path);
         if permission_default_action(&frontmatter, "task").as_deref() != Some("deny") {
             violations.push(format!("{path} must explicitly deny Task"));
@@ -1306,9 +1453,9 @@ fn only_the_orchestrator_can_spawn_delivery_role_agents() {
             "{ORCHESTRATOR_AGENT} Task rules must begin with a broad deny"
         ));
     }
-    if task_rules.len() != 5 {
+    if task_rules.len() != 6 {
         violations.push(format!(
-            "{ORCHESTRATOR_AGENT} must have only one broad Task deny followed by the four role allows, found {task_rules:?}"
+            "{ORCHESTRATOR_AGENT} must have only one broad Task deny followed by the five role allows, found {task_rules:?}"
         ));
     }
 
@@ -1319,6 +1466,7 @@ fn only_the_orchestrator_can_spawn_delivery_role_agents() {
         .collect();
     allowed_agents.sort_unstable();
     let mut expected_agents = [
+        "elbmesh-operations",
         "elbmesh-test-writer",
         "elbmesh-implementer",
         "elbmesh-reviewer",
@@ -1327,7 +1475,7 @@ fn only_the_orchestrator_can_spawn_delivery_role_agents() {
     expected_agents.sort_unstable();
     if allowed_agents != expected_agents {
         violations.push(format!(
-            "{ORCHESTRATOR_AGENT} may allow Task only for the four delivery roles, found {allowed_agents:?}"
+            "{ORCHESTRATOR_AGENT} may allow Task only for operations and the four delivery roles, found {allowed_agents:?}"
         ));
     }
 
@@ -1661,7 +1809,6 @@ fn canonical_implementer_guidance_protects_accepted_tests_and_fixtures() {
         IMPLEMENTER_AGENT,
         ".opencode/skills/elbmesh-implementer/SKILL.md",
         "docs/DEVELOPMENT_WORKFLOW.md",
-        "docs/AGENT_SKILLS.md",
     ];
     let mut violations = Vec::new();
 
@@ -1739,7 +1886,6 @@ fn canonical_implementer_guidance_protects_accepted_tests_and_fixtures() {
 fn canonical_workflow_sources_reserve_merge_authority_for_humans() {
     let paths = [
         "docs/DEVELOPMENT_WORKFLOW.md",
-        "docs/AGENT_SKILLS.md",
         "docs/adr/0014-phased-mr-based-multi-agent-delivery.md",
         "docs/adr/0015-use-github-issues-as-operational-queue.md",
         ".opencode/skills/elbmesh-mr-reviewer/SKILL.md",
