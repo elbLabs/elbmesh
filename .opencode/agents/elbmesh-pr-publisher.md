@@ -24,8 +24,11 @@ permission:
     "gh pr comment *": allow
     "gh pr ready *": allow
     "gh pr edit --base *": deny
+    "gh pr edit --base=*": deny
     "gh pr edit * --base *": deny
     "gh pr edit * --base=*": deny
+    "gh pr edit -B*": deny
+    "gh pr edit * -B*": deny
     "git push origin main": deny
     "git push origin refs/heads/main": deny
     "git push --set-upstream origin main": deny
