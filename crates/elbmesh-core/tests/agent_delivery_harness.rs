@@ -66,6 +66,57 @@ fn github_pull_request_enforcement_has_rust_ci_workflow() {
 }
 
 #[test]
+fn github_pull_request_enforcement_has_required_live_adapter_jobs() {
+    let workflow = project_file(RUST_CI_WORKFLOW);
+
+    let nats_job = workflow_job_containing(&workflow, "--features nats-tests")
+        .expect("Rust CI must define a dedicated job that runs live NATS tests");
+    assert!(
+        nats_job.contains("docker compose up -d nats") || nats_job.contains("image: nats:"),
+        "the live NATS job must provision NATS"
+    );
+    assert!(
+        nats_job.contains("ELBMESH_NATS_URL"),
+        "the live NATS job must require ELBMESH_NATS_URL instead of allowing a skip"
+    );
+    assert!(
+        workflow_job_runs_exact_command(
+            &nats_job,
+            "cargo test -p elbmesh-core --features nats-tests --test event_store_contract",
+        ),
+        "the live NATS job must run the complete event_store_contract test binary without a filter that can match zero tests"
+    );
+    assert!(
+        !nats_job.contains("continue-on-error: true"),
+        "the live NATS job must block on failures"
+    );
+
+    let restate_job = workflow_job_containing(&workflow, "--features restate-tests")
+        .expect("Rust CI must define a dedicated job that runs live Restate tests");
+    assert!(
+        restate_job.contains("docker compose up -d restate")
+            || restate_job.contains("image: docker.io/restatedev/restate:")
+            || restate_job.contains("image: restatedev/restate:"),
+        "the live Restate job must provision Restate"
+    );
+    assert!(
+        restate_job.contains("ELBMESH_RESTATE_URL"),
+        "the live Restate job must require ELBMESH_RESTATE_URL instead of allowing a skip"
+    );
+    assert!(
+        workflow_job_runs_exact_command(
+            &restate_job,
+            "cargo test -p elbmesh-core --features restate-tests --test operation_journal",
+        ),
+        "the live Restate job must run the complete operation_journal test binary without a filter that can match zero tests"
+    );
+    assert!(
+        !restate_job.contains("continue-on-error: true"),
+        "the live Restate job must block on failures"
+    );
+}
+
+#[test]
 #[ignore = "live GitHub ruleset contract; run explicitly with authenticated gh"]
 fn github_pull_request_enforcement_has_main_branch_rules() {
     let output = Command::new("gh")
@@ -1978,6 +2029,39 @@ fn project_file(relative_path: &str) -> String {
 
     fs::read_to_string(&path).unwrap_or_else(|error| {
         panic!("required OpenCode delivery harness file `{relative_path}` is unavailable: {error}")
+    })
+}
+
+fn workflow_job_containing(workflow: &str, marker: &str) -> Option<String> {
+    let jobs = workflow.split_once("\njobs:\n")?.1;
+    let mut current = String::new();
+    let mut blocks = Vec::new();
+
+    for line in jobs.lines() {
+        let starts_job = line.starts_with("  ")
+            && !line.starts_with("    ")
+            && line.trim_end().ends_with(':');
+
+        if starts_job && !current.is_empty() {
+            blocks.push(std::mem::take(&mut current));
+        }
+
+        if starts_job || !current.is_empty() {
+            current.push_str(line);
+            current.push('\n');
+        }
+    }
+
+    if !current.is_empty() {
+        blocks.push(current);
+    }
+
+    blocks.into_iter().find(|block| block.contains(marker))
+}
+
+fn workflow_job_runs_exact_command(job: &str, command: &str) -> bool {
+    job.lines().map(str::trim).any(|line| {
+        line == command || line.strip_prefix("run: ").is_some_and(|run| run == command)
     })
 }
 
