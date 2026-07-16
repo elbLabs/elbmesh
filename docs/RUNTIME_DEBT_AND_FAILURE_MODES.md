@@ -115,7 +115,7 @@ What is the exact EventStore load contract for gaps, duplicates, ordering, and w
 Which journal writes are mandatory and which are best-effort?
 ```
 
-The `ActionFailed.details` decision is settled: it carries a stable failure code, error type/variant, and structured nested diagnostics. Provider request/response payloads remain in the OperationJournal or object storage, while future adapter overlays may add safe execution context.
+The `ActionFailed.failure_details` decision is settled: it carries a stable failure code, error type/variant, and structured nested diagnostics. Provider request/response payloads remain in the OperationJournal or object storage, while future adapter overlays may add safe execution context.
 
 ## Current Recommendation
 
