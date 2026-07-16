@@ -109,10 +109,23 @@ impl ArchitectureManifest {
             }
 
             for event_type in &action.emitted_event_types {
-                if !event_types.contains(event_type.as_str()) {
+                let Some(event) = self
+                    .events
+                    .iter()
+                    .find(|event| event.event_type == *event_type)
+                else {
                     return Err(ManifestValidationError::UnknownActionEmittedEvent {
                         action_type: action.action_type.clone(),
                         event_type: event_type.clone(),
+                    });
+                };
+
+                if event.resource_type != action.resource_type {
+                    return Err(ManifestValidationError::CrossResourceActionEmittedEvent {
+                        action_type: action.action_type.clone(),
+                        action_resource_type: action.resource_type.clone(),
+                        event_type: event_type.clone(),
+                        event_resource_type: event.resource_type.clone(),
                     });
                 }
             }
@@ -328,6 +341,14 @@ pub enum ManifestValidationError {
         event_type: String,
     },
 
+    #[error("manifest action '{action_type}' targets resource '{action_resource_type}' but emits event '{event_type}' owned by resource '{event_resource_type}'")]
+    CrossResourceActionEmittedEvent {
+        action_type: String,
+        action_resource_type: String,
+        event_type: String,
+        event_resource_type: String,
+    },
+
     #[error("manifest reaction '{reaction_type}' triggers from undeclared event '{event_type}'")]
     UnknownReactionTriggerEvent {
         reaction_type: String,
@@ -362,6 +383,9 @@ impl ManifestValidationError {
             }
             Self::UnknownEventResource { .. } => "manifest.event_unknown_resource",
             Self::UnknownActionEmittedEvent { .. } => "manifest.action_unknown_emitted_event",
+            Self::CrossResourceActionEmittedEvent { .. } => {
+                "manifest.action_cross_resource_emitted_event"
+            }
             Self::UnknownReactionTriggerEvent { .. } => "manifest.reaction_unknown_trigger_event",
             Self::UnknownReactionTargetAction { .. } => "manifest.reaction_unknown_target_action",
             Self::ReactionGraphCycle { .. } => "manifest.reaction_graph_cycle",
