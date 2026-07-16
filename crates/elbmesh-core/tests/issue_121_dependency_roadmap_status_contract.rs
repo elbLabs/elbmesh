@@ -221,10 +221,16 @@ fn publisher_automates_issue_status_transitions_without_merge_authority() {
 
     for rule in [
         "\"*\": deny",
-        "\"gh issue edit * --remove-label status:review --add-label status:implementation\": allow",
-        "\"gh issue edit * --remove-label status:implementation --add-label status:review\": allow",
+        "\"gh issue edit *\": allow",
+        "\"git push origin HEAD\": allow",
+        "\"git push --set-upstream origin HEAD\": allow",
+        "\"git push origin main\": deny",
+        "\"git push --set-upstream origin main\": deny",
+        "\"git push --force *\": deny",
+        "\"git push --force-with-lease *\": deny",
         "\"git merge\": deny",
         "\"git merge *\": deny",
+        "\"gh pr edit * --base *\": deny",
         "\"gh pr merge\": deny",
         "\"gh pr merge *\": deny",
     ] {
@@ -235,26 +241,17 @@ fn publisher_automates_issue_status_transitions_without_merge_authority() {
         }
     }
 
-    if bash_rules
-        .lines()
-        .any(|line| line.trim() == "\"gh issue edit *\": allow")
-    {
-        violations.push(
-            "Publisher Bash permissions must not allow broad `gh issue edit *` mutation".to_owned(),
-        );
-    }
-
     let broad_deny = bash_rules.find("\"*\": deny");
-    for transition in [
-        "\"gh issue edit * --remove-label status:review --add-label status:implementation\": allow",
-        "\"gh issue edit * --remove-label status:implementation --add-label status:review\": allow",
+    for fast_path_allow in [
+        "\"gh issue edit *\": allow",
+        "\"git push origin HEAD\": allow",
+        "\"git push --set-upstream origin HEAD\": allow",
     ] {
-        let transition = bash_rules.find(transition);
-        if !matches!((broad_deny, transition), (Some(deny), Some(allow)) if deny < allow) {
-            violations.push(
-                "Publisher Bash permissions must place each complete status-transition allowance after the broad deny"
-                    .to_owned(),
-            );
+        let allow_position = bash_rules.find(fast_path_allow);
+        if !matches!((broad_deny, allow_position), (Some(deny), Some(allow)) if deny < allow) {
+            violations.push(format!(
+                "Publisher Bash permissions must place accepted fast-path allowance `{fast_path_allow}` after the broad deny"
+            ));
         }
     }
 
@@ -264,6 +261,49 @@ fn publisher_automates_issue_status_transitions_without_merge_authority() {
         (publisher_skill, publisher_skill_body.as_str()),
     ] {
         let normalized = document.to_ascii_lowercase();
+
+        for command in [
+            "git push origin head",
+            "git push --set-upstream origin head",
+        ] {
+            if !normalized.contains(command) {
+                violations.push(format!(
+                    "{path} must document the generic preflighted push form `{command}`"
+                ));
+            }
+        }
+        if normalized.split("\n\n").any(|paragraph| {
+            paragraph.contains("push") && paragraph.contains("head") && paragraph.contains("never")
+        }) {
+            violations.push(format!(
+                "{path} must not prohibit the accepted preflighted HEAD push forms"
+            ));
+        }
+
+        let has_provenance_preflight = normalized.split("\n\n").any(|paragraph| {
+            (paragraph.contains("preflight") || paragraph.contains("before"))
+                && ["branch", "issue", "provenance"]
+                    .iter()
+                    .all(|term| paragraph.contains(term))
+                && (paragraph.contains("pull request") || paragraph.contains(" pr "))
+                && ["verify", "match"]
+                    .iter()
+                    .any(|term| paragraph.contains(term))
+        });
+        if !has_provenance_preflight {
+            violations.push(format!(
+                "{path} must verify branch, pull-request, and issue provenance before any push or GitHub mutation"
+            ));
+        }
+        if !normalized
+            .split("\n\n")
+            .any(|paragraph| paragraph.contains("stop") && paragraph.contains("mismatch"))
+        {
+            violations.push(format!(
+                "{path} must stop on any branch, pull-request, or issue provenance mismatch"
+            ));
+        }
+
         for command in [
             "gh issue edit <issue> --remove-label status:review --add-label status:implementation",
             "gh issue edit <issue> --remove-label status:implementation --add-label status:review",
@@ -306,6 +346,37 @@ fn publisher_automates_issue_status_transitions_without_merge_authority() {
         }
         if !normalized.contains("only a human") || !normalized.contains("merge") {
             violations.push(format!("{path} must preserve human-only merge authority"));
+        }
+
+        if !normalized.contains("gh issue edit *") || !normalized.contains("broad") {
+            violations.push(format!(
+                "{path} must explicitly document the accepted broad `gh issue edit *` permission"
+            ));
+        }
+        if !normalized.contains("defense in depth") || !normalized.contains("not a sandbox") {
+            violations.push(format!(
+                "{path} must describe OpenCode permissions as defense in depth, not a sandbox"
+            ));
+        }
+        if !normalized.split("\n\n").any(|paragraph| {
+            paragraph.contains("branch protection")
+                && paragraph.contains("ci")
+                && (paragraph.contains("independent review")
+                    || paragraph.contains("independent reviewer"))
+                && paragraph.contains("hard bound")
+        }) {
+            violations.push(format!(
+                "{path} must identify GitHub branch protection, CI, and independent review as the hard boundary"
+            ));
+        }
+        if !normalized.split("\n\n").any(|paragraph| {
+            paragraph.contains("wrong issue")
+                && paragraph.contains("residual risk")
+                && paragraph.contains("accept")
+        }) {
+            violations.push(format!(
+                "{path} must explicitly document acceptance of the residual wrong-issue mutation risk"
+            ));
         }
     }
 

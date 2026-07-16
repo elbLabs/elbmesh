@@ -8,15 +8,6 @@ const IMPLEMENTER_AGENT: &str = ".opencode/agents/elbmesh-implementer.md";
 const REVIEWER_AGENT: &str = ".opencode/agents/elbmesh-reviewer.md";
 const PR_PUBLISHER_AGENT: &str = ".opencode/agents/elbmesh-pr-publisher.md";
 const RUST_CI_WORKFLOW: &str = ".github/workflows/rust-ci.yml";
-const ISSUE_BRANCH: &str = "workflow/issue-121-dependency-roadmap-and-status-automation";
-const TO_IMPLEMENTATION_COMMAND: &str =
-    "gh issue edit 121 --remove-label status:review --add-label status:implementation";
-const TO_REVIEW_COMMAND: &str =
-    "gh issue edit 121 --remove-label status:implementation --add-label status:review";
-const STATUS_TRANSITION_ALLOW_PATTERNS: [&str; 2] = [
-    "gh issue edit * --remove-label status:review --add-label status:implementation",
-    "gh issue edit * --remove-label status:implementation --add-label status:review",
-];
 const REVIEWER_BASH_ALLOWLIST: [&str; 10] = [
     "cargo fmt --check",
     "cargo clippy --all-targets --all-features -- -D warnings",
@@ -540,8 +531,15 @@ fn pr_publisher_permissions_allow_publication_but_deny_direct_merge() {
     }
 
     for command in [
+        "git push origin main",
+        "git push --set-upstream origin main",
+        "git push origin HEAD:main",
+        "git push origin HEAD:refs/heads/main",
+        "git push --force origin HEAD",
+        "git push --force-with-lease origin HEAD",
         "git merge main",
         "git merge --continue",
+        "gh pr edit 148 --base main",
         "gh pr merge 148",
         "gh pr merge 148 --auto",
     ] {
@@ -561,160 +559,196 @@ fn pr_publisher_permissions_allow_publication_but_deny_direct_merge() {
 }
 
 #[test]
-fn publisher_push_permissions_deny_branch_sensitive_head_aliases() {
+fn publisher_push_permissions_allow_preflighted_head_but_deny_base_and_force_pushes() {
     let (frontmatter, _) = agent_file(PR_PUBLISHER_AGENT);
     let mut violations = Vec::new();
 
     for command in [
-        format!("git push --set-upstream origin {ISSUE_BRANCH}"),
-        format!("git push origin {ISSUE_BRANCH}"),
+        "git push origin HEAD",
+        "git push --set-upstream origin HEAD",
     ] {
-        let decision = effective_agent_permission(&frontmatter, "bash", &command);
+        let decision = effective_agent_permission(&frontmatter, "bash", command);
         if decision != "allow" {
             violations.push(format!(
-                "named issue-branch publication resolves to {decision} instead of allow: {command}"
+                "generic current-branch publication resolves to {decision} instead of allow: {command}"
             ));
         }
     }
 
     for command in [
-        "git push origin HEAD".to_owned(),
-        "git push --set-upstream origin HEAD".to_owned(),
-        "git push origin main".to_owned(),
-        "git push origin refs/heads/main".to_owned(),
-        "git push --set-upstream origin main".to_owned(),
-        "git push --set-upstream origin refs/heads/main".to_owned(),
-        "git push -u origin main".to_owned(),
-        "git push --force origin main".to_owned(),
-        "git push --force-with-lease origin main".to_owned(),
-        "git push origin +main".to_owned(),
-        "git push origin +refs/heads/main:refs/heads/main".to_owned(),
-        format!("git push origin {ISSUE_BRANCH}:main"),
-        format!("git push origin {ISSUE_BRANCH}:refs/heads/main"),
-        format!("git push --force origin {ISSUE_BRANCH}"),
-        format!("git push --force-with-lease origin {ISSUE_BRANCH}"),
-        format!("git push origin {ISSUE_BRANCH} --force"),
+        "git push origin main",
+        "git push origin refs/heads/main",
+        "git push --set-upstream origin main",
+        "git push --set-upstream origin refs/heads/main",
+        "git push -u origin main",
+        "git push --force origin HEAD",
+        "git push --force-with-lease origin HEAD",
+        "git push origin HEAD --force",
+        "git push origin +HEAD",
+        "git push origin HEAD:main",
+        "git push origin HEAD:refs/heads/main",
     ] {
-        let decision = effective_agent_permission(&frontmatter, "bash", &command);
+        let decision = effective_agent_permission(&frontmatter, "bash", command);
         if decision != "deny" {
             violations.push(format!(
-                "branch-sensitive, base-branch, or force push resolves to {decision} instead of deny: {command}"
+                "base-branch, force, or refspec push resolves to {decision} instead of deny: {command}"
             ));
         }
     }
 
     assert!(
         violations.is_empty(),
-        "{PR_PUBLISHER_AGENT} must allow explicit issue-branch publication while denying HEAD aliases, base refspecs, and force variants under last-match permission evaluation:\n- {}",
+        "{PR_PUBLISHER_AGENT} must allow generic HEAD publication after provenance preflight while denying direct base, force, and base-refspec pushes:\n- {}",
         violations.join("\n- ")
     );
 }
 
 #[test]
-fn publisher_issue_edit_permissions_allow_only_two_status_transitions() {
+fn publisher_issue_edit_permissions_allow_broad_autonomous_mutation() {
     let (frontmatter, _) = agent_file(PR_PUBLISHER_AGENT);
     let bash_rules = permission_rules(&frontmatter, "bash");
     let mut violations = Vec::new();
-    let issue_edit_allow_patterns: Vec<_> = bash_rules
-        .iter()
-        .filter(|(pattern, action)| pattern.starts_with("gh issue edit ") && action == "allow")
-        .map(|(pattern, _)| pattern.as_str())
-        .collect();
 
-    if issue_edit_allow_patterns != STATUS_TRANSITION_ALLOW_PATTERNS {
-        violations.push(format!(
-            "the only issue-edit allow patterns must be the two complete remove/add transitions; found {issue_edit_allow_patterns:?}"
-        ));
+    if !bash_rules
+        .iter()
+        .any(|(pattern, action)| pattern == "gh issue edit *" && action == "allow")
+    {
+        violations
+            .push("Bash permissions must include broad `gh issue edit *` autonomy".to_owned());
     }
 
     for command in [
-        TO_IMPLEMENTATION_COMMAND,
-        TO_REVIEW_COMMAND,
+        "gh issue edit 121 --remove-label status:review --add-label status:implementation",
+        "gh issue edit 121 --remove-label status:implementation --add-label status:review",
         "gh issue edit 987 --remove-label status:review --add-label status:implementation",
         "gh issue edit 987 --remove-label status:implementation --add-label status:review",
+        "gh issue edit 121 --title \"Autonomous correction\"",
     ] {
         let decision = effective_agent_permission(&frontmatter, "bash", command);
         if decision != "allow" {
             violations.push(format!(
-                "complete mutually exclusive status transition resolves to {decision} instead of allow: {command}"
+                "autonomous issue mutation resolves to {decision} instead of allow: {command}"
             ));
         }
     }
 
     assert!(
         violations.is_empty(),
-        "{PR_PUBLISHER_AGENT} issue-edit permissions must expose only the two complete status transitions under last-match evaluation:\n- {}",
+        "{PR_PUBLISHER_AGENT} issue-edit permissions must allow the accepted broad autonomous fast path:\n- {}",
         violations.join("\n- ")
     );
 }
 
 #[test]
-fn publisher_issue_edit_permissions_deny_unrelated_mutations() {
-    let (frontmatter, _) = agent_file(PR_PUBLISHER_AGENT);
+fn publisher_fast_path_requires_branch_pr_and_issue_provenance_preflight() {
+    let paths = [
+        PR_PUBLISHER_AGENT,
+        ".opencode/skills/elbmesh-pr-publisher/SKILL.md",
+    ];
     let mut violations = Vec::new();
 
-    for command in [
-        "gh issue edit 121 --title \"Unrelated retitle\"",
-        "gh issue edit 121 --body \"Unrelated body\"",
-        "gh issue edit 121 --body-file notes.md",
-        "gh issue edit 121 --add-assignee @me",
-        "gh issue edit 121 --remove-assignee @me",
-        "gh issue edit 121 --milestone next",
-        "gh issue edit 121 --remove-milestone",
-        "gh issue edit 121 --add-project Roadmap",
-        "gh issue edit 121 --remove-project Roadmap",
-        "gh issue edit 121 --add-label unrelated",
-        "gh issue edit 121 --remove-label unrelated",
-        "gh issue edit 121 --repo another/repository --remove-label status:review --add-label status:implementation",
-        "gh issue edit 121 --title \"Retitle\" --remove-label status:review --add-label status:implementation",
-        "gh issue edit 121 --remove-label status:review --add-label status:implementation --body \"Also mutate body\"",
-        "gh issue edit 121 --add-label unrelated --remove-label status:review --add-label status:implementation",
-        "gh issue edit 121 --remove-label unrelated --remove-label status:review --add-label status:implementation",
-    ] {
-        let decision = effective_agent_permission(&frontmatter, "bash", command);
-        if decision != "deny" {
+    for path in paths {
+        let document = project_file(path).to_ascii_lowercase();
+        for command in [
+            "git push origin head",
+            "git push --set-upstream origin head",
+        ] {
+            if !document.contains(command) {
+                violations.push(format!(
+                    "{path} must document the generic preflighted push form `{command}`"
+                ));
+            }
+        }
+        if document.split("\n\n").any(|paragraph| {
+            paragraph.contains("push") && paragraph.contains("head") && paragraph.contains("never")
+        }) {
             violations.push(format!(
-                "unrelated or mixed issue mutation resolves to {decision} instead of deny: {command}"
+                "{path} must not prohibit the accepted preflighted HEAD push forms"
+            ));
+        }
+
+        let has_provenance_preflight = document.split("\n\n").any(|paragraph| {
+            (paragraph.contains("preflight") || paragraph.contains("before"))
+                && ["branch", "issue", "provenance"]
+                    .iter()
+                    .all(|term| paragraph.contains(term))
+                && (paragraph.contains("pull request") || paragraph.contains(" pr "))
+                && ["verify", "match"]
+                    .iter()
+                    .any(|term| paragraph.contains(term))
+        });
+        if !has_provenance_preflight {
+            violations.push(format!(
+                "{path} must require branch, pull-request, and issue provenance verification before publication mutation"
+            ));
+        }
+
+        if !document
+            .split("\n\n")
+            .any(|paragraph| paragraph.contains("stop") && paragraph.contains("mismatch"))
+        {
+            violations.push(format!(
+                "{path} must require the Publisher to stop on any provenance mismatch"
             ));
         }
     }
 
     assert!(
         violations.is_empty(),
-        "{PR_PUBLISHER_AGENT} must deny title/body/assignee/milestone/project/repository/arbitrary-label mutations, including mutations mixed into a status transition:\n- {}",
+        "Publisher fast-path provenance violations:\n- {}",
         violations.join("\n- ")
     );
 }
 
 #[test]
-fn publisher_status_transitions_cannot_leave_simultaneous_statuses() {
-    let (frontmatter, _) = agent_file(PR_PUBLISHER_AGENT);
+fn publisher_fast_path_documents_defense_in_depth_and_accepted_wrong_issue_risk() {
+    let paths = [
+        PR_PUBLISHER_AGENT,
+        ".opencode/skills/elbmesh-pr-publisher/SKILL.md",
+    ];
     let mut violations = Vec::new();
 
-    for command in [
-        "gh issue edit 121 --add-label status:implementation",
-        "gh issue edit 121 --add-label status:review",
-        "gh issue edit 121 --remove-label status:implementation",
-        "gh issue edit 121 --remove-label status:review",
-        "gh issue edit 121 --add-label status:implementation --add-label status:review",
-        "gh issue edit 121 --add-label status:implementation,status:review",
-        "gh issue edit 121 --remove-label status:implementation --remove-label status:review",
-        "gh issue edit 121 --remove-label status:review --add-label status:implementation --add-label status:review",
-        "gh issue edit 121 --remove-label status:implementation --add-label status:review --add-label status:implementation",
-        "gh issue edit 121 --add-label status:blocked",
-        "gh issue edit 121 --remove-label status:review --add-label status:blocked",
-    ] {
-        let decision = effective_agent_permission(&frontmatter, "bash", command);
-        if decision != "deny" {
+    for path in paths {
+        let document = project_file(path).to_ascii_lowercase();
+        if !document.contains("gh issue edit *") || !document.contains("broad") {
             violations.push(format!(
-                "incomplete, simultaneous, or arbitrary status mutation resolves to {decision} instead of deny: {command}"
+                "{path} must explicitly document the accepted broad `gh issue edit *` permission"
+            ));
+        }
+        if !document.contains("defense in depth") || !document.contains("not a sandbox") {
+            violations.push(format!(
+                "{path} must describe OpenCode permissions as defense in depth, not a sandbox"
+            ));
+        }
+
+        let has_hard_boundary = document.split("\n\n").any(|paragraph| {
+            paragraph.contains("branch protection")
+                && paragraph.contains("ci")
+                && (paragraph.contains("independent review")
+                    || paragraph.contains("independent reviewer"))
+                && paragraph.contains("hard bound")
+        });
+        if !has_hard_boundary {
+            violations.push(format!(
+                "{path} must identify GitHub branch protection, CI, and independent review as the hard boundary"
+            ));
+        }
+
+        let accepts_wrong_issue_risk = document.split("\n\n").any(|paragraph| {
+            paragraph.contains("wrong issue")
+                && paragraph.contains("residual risk")
+                && paragraph.contains("accept")
+        });
+        if !accepts_wrong_issue_risk {
+            violations.push(format!(
+                "{path} must explicitly document acceptance of the residual wrong-issue mutation risk"
             ));
         }
     }
 
     assert!(
         violations.is_empty(),
-        "{PR_PUBLISHER_AGENT} status permissions must enforce exactly one active status by denying add-only, remove-only, simultaneous, and arbitrary-status forms:\n- {}",
+        "Publisher fast-path boundary and residual-risk violations:\n- {}",
         violations.join("\n- ")
     );
 }
