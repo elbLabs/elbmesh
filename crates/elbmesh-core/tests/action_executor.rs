@@ -1037,6 +1037,27 @@ fn assert_action_failed_journal_record(
     }
 }
 
+fn assert_action_failed_journal_details(
+    record: &ActionJournalRecord,
+    expected_failure_code: &str,
+    expected_failure_details: serde_json::Value,
+) {
+    let ActionJournalRecord::ActionFailed {
+        failure_details, ..
+    } = record
+    else {
+        panic!("expected ActionFailed record");
+    };
+
+    assert_eq!(
+        failure_details,
+        &json!({
+            "failure_code": expected_failure_code,
+            "failure_details": expected_failure_details,
+        })
+    );
+}
+
 fn assert_resource_stream_contains_only_events(
     history: &[RecordedEvent],
     expected_message_types: &[&str],
@@ -1723,7 +1744,7 @@ async fn append_failure_with_journal_records_failed_event_store_classification()
 }
 
 #[tokio::test]
-async fn load_failure_with_journal_records_failed_event_store_classification() {
+async fn action_failed_preserves_event_store_failure_details() {
     let store = LoadFailingEventStore::new("load unavailable");
     let journal = InMemoryActionJournal::new();
     let executor = ActionExecutor::new(store).with_action_journal(journal.clone());
@@ -1765,10 +1786,19 @@ async fn load_failure_with_journal_records_failed_event_store_classification() {
         "offer-load-failure",
         ActionFailureClassification::EventStore,
     );
+    assert_action_failed_journal_details(
+        &records[1],
+        "event_store.other",
+        json!({
+            "error_type": "EventStoreError",
+            "error_variant": "Other",
+            "reason": "load unavailable",
+        }),
+    );
 }
 
 #[tokio::test]
-async fn replay_failure_with_journal_records_failed_resource_classification() {
+async fn action_failed_preserves_resource_replay_failure_details() {
     let offer_id = "offer-replay-failure";
     let resource_stream = ResourceStream::new(Offer::RESOURCE_TYPE, offer_id);
     let store = OutOfOrderLoadEventStore::new(
@@ -1787,6 +1817,13 @@ async fn replay_failure_with_journal_records_failed_resource_classification() {
         .execute::<Offer, _>(action.clone(), metadata.clone())
         .await
         .expect_err("resource replay failure should fail action execution");
+
+    let replay_source = match &err {
+        ExecutionError::Resource(ResourceError::Deserialization { source, .. }) => {
+            source.to_string()
+        }
+        other => panic!("expected typed resource deserialization execution error, got {other:?}"),
+    };
 
     assert_offer_created_deserialization_execution_error(err);
 
@@ -1815,11 +1852,22 @@ async fn replay_failure_with_journal_records_failed_resource_classification() {
         offer_id,
         ActionFailureClassification::Resource,
     );
+    assert_action_failed_journal_details(
+        &records[1],
+        "resource.deserialization",
+        json!({
+            "error_type": "ResourceError",
+            "error_variant": "Deserialization",
+            "message_type": OfferCreatedV1::EVENT_TYPE,
+            "schema_version": OfferCreatedV1::SCHEMA_VERSION,
+            "source": replay_source,
+        }),
+    );
     assert!(store.append_calls().is_empty());
 }
 
 #[tokio::test]
-async fn handler_runtime_failure_with_journal_keeps_resource_stream_clean() {
+async fn action_failed_preserves_handler_runtime_details_and_resource_event_separation() {
     let (err, store, journal, metadata, action) =
         execute_wrong_resource_runtime_failure_with_journal(
             "offer-runtime-clean",
@@ -1863,6 +1911,16 @@ async fn handler_runtime_failure_with_journal_keeps_resource_stream_clean() {
         &metadata,
         "offer-runtime-clean",
         ActionFailureClassification::HandlerRuntime,
+    );
+    assert_action_failed_journal_details(
+        &records[1],
+        "action.wrong_resource",
+        json!({
+            "error_type": "ActionError",
+            "error_variant": "WrongResource",
+            "expected": "offer-runtime-clean",
+            "actual": "offer-runtime-clean-other",
+        }),
     );
 }
 
