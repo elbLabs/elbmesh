@@ -5,7 +5,7 @@ description: Use when explaining an Elbmesh Action/Event flow through Policies, 
 
 # Elbmesh Flow Explainer
 
-Use this skill to explain consequences of an Action or Event.
+Use this skill to explain consequences of an Action or Event from declared and executable evidence.
 
 ## Read First
 
@@ -14,40 +14,26 @@ docs/GOAL.md
 docs/GLOSSARY.md
 docs/DEVELOPMENT_WORKFLOW.md
 docs/HUMAN_DECISION_LOOP.md
+docs/DELIVERY_ROADMAP.md
 docs/AGENT_SKILLS.md
-docs/PHASED_DELIVERY_PLAN.md
 docs/IMPLEMENTATION_PLAN.md
 docs/adr/
 ```
 
-When generated artifacts exist, also read:
+When present, also read `architecture.manifest.json`, `RESOURCE_CAPABILITIES.md`, and `resource-capabilities.json`.
 
-```text
-RESOURCE_CAPABILITIES.md
-resource-capabilities.json
-architecture.manifest.json
-```
+## Permitted Edit Surface
 
-## Explain
+None for explanation-only work. Edit an explanatory document only when the issue explicitly assigns that path.
 
-Answer:
+## Required Outputs
 
-```text
-Which Resource does the Action target?
-Which Policies apply?
-Which Events may be recorded?
-Which Reactions subscribe?
-Which downstream Actions may run?
-Which External Operations are used?
-Which Views are updated?
-Which Queries expose the result?
-Which journals provide audit/recovery context?
-```
+Answer which Resource an Action targets, Policies apply, Events may be recorded, Reactions subscribe, downstream Actions run, External Operations are used, Views update, Queries expose results, journals provide execution context, and evidence supports each claim.
 
-## Preserve
+## Verification
 
-Do not describe direct Action-to-Action mutation. Flows go through Events and Reactions:
+No repository command applies to explanation-only work. Cite relevant manifest/capability entries and focused `cargo test ...` proofs used as evidence.
 
-```text
-Action -> Event -> Reaction -> Action
-```
+## Architecture Rules Preserved
+
+Describe Resource and Action ownership explicitly; keep Event facts in Resource streams; show Reaction edges invoking Actions; keep external calls in External Operations; and treat each View as derived and rebuildable. Never imply direct cross-Resource mutation.

@@ -5,7 +5,7 @@ description: Use when planning an Elbmesh implementation slice, writing task car
 
 # Elbmesh Driver
 
-Use this skill to define the next smallest useful implementation slice and coordinate the test-first loop within the active phase. Use `elbmesh-orchestrator` for phase and GitHub Issue/PR queue ownership.
+Use this skill to define the smallest coherent, dependency-linked issue slice and test-first plan. Use `elbmesh-orchestrator` for role and publication coordination.
 
 ## Read First
 
@@ -14,47 +14,41 @@ docs/GOAL.md
 docs/GLOSSARY.md
 docs/DEVELOPMENT_WORKFLOW.md
 docs/HUMAN_DECISION_LOOP.md
-docs/PHASED_DELIVERY_PLAN.md
+docs/DELIVERY_ROADMAP.md
 docs/AGENT_SKILLS.md
 docs/IMPLEMENTATION_PLAN.md
 docs/adr/
 ```
 
+## Permitted Edit Surface
+
+Edit only assigned planning documentation or proposed issue task-card text. Do not edit production code or accepted tests/fixtures.
+
 ## Responsibilities
 
 ```text
-Define the smallest useful slice.
-Write a task card with acceptance criteria.
-Prefer creating/updating the GitHub Issue task card.
-Keep the task card inside the active phase.
-Identify relevant ADRs and glossary terms.
-Require tests or a test plan before implementation starts.
+Confirm explicit Depends on and Blocks relationships.
+Define one smallest coherent capability slice.
+Write executable acceptance criteria and tests to write first.
+Name non-goals, architecture rules, docs impact, and exact quality gates.
 Keep one implementation direction active.
-Update docs or open questions when decisions change.
+Stop for genuine semantic conflicts rather than hiding a decision in tests.
 ```
 
-## Output
+## Required Outputs
 
-Produce a task card with:
+Produce a task card containing goal, dependency/capability context, acceptance criteria, first-test plan, non-goals, permitted edit surface, documentation updates, architecture impact, and exact verification commands.
 
-```text
-Goal
-Architecture context
-Acceptance criteria
-Tests to write first
-Non-goals
-Documentation updates
-Verification commands
+## Verification
+
+No repository command applies to planning-only output. The task card must name a focused `cargo test ...` command plus:
+
+```bash
+cargo fmt --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test --all
 ```
 
-## Preserve
+## Architecture Rules Preserved
 
-```text
-Resource = event-sourced aggregate root.
-Action targets exactly one Resource.
-Event belongs to exactly one Resource stream.
-External calls require declared External Operations.
-Tests come before implementation.
-Docs are part of done.
-No unplanned refactors.
-```
+Preserve one-Resource Action targeting, one-stream Event ownership, deterministic Resource replay, declared External Operations, Reaction-to-Action flow, rebuildable View derivation, tests before implementation, and no speculative abstraction. Use `docs/HUMAN_DECISION_LOOP.md` when a semantic decision is unresolved.

@@ -1,12 +1,8 @@
 # Development Workflow
 
-This document defines how Elbmesh should be built. The workflow is intentionally phased, MR-based, test-first, documentation-backed, and agent-friendly.
+Elbmesh delivery is dependency-ordered, GitHub-Issue-based, test-first, documentation-backed, and agent-friendly. GitHub Issues and their explicit dependencies are the delivery source of truth; [Delivery Roadmap](DELIVERY_ROADMAP.md) supplies capability and milestone context without acting as a second queue.
 
-The concrete agent skill catalog is maintained in [Agent Skills](AGENT_SKILLS.md). The roles in this workflow map directly to those skills.
-
-The implementation phases are maintained in [Phased Delivery Plan](PHASED_DELIVERY_PLAN.md). Work should not start unless it belongs to an active phase and GitHub Issue task card.
-
-Human decision gates are defined in [Human Decision Loop](HUMAN_DECISION_LOOP.md). The Orchestrator should ask the human only for domain, priority, scope, and architecture decisions.
+The concrete agent skill catalog is maintained in [Agent Skills](AGENT_SKILLS.md). Human semantic decisions and exceptional conflict handling use the [Human Decision Loop](HUMAN_DECISION_LOOP.md).
 
 ## Principles
 
@@ -16,19 +12,27 @@ Every implementation slice starts from tests.
 Behavior remains explicit in Rust.
 Docs and tests are part of the definition of done.
 Agents should not infer architecture from source files alone.
-No implementation work happens outside a planned phase, GitHub Issue, and PR/MR.
+No issue and no accepted red proof means no implementation.
+Issue dependencies, not roadmap grouping, determine delivery order.
 ```
 
-The framework implementation should follow its own modelling rules:
+The framework implementation follows its own modelling rules:
 
 ```text
 Resource = event-sourced aggregate root.
-Action = command/capability.
-Event = stored domain fact.
-Reaction = Event -> Action edge.
-View = materialized read model.
-Query = declared read capability.
+Action = command/capability targeting one Resource.
+Event = stored domain fact in one Resource stream.
+Reaction = Event -> Action edge, never direct Resource mutation.
+View = rebuildable materialized read model.
+Query = declared read capability against a View.
+External calls = declared External Operations only.
 ```
+
+## Delivery Source Of Truth
+
+The expanded GitHub Issue is the task card. It records the capability context, explicit `Depends on` and `Blocks` links, acceptance criteria, tests to write first, non-goals, quality gates, documentation impact, and architecture rules. Work may run concurrently only when issues are unblocked and their edit surfaces do not conflict.
+
+One implementation issue maps to one pull request unless the Orchestrator records an explicit split. Every pull request links or closes its issue. A roadmap candidate does not authorize implementation until an issue carries the complete task contract.
 
 ## Agent Roles
 
@@ -36,259 +40,178 @@ Query = declared read capability.
 
 Skill: `elbmesh-orchestrator`
 
-The Orchestrator owns phases, GitHub Issue task cards, PR/MR queue, and sequencing.
+The Orchestrator coordinates issue dependencies, role handoffs, evidence, and queue visibility. It remains shell-free and does not implement, publish, review, mutate GitHub state, or merge.
 
 Responsibilities:
 
 ```text
-Read the phased delivery plan before assigning work.
-Select the active phase and next smallest Issue.
-Create GitHub Issues with acceptance criteria and quality gates.
-Spawn fresh Test Writer, PR Publisher, Implementation, and Review Agents only for planned work.
+Select the next unblocked GitHub Issue by explicit dependencies.
+Confirm acceptance criteria, non-goals, capability context, and quality gates.
+Spawn fresh Test Writer, PR Publisher, Implementer, and Reviewer sessions in order.
 Keep parallel work independent.
-Track dependencies, issue status, PR/MR status, verification, review, and merge state.
-Reject unplanned implementation or refactor work.
-Create Human Decision Requests when a domain or architecture decision blocks progress.
+Pass immutable role reports and provenance forward without rewriting them.
+Reject unplanned implementation and refactors.
+Use the Human Decision Loop only for genuine semantic conflicts.
+Delegate both automatic issue-status changes to the Publisher.
 ```
-
-The Orchestrator is not the same as the Implementation Agent. It coordinates the team and keeps the roadmap coherent.
 
 ### Driver Agent
 
 Skill: `elbmesh-driver`
 
-The Driver owns the slice plan.
+The Driver shapes the smallest coherent issue slice. It identifies dependencies, architecture rules, acceptance criteria, first tests, non-goals, and documentation impact. It does not authorize implementation without accepted red proof.
 
-Responsibilities:
-
-```text
-Read current ADRs, goal, glossary, implementation plan, and workflow.
-Define the smallest useful implementation slice.
-Write a task card with acceptance criteria.
-Identify architecture rules the slice must preserve.
-Assign or request test-writing work before implementation.
-Report conflicts between tests, docs, and ADRs to the Orchestrator for human confirmation.
-Keep exactly one implementation direction active.
-```
-
-The Driver should not let implementation start until the expected behavior is captured in tests or an explicit test plan.
-
-### Test Agent
+### Test Writer Agent
 
 Skill: `elbmesh-test-writer`
 
-The Test Agent writes failing tests first.
+The Test Writer translates the expanded issue into focused failing tests before implementation. It prefers given/when/then Resource scenarios, typed errors, reusable adapter contracts, and architecture-rule tests. It changes only tests and test fixtures, does not implement production behavior, and returns exact red proof.
 
-Responsibilities:
-
-```text
-Translate the task card into executable tests.
-Prefer given/when/then event-sourcing scenarios.
-Assert emitted Events, typed errors, metadata, versions, and journals where relevant.
-Add regression tests for architecture rules.
-Avoid implementing production behavior beyond minimal test scaffolding.
-Report what is still untestable and why.
-```
-
-Example test shape:
+Example:
 
 ```text
 Given historical Resource Events
 When an Action is executed
 Then these Resource Events are appended
 And this Receipt is returned
-And these journal records exist
+And these separate journal records exist
 ```
 
 ### PR Publisher Agent
 
 Skill: `elbmesh-pr-publisher`
 
-The PR Publisher owns automatic branch, commit, push, and draft-to-ready pull request publication. It does not author or modify repository files.
+The Publisher owns branch, commit, push, pull request, evidence-comment, ready-state, and issue-status publication. It never authors repository files and never merges.
 
 Responsibilities:
 
 ```text
 Inspect status and diffs before every publication action.
 Stage only exact paths from the preceding role report.
-Create and push a test-only red commit from accepted Test Writer paths.
-Open a draft pull request linked to the GitHub issue with red provenance and append complete red evidence to both issue and PR.
-Create and push a separate green commit from reported implementation/docs paths.
-Append cumulative green and readiness evidence to both issue and PR without rewriting accepted evidence.
-Mark the pull request ready only after no-blocker review and required CI.
+Publish a test-only red commit and linked draft pull request.
+Set or keep status:implementation after accepted red publication.
+Publish a separate green implementation/docs commit.
+Append cumulative evidence to the issue and pull request without rewriting prior evidence.
+After no-blocker Reviewer evidence and required CI pass, mark the pull request ready and change the issue to status:review.
 Return the pull request URL and residual risks.
-Never merge or push the base branch; only a human may review and merge.
+Never merge, enable auto-merge, or push the base branch; only a human may merge.
 ```
 
-The Publisher's Bash allowlist is pragmatic defense in depth, not a sandbox. Its prompt also prohibits shell separators, redirection, broad staging, unreported paths, and every merge mechanism.
+Before any push or GitHub mutation, the Publisher verifies that the current non-`main` branch matches reported task-card provenance, the pull request head matches that branch, and the target issue matches issue task-card provenance; it stops on any mismatch. The verified branch is published through generic `git push origin HEAD` or `git push --set-upstream origin HEAD`, never through a hardcoded issue branch or typed helper.
 
-### Implementation Agent
+The Publisher's OpenCode Bash permissions permit that generic fast path and broad `gh issue edit *` autonomy. They are defense in depth, not a sandbox. Instructions retain the exact paired status operations and prohibit shell separators, redirection, broad staging, scripts, unreported paths, direct literal base-branch pushes, force pushes, base refspec pushes, pull request base edits, and every merge mechanism.
+
+The human explicitly accepts the residual risk of wrong issue mutation from broad issue-edit autonomy. Mandatory provenance preflight reduces but cannot eliminate that risk. GitHub branch protection, required CI, and independent review are the hard boundary for repository acceptance.
+
+### Implementer Agent
 
 Skill: `elbmesh-implementer`
 
-The Implementation Agent writes the smallest production code that satisfies the tests.
+The Implementer writes the smallest production/configuration/documentation change that satisfies the accepted failing tests. Accepted tests and fixtures are immutable to Implementers: they must not change, modify, edit, or write them. Implementer outputs must exclude supporting test fixtures.
+
+If an accepted test or fixture conflicts with the task card or architecture, the Implementer stops and reports the conflict to the Orchestrator for human confirmation. Only after that confirmation may a fresh Test Writer revise the accepted test or fixture; the Implementer must not revise it.
 
 Responsibilities:
 
 ```text
-Preserve the documented vocabulary and boundaries.
+Preserve documented vocabulary and boundaries.
 Implement behavior through explicit traits.
-Do not hide domain behavior behind macros.
-Treat accepted tests and fixtures as immutable.
-Keep implementation minimal and slice-focused.
-Run the required verification commands.
+Keep replay/apply deterministic and free of external calls.
+Keep Resource Events separate from execution journals.
+Avoid unrelated refactors and speculative abstractions.
+Run the focused test and every required quality gate.
+Return exact changed paths, command results, docs impact, architecture impact, limitations, and blockers.
 ```
 
-Accepted tests and fixtures are immutable to Implementers, and Implementer outputs must exclude supporting test fixtures.
-
-If an accepted test or fixture conflicts with the task card or architecture, the Implementation Agent reports the conflict to the Orchestrator for human confirmation. Only after human confirmation may a fresh Test Writer revise accepted tests or fixtures; the Implementer must not revise them.
-
-### Review Agent
+### Reviewer Agent
 
 Skill: `elbmesh-reviewer`
 
-The Review Agent is the single active final PR readiness role. `elbmesh-reviewer` checks correctness, architecture fit, documentation drift, PR evidence, and quality gates, then reports merge readiness or blockers. A human retains all merge authority.
-
-Responsibilities:
-
-```text
-Review code against ADRs and architecture rules.
-Check that tests prove the intended behavior.
-Check that docs were updated if architecture changed.
-Look for hidden external calls, replay impurity, cross-Resource mutation, and journal/event mixing.
-Confirm generated or derived docs remain in sync when generation exists.
-Inspect current-branch status, log, name-status diff, diff check, `codehud` diff, current PR metadata/body, current PR checks, and immutable red/green/publication evidence.
-Run or verify the exact formatting, Clippy, and full-test quality gates.
-Report final PR merge readiness only after findings and gate results.
-```
+`elbmesh-reviewer` performs the single active final pull request review and reports merge readiness or blockers after checking correctness, architecture, tests, documentation, evidence, and required gates. It remains read-only. A human performs the merge and retains all merge authority.
 
 ### Compatibility MR Reviewer Skill
 
-Skill: `elbmesh-mr-reviewer`
+`elbmesh-mr-reviewer` is an optional compatibility/manual deep-review skill and is not an additional required stage. It does not own or report merge readiness; only `elbmesh-reviewer` reports final pull request merge readiness in the canonical delivery flow. A human performs every merge.
 
-The MR Reviewer is an optional compatibility/manual deep-review skill, not an additional required stage. It does not own or report merge readiness; only `elbmesh-reviewer` owns the final PR merge-readiness report in the canonical flow. A human performs the merge and retains all merge authority.
+## Issue Delivery Loop
 
-Responsibilities:
+Use **stage** for the red, green, and review steps below.
+
+1. The Orchestrator selects an unblocked expanded GitHub Issue and records dependency/capability context.
+2. A fresh Test Writer writes focused failing tests and returns exact red proof.
+3. The Orchestrator accepts red proof only when it fails for the intended missing behavior.
+4. A fresh Publisher creates the issue branch when needed, publishes only accepted tests/fixtures in a test-only commit, pushes, opens a linked draft pull request, appends red evidence, and sets or keeps the implementation status.
+5. A fresh Implementer preserves accepted tests and fixtures and returns focused and full green proof for the smallest coherent change.
+6. A fresh Publisher publishes only reported implementation/docs paths in a separate commit and appends cumulative green evidence.
+7. A fresh `elbmesh-reviewer` reviews the complete pull request and reports final merge readiness or blockers without changing files.
+8. Blocking findings return to fresh Implementer, Publisher, and Reviewer sessions with new append-only evidence.
+9. Only after no-blocker Reviewer evidence and required CI pass, a fresh Publisher appends readiness evidence, marks the pull request ready, changes the issue to the review status, and returns the URL.
+10. A human performs final review and merge. No agent merges or enables auto-merge.
+11. GitHub merged/closed state records completion; no human-applied completion label transition exists.
+
+Tests remain before implementation, accepted tests stay immutable, red and green changes remain in separate commits, every role and rework handoff uses a fresh session, and evidence remains append-only.
+
+## Issue Status Contract
+
+The only active status labels are:
 
 ```text
-Perform a manual deep review when explicitly requested.
-Return supplemental findings and quality-gate observations to the active Reviewer or human.
-Do not create an extra workflow handoff or readiness determination.
+status:implementation
+status:review
 ```
 
-## MR Loop
+The implementation status remains throughout test authoring, red publication, implementation, green publication, agent review, and rework. The review status means the pull request is ready for final human review. The Publisher, not a human, applies these routine issue-label transitions because it verifies the publication evidence. Test Writer, Implementer, Reviewer, and shell-free Orchestrator remain non-publishing.
 
-Every implementation slice should become one GitHub Issue and one PR/MR unless the Orchestrator explicitly splits it.
+## Capability And Milestone Checkpoints
 
-Follow this loop:
+Schedule a higher-level review checkpoint when a coherent capability becomes demonstrable, before a dependency boundary changes, or when accumulated debt could invalidate dependent work. There is no fixed cadence based on a count of roadmap groups.
 
-1. Orchestrator selects the active phase and creates a GitHub Issue task card.
-2. A fresh Test Writer writes failing tests and reports the exact red paths and proof.
-3. Orchestrator confirms the red proof matches the architecture intent.
-4. A fresh PR Publisher creates the issue branch, commits only accepted tests/fixtures as the red commit, pushes, automatically opens a linked draft pull request, and appends complete red evidence to both the issue and PR.
-5. A fresh Implementation Agent preserves accepted tests and makes them pass with the smallest production/docs change and complete green proof.
-6. A fresh PR Publisher commits only reported implementation/docs paths as a separate green commit, pushes, and appends cumulative green evidence to both the issue and PR.
-7. A fresh `elbmesh-reviewer` reviews the pull request, architecture rules, Rust quality, docs, and publication evidence without changing files, then reports final PR merge readiness or blockers.
-8. Blocking findings return to fresh Implementation, publication, and review sessions.
-9. After the Reviewer reports merge readiness with no blockers and required CI passes, a fresh PR Publisher appends cumulative readiness evidence to both the issue and PR, marks the pull request ready, and reports its URL.
-10. A human reviews and performs the merge; no agent has merge authority.
-11. Orchestrator requests human-applied issue-label updates and records phase status, open questions, and next dependencies. After merge, the human replaces the active status label with `status:merged` so queue inspection reflects the merge.
-
-## Phase Checkpoint Loop
-
-After every two implementation phases, the Orchestrator must schedule a review/test/visualization checkpoint before starting the next pair of phases.
-
-The checkpoint must answer:
+A checkpoint should answer:
 
 ```text
 Can a human understand the runtime or architecture flow?
-Can the current behavior be demonstrated without reading source code?
-Do tests cover the key success, rejection, failure, and recovery paths?
-What technical debt or ambiguity should be resolved before the next phases?
-Which future adapter/tool observations must match the current logical model?
+Can behavior be demonstrated without reading source code?
+Do tests cover success, rejection, failure, and recovery?
+What debt or ambiguity affects the next dependent capability?
+Do infrastructure and tooling observations match the logical model?
 ```
 
-Checkpoint artifacts should include:
+Checkpoint artifacts may include a flow diagram, failure-mode matrix, test-coverage matrix, technical-debt register, demonstration run, and decision list. Existing named checkpoint records remain historical evidence and are not current delivery gates.
+
+## Pull Request Requirements
+
+Every pull request includes:
 
 ```text
-flow diagram or timeline
-failure mode matrix
-test coverage matrix
-technical debt register
-human-readable demo or visualization run plan
-next-phase decision list
-```
-
-The first checkpoint is Phase 2.5, covering the typed core and execution journals before manifest/reference-flow work continues.
-
-## MR Requirements
-
-Every MR must include:
-
-```text
-phase reference
-GitHub Issue reference
+GitHub Issue and dependency/capability context
 tests added or changed
 separate red test and green implementation/docs commit provenance
 implementation summary
-verification commands and results
+exact verification commands and results
 documentation update or explicit no-docs-needed note
 architecture-rule impact note
-known limitations or follow-up tasks
+known limitations and follow-up issues
 ```
 
-An MR must not include unplanned refactors or unrelated cleanup. If cleanup is needed, the Orchestrator creates a separate GitHub Issue.
+No pull request includes unrelated cleanup. If cleanup is needed, create a dependency-linked issue.
 
 ### Enforced Pull Request Gates
 
-GitHub enforces the ADR 0014 quality and review gates on pull requests targeting `main`:
+Pull requests targeting `main` run required Rust CI:
 
 ```text
-The Rust CI workflow runs for pull request changes and when a draft becomes ready.
-The required Rust CI check runs cargo fmt --check.
-The required Rust CI check runs cargo clippy --all-targets --all-features -- -D warnings.
-The required Rust CI check runs cargo test --all.
-GitHub blocks the normal merge path until Rust CI passes.
-GitHub requires at least one approving review; a pull request author cannot approve their own change.
+cargo fmt --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test --all
 ```
 
-Repository enforcement does not replace local verification or the role handoffs in the MR loop. The Implementation Agent still runs every gate, the independent Reviewer still reports readiness, and only a human may merge.
+GitHub blocks the normal merge path until required CI passes and an independent approval exists. Repository enforcement does not replace local Implementer verification, independent Reviewer findings, Publisher readiness checks, or human-only merge authority.
 
-## GitHub Issue Rules
+## Human Decision Handling
 
-GitHub Issues are the operational queue.
+Routine agent delivery does not ask a human to apply labels, confirm test handoffs, or approve intermediate publication. The planned human interaction in the pull request flow is final review and merge.
 
-Rules:
-
-```text
-No issue, no implementation.
-No failing tests or explicit test plan, no implementation.
-One implementation issue maps to one PR/MR unless the Orchestrator explicitly splits it.
-Every PR/MR closes or links its issue.
-Labels track phase, status, agent role, and quality needs.
-Decision blockers use status:blocked and needs:human-decision.
-```
-
-## Human Decision Gates
-
-Ask the human when work needs semantic or strategic judgment:
-
-```text
-phase priority
-Resource vs Component boundary
-Action/Event naming
-source of truth and freshness
-External Operation semantics
-Policy outcome semantics
-scope conflict
-architecture trade-off
-review escalation
-demo checkpoint
-```
-
-Do not ask the human for routine implementation issues already decided by ADRs.
-
-Human questions must use the decision request format from `docs/HUMAN_DECISION_LOOP.md`.
+If a genuine domain, architecture, scope, or accepted-test conflict prevents safe execution, stop the delivery run and use `docs/HUMAN_DECISION_LOOP.md`. Record the answer in the issue and ADR when applicable, revise acceptance criteria, and resume with fresh role sessions. This exception does not grant an agent authority to change accepted tests, silently choose semantics, or merge.
 
 ## Task Card Template
 
@@ -299,165 +222,78 @@ Human questions must use the decision request format from `docs/HUMAN_DECISION_L
 
 <What capability or framework behavior should exist?>
 
-## Architecture Context
+## Dependency And Capability Context
 
-- Relevant ADRs:
-- Relevant glossary terms:
-- Affected crates/modules:
+- Depends on:
+- Blocks:
+- Capability/milestone:
+- Relevant ADRs and glossary terms:
+- Affected crates/modules/docs:
 
 ## Acceptance Criteria
 
 - Given ... When ... Then ...
-- Given ... When ... Then ...
 
 ## Tests To Write First
 
-- Unit/scenario tests:
-- Integration tests:
-- Architecture-rule tests:
+- Focused unit/scenario/contract/integration test:
+- Architecture-rule test:
 
 ## Non-Goals
 
-- <What must not be solved in this slice?>
+- <What must not be solved in this issue?>
 
 ## Quality Gates
 
 - cargo fmt --check
 - cargo clippy --all-targets --all-features -- -D warnings
 - cargo test --all
-- named errors for public/runtime failure paths
+- named errors for public/runtime failures
 - docs updated or no-docs-needed explained
 
 ## Documentation Updates
 
-- ADR needed: yes/no
-- Glossary update needed: yes/no
-- Implementation plan update needed: yes/no
-- Capability docs update needed: yes/no
+- ADR/glossary/workflow/roadmap/capability docs impact:
 ```
 
 ## Test Strategy
 
-Use layered tests.
+Use scenario tests for Resource behavior, reusable contract tests for ports and adapters, integration tests for NATS/Restate/providers, and architecture tests for boundaries agents might violate.
 
-### Scenario Tests
-
-Use for Resource behavior.
-
-```text
-Given Events
-When Action
-Then Events or typed error
-```
-
-These should be the default tests for `Handle<Action>` and `Apply<Event>` behavior.
-
-### Contract Tests
-
-Use for framework ports and adapters.
-
-Examples:
-
-```text
-EventStore append/stream contract
-expected version conflict contract
-ActionJournal idempotency contract
-ExternalOperation retry contract
-ViewStore get/list-by-index contract
-```
-
-Each adapter should pass the same contract tests where possible.
-
-### Integration Tests
-
-Use for NATS, Restate, and mocked external APIs.
-
-The key external-operation test must prove:
+The key External Operation recovery proof remains:
 
 ```text
 External API succeeds.
 Resource Event append fails once.
-Restate retries the append.
+Execution retries the append.
 External API is not called twice.
 Resource Event is recorded exactly once.
 ```
 
-### Architecture Tests
-
-Use for rules that agents might violate.
-
-Examples:
+## Rust And Architecture Quality Rules
 
 ```text
-Action targets exactly one Resource.
-Event belongs to exactly one Resource.
-Replay/apply code does not call external systems.
-External HTTP calls happen only through declared External Operations.
-Reactions call Actions rather than mutating Resources directly.
-```
-
-Some architecture tests can be static checks later. Until the CLI exists, they should be documented review checks or Rust tests where possible.
-
-## Rust Quality Rules
-
-Rust code should remain explicit, named, and stable.
-
-Rules:
-
-```text
-Use named error enums or typed error traits for framework boundaries.
-Avoid raw String errors at public/runtime boundaries.
-Avoid anyhow in core framework public boundaries.
-Domain Action errors implement ActionFailure and expose stable error codes.
-Use thiserror or equivalent for named errors.
+Use named error enums or typed error traits at framework boundaries.
+Avoid raw String errors and anyhow in core public/runtime boundaries.
+Domain Action errors implement ActionFailure with stable codes.
 Keep handlers explicit and route execution through ActionExecutor/ActionContext.
-Add abstractions only where they protect a boundary, support an adapter, or remove real duplication.
-Do not add speculative abstraction.
-Do not do unplanned refactors inside feature MRs.
+An Action targets and appends Events to exactly one Resource stream.
+Replay/apply uses Resource Events only and never calls external systems.
+External calls use declared External Operations.
+Reactions invoke Actions rather than mutating Resources directly.
+Views derive from Events and remain rebuildable.
+Add abstraction only for an existing boundary, adapter, or real duplication.
 ```
 
-## Documentation Rules
-
-Docs must stay close to the code.
-
-Rules:
+## Documentation And Configuration Rules
 
 ```text
-New or changed architecture decision -> add or update an ADR.
+Changed architecture decision -> add or supersede an ADR and update the index.
 Changed vocabulary -> update GLOSSARY.md.
-Changed build order or slice scope -> update IMPLEMENTATION_PLAN.md.
-Changed agent/developer process -> update DEVELOPMENT_WORKFLOW.md.
-Generated docs must not be edited manually once generation exists.
-Generated Markdown and JSON must include manifest hash and generator version.
+Changed capability ordering -> update DELIVERY_ROADMAP.md and issue dependencies.
+Changed agent/developer process -> update workflow, harness, catalog, agents, and concrete skills together.
+Generated docs are not manually edited once generation exists.
+Generated Markdown and JSON share manifest hash and generator version.
 ```
 
-Documentation drift is a defect.
-
-Definition of done includes:
-
-```text
-Tests pass.
-Formatting and lint gates pass or current limitation is documented.
-Docs are updated or explicitly not needed.
-ADR index is updated if an ADR was added.
-Open questions are updated if a decision remains unresolved.
-PR/MR was reviewed by a non-implementing agent, marked ready by a non-editing Publisher, and merged by a human.
-```
-
-## First Slice Recommendation
-
-Start with the typed core before NATS and Restate:
-
-```text
-Resource trait
-Action trait or marker
-Event trait or marker
-Apply<Event>
-Handle<Action>
-ActionContext with record_applied
-In-memory EventStore
-ActionScenario given/when/then tests
-typed Action errors
-```
-
-This gives the multi-agent loop a stable base before infrastructure complexity enters.
+OpenCode loads project agents, skills, and configuration at startup. After merged agent, skill, or other config-time changes, quit and restart OpenCode before relying on the new contract; the running pre-merge session does not hot-reload it.

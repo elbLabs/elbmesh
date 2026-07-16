@@ -10,11 +10,11 @@ This documentation captures the current design decisions from the domain-modelli
 4. [Agent Skills](AGENT_SKILLS.md)
 5. [Human Decision Loop](HUMAN_DECISION_LOOP.md)
 6. [Agent Delivery Harness](AGENT_DELIVERY_HARNESS.md)
-7. [Phased Delivery Plan](PHASED_DELIVERY_PLAN.md)
+7. [Dependency-Ordered Delivery Roadmap](DELIVERY_ROADMAP.md)
 8. [Runtime Debt And Failure Modes](RUNTIME_DEBT_AND_FAILURE_MODES.md)
 9. [Execution Trace Model](EXECUTION_TRACE_MODEL.md)
 10. [Offer Demonstration And Visualization Run Plan](OFFER_DEMONSTRATION_RUN_PLAN.md)
-11. [Phase 4 Reference Flow Checkpoint](PHASE_4_REFERENCE_FLOW_CHECKPOINT.md)
+11. [Historical Phase 4 Reference Flow Checkpoint](PHASE_4_REFERENCE_FLOW_CHECKPOINT.md)
 12. [Implementation Plan](IMPLEMENTATION_PLAN.md)
 13. [Architecture Decision Records](adr/)
 
@@ -36,6 +36,7 @@ This documentation captures the current design decisions from the domain-modelli
 14. [ADR 0014: Use Phased MR-Based Multi-Agent Delivery](adr/0014-phased-mr-based-multi-agent-delivery.md)
 15. [ADR 0015: Use GitHub Issues as the Operational Queue](adr/0015-use-github-issues-as-operational-queue.md)
 16. [ADR 0016: Use Human Decision Requests for Domain and Architecture Gates](adr/0016-use-human-decision-requests-for-domain-and-architecture-gates.md)
+17. [ADR 0017: Use Dependency-Ordered Issue Delivery and Publisher-Managed Statuses](adr/0017-dependency-ordered-issue-delivery-and-publisher-managed-statuses.md)
 
 ## Current V1 Thesis
 

@@ -2,7 +2,7 @@
 
 This plan captures the first implementation path for the event-sourcing framework. It is intentionally strict to keep v1 buildable.
 
-Delivery is governed by [Phased Delivery Plan](PHASED_DELIVERY_PLAN.md). The Orchestrator should create GitHub Issues and PRs/MRs from that phased plan rather than from this document directly.
+Delivery context is maintained in [Delivery Roadmap](DELIVERY_ROADMAP.md). Expanded GitHub Issues and their explicit dependencies are the delivery source of truth; the Orchestrator does not create work directly from this technical plan.
 
 ## V1 Goal
 
@@ -334,7 +334,7 @@ How policy hooks are represented for DMN and FGA.
 How Claims/Reservations for external references should be implemented in v1.
 ```
 
-## Suggested Build Order
+## Suggested Capability Dependencies
 
 1. Define core traits and message envelope.
 2. Implement in-memory EventStore and ActionExecutor for fast tests.
@@ -348,4 +348,4 @@ How Claims/Reservations for external references should be implemented in v1.
 10. Add generated capability docs.
 11. Add generated or checked agent skill packaging.
 
-For MR sequencing, use `docs/PHASED_DELIVERY_PLAN.md` as the source of truth.
+Treat this list as technical dependency guidance, not a queue. For delivery sequencing, use expanded GitHub Issues and their explicit dependency links as the source of truth, with `docs/DELIVERY_ROADMAP.md` providing capability and milestone context.

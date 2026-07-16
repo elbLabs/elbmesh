@@ -1,4 +1,4 @@
-use std::{fs, path::Path, process::Command};
+use std::{collections::BTreeSet, fs, path::Path, process::Command};
 
 use serde_json::Value;
 
@@ -255,7 +255,7 @@ fn canonical_active_flow_assigns_merge_readiness_only_to_reviewer() {
         ".opencode/skills/elbmesh-reviewer/SKILL.md",
         ".opencode/agents/elbmesh-orchestrator.md",
         ".opencode/skills/elbmesh-orchestrator/SKILL.md",
-        "docs/adr/0014-phased-mr-based-multi-agent-delivery.md",
+        "docs/AGENT_DELIVERY_HARNESS.md",
         "docs/DEVELOPMENT_WORKFLOW.md",
         "docs/AGENT_SKILLS.md",
     ];
@@ -513,14 +513,9 @@ fn pr_publisher_permissions_allow_publication_but_deny_direct_merge() {
             "git commit -m \"test: add red proof\"",
         ),
         (
-            "push the issue branch",
-            "git push --set-upstream origin HEAD",
-        ),
-        (
             "open the draft pull request",
             "gh pr create --draft --title \"Issue 147\" --body \"Closes #147\"",
         ),
-        ("push the green commit", "git push origin HEAD"),
         (
             "publish evidence",
             "gh pr comment 148 --body \"Green proof\"",
@@ -536,11 +531,17 @@ fn pr_publisher_permissions_allow_publication_but_deny_direct_merge() {
     }
 
     for command in [
+        "git push origin main",
+        "git push --set-upstream origin main",
+        "git push origin HEAD:main",
+        "git push origin HEAD:refs/heads/main",
+        "git push --force origin HEAD",
+        "git push --force-with-lease origin HEAD",
         "git merge main",
         "git merge --continue",
+        "gh pr edit 148 --base main",
         "gh pr merge 148",
         "gh pr merge 148 --auto",
-        "git push origin main",
     ] {
         let decision = effective_agent_permission(&frontmatter, "bash", command);
         if decision != "deny" {
@@ -553,6 +554,356 @@ fn pr_publisher_permissions_allow_publication_but_deny_direct_merge() {
     assert!(
         violations.is_empty(),
         "{PR_PUBLISHER_AGENT} publication permissions are defense in depth and must expose only the required non-merging delivery operations:\n- {}",
+        violations.join("\n- ")
+    );
+}
+
+#[test]
+fn publisher_pr_edit_permissions_deny_every_base_change_form() {
+    let (frontmatter, _) = agent_file(PR_PUBLISHER_AGENT);
+    let mut violations = Vec::new();
+
+    for command in [
+        "gh pr edit 152 --title \"Update delivery evidence\"",
+        "gh pr edit --body \"Current cumulative evidence\"",
+        "gh pr edit https://github.com/elbLabs/elbmesh/pull/152 --add-label reviewable",
+    ] {
+        let decision = effective_agent_permission(&frontmatter, "bash", command);
+        if decision != "allow" {
+            violations.push(format!(
+                "non-base pull-request edit resolves to {decision} instead of allow: {command}"
+            ));
+        }
+    }
+
+    for (form, command) in [
+        (
+            "long separated without selector",
+            "gh pr edit --base release/2026-q3",
+        ),
+        (
+            "long separated after numeric selector",
+            "gh pr edit 152 --base integration",
+        ),
+        (
+            "long separated before numeric selector",
+            "gh pr edit --base next 152",
+        ),
+        (
+            "long separated after URL selector",
+            "gh pr edit https://github.com/elbLabs/elbmesh/pull/152 --base stable",
+        ),
+        (
+            "long separated before URL selector",
+            "gh pr edit --base release/candidate https://github.com/elbLabs/elbmesh/pull/152",
+        ),
+        (
+            "long separated among extra options",
+            "gh pr edit 152 --title \"Retarget\" --base staging --add-label urgent",
+        ),
+        (
+            "long assignment without selector",
+            "gh pr edit --base=release/2026-q4",
+        ),
+        (
+            "long assignment after numeric selector",
+            "gh pr edit 152 --base=integration-next",
+        ),
+        (
+            "long assignment before numeric selector",
+            "gh pr edit --base=next-stable 152",
+        ),
+        (
+            "long assignment after URL selector",
+            "gh pr edit https://github.com/elbLabs/elbmesh/pull/152 --base=stable/2026",
+        ),
+        (
+            "long assignment before URL selector",
+            "gh pr edit --base=release/candidate https://github.com/elbLabs/elbmesh/pull/152",
+        ),
+        (
+            "long assignment among extra options",
+            "gh pr edit --add-label urgent --base=staging 152 --remove-label backlog",
+        ),
+        (
+            "short separated without selector",
+            "gh pr edit -B release/2026-q3",
+        ),
+        (
+            "short separated after numeric selector",
+            "gh pr edit 152 -B integration",
+        ),
+        (
+            "short separated before numeric selector",
+            "gh pr edit -B next 152",
+        ),
+        (
+            "short separated after URL selector",
+            "gh pr edit https://github.com/elbLabs/elbmesh/pull/152 -B stable",
+        ),
+        (
+            "short separated before URL selector",
+            "gh pr edit -B release/candidate https://github.com/elbLabs/elbmesh/pull/152",
+        ),
+        (
+            "short separated among extra options",
+            "gh pr edit 152 --title \"Retarget\" -B staging --add-label urgent",
+        ),
+        (
+            "short assignment without selector",
+            "gh pr edit -B=release/2026-q4",
+        ),
+        (
+            "short assignment after numeric selector",
+            "gh pr edit 152 -B=integration-next",
+        ),
+        (
+            "short assignment before numeric selector",
+            "gh pr edit -B=next-stable 152",
+        ),
+        (
+            "short assignment after URL selector",
+            "gh pr edit https://github.com/elbLabs/elbmesh/pull/152 -B=stable/2026",
+        ),
+        (
+            "short assignment before URL selector",
+            "gh pr edit -B=release/candidate https://github.com/elbLabs/elbmesh/pull/152",
+        ),
+        (
+            "short assignment among extra options",
+            "gh pr edit --add-label urgent -B=staging 152 --remove-label backlog",
+        ),
+        (
+            "short attached without selector",
+            "gh pr edit -Brelease/2026-q3",
+        ),
+        (
+            "short attached after numeric selector",
+            "gh pr edit 152 -Bintegration",
+        ),
+        (
+            "short attached before numeric selector",
+            "gh pr edit -Bnext 152",
+        ),
+        (
+            "short attached after URL selector",
+            "gh pr edit https://github.com/elbLabs/elbmesh/pull/152 -Bstable",
+        ),
+        (
+            "short attached before URL selector",
+            "gh pr edit -Brelease/candidate https://github.com/elbLabs/elbmesh/pull/152",
+        ),
+        (
+            "short attached among extra options",
+            "gh pr edit 152 --title \"Retarget\" -Bstaging --add-label urgent",
+        ),
+    ] {
+        let decision = effective_agent_permission(&frontmatter, "bash", command);
+        if decision != "deny" {
+            violations.push(format!(
+                "{form} base change resolves to {decision} instead of deny: {command}"
+            ));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "{PR_PUBLISHER_AGENT} must deny every valid pull-request base-change form while retaining required non-base edits under effective last-match permissions:\n- {}",
+        violations.join("\n- ")
+    );
+}
+
+#[test]
+fn publisher_push_permissions_allow_preflighted_head_but_deny_base_and_force_pushes() {
+    let (frontmatter, _) = agent_file(PR_PUBLISHER_AGENT);
+    let mut violations = Vec::new();
+
+    for command in [
+        "git push origin HEAD",
+        "git push --set-upstream origin HEAD",
+    ] {
+        let decision = effective_agent_permission(&frontmatter, "bash", command);
+        if decision != "allow" {
+            violations.push(format!(
+                "generic current-branch publication resolves to {decision} instead of allow: {command}"
+            ));
+        }
+    }
+
+    for command in [
+        "git push origin main",
+        "git push origin refs/heads/main",
+        "git push --set-upstream origin main",
+        "git push --set-upstream origin refs/heads/main",
+        "git push -u origin main",
+        "git push --force origin HEAD",
+        "git push --force-with-lease origin HEAD",
+        "git push origin HEAD --force",
+        "git push origin +HEAD",
+        "git push origin HEAD:main",
+        "git push origin HEAD:refs/heads/main",
+    ] {
+        let decision = effective_agent_permission(&frontmatter, "bash", command);
+        if decision != "deny" {
+            violations.push(format!(
+                "base-branch, force, or refspec push resolves to {decision} instead of deny: {command}"
+            ));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "{PR_PUBLISHER_AGENT} must allow generic HEAD publication after provenance preflight while denying direct base, force, and base-refspec pushes:\n- {}",
+        violations.join("\n- ")
+    );
+}
+
+#[test]
+fn publisher_issue_edit_permissions_allow_broad_autonomous_mutation() {
+    let (frontmatter, _) = agent_file(PR_PUBLISHER_AGENT);
+    let bash_rules = permission_rules(&frontmatter, "bash");
+    let mut violations = Vec::new();
+
+    if !bash_rules
+        .iter()
+        .any(|(pattern, action)| pattern == "gh issue edit *" && action == "allow")
+    {
+        violations
+            .push("Bash permissions must include broad `gh issue edit *` autonomy".to_owned());
+    }
+
+    for command in [
+        "gh issue edit 121 --remove-label status:review --add-label status:implementation",
+        "gh issue edit 121 --remove-label status:implementation --add-label status:review",
+        "gh issue edit 987 --remove-label status:review --add-label status:implementation",
+        "gh issue edit 987 --remove-label status:implementation --add-label status:review",
+        "gh issue edit 121 --title \"Autonomous correction\"",
+    ] {
+        let decision = effective_agent_permission(&frontmatter, "bash", command);
+        if decision != "allow" {
+            violations.push(format!(
+                "autonomous issue mutation resolves to {decision} instead of allow: {command}"
+            ));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "{PR_PUBLISHER_AGENT} issue-edit permissions must allow the accepted broad autonomous fast path:\n- {}",
+        violations.join("\n- ")
+    );
+}
+
+#[test]
+fn publisher_fast_path_requires_branch_pr_and_issue_provenance_preflight() {
+    let paths = [
+        PR_PUBLISHER_AGENT,
+        ".opencode/skills/elbmesh-pr-publisher/SKILL.md",
+    ];
+    let mut violations = Vec::new();
+
+    for path in paths {
+        let document = project_file(path).to_ascii_lowercase();
+        for command in [
+            "git push origin head",
+            "git push --set-upstream origin head",
+        ] {
+            if !document.contains(command) {
+                violations.push(format!(
+                    "{path} must document the generic preflighted push form `{command}`"
+                ));
+            }
+        }
+        if document.split("\n\n").any(|paragraph| {
+            paragraph.contains("push") && paragraph.contains("head") && paragraph.contains("never")
+        }) {
+            violations.push(format!(
+                "{path} must not prohibit the accepted preflighted HEAD push forms"
+            ));
+        }
+
+        let has_provenance_preflight = document.split("\n\n").any(|paragraph| {
+            (paragraph.contains("preflight") || paragraph.contains("before"))
+                && ["branch", "issue", "provenance"]
+                    .iter()
+                    .all(|term| paragraph.contains(term))
+                && (paragraph.contains("pull request") || paragraph.contains(" pr "))
+                && ["verify", "match"]
+                    .iter()
+                    .any(|term| paragraph.contains(term))
+        });
+        if !has_provenance_preflight {
+            violations.push(format!(
+                "{path} must require branch, pull-request, and issue provenance verification before publication mutation"
+            ));
+        }
+
+        if !document
+            .split("\n\n")
+            .any(|paragraph| paragraph.contains("stop") && paragraph.contains("mismatch"))
+        {
+            violations.push(format!(
+                "{path} must require the Publisher to stop on any provenance mismatch"
+            ));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "Publisher fast-path provenance violations:\n- {}",
+        violations.join("\n- ")
+    );
+}
+
+#[test]
+fn publisher_fast_path_documents_defense_in_depth_and_accepted_wrong_issue_risk() {
+    let paths = [
+        PR_PUBLISHER_AGENT,
+        ".opencode/skills/elbmesh-pr-publisher/SKILL.md",
+    ];
+    let mut violations = Vec::new();
+
+    for path in paths {
+        let document = project_file(path).to_ascii_lowercase();
+        if !document.contains("gh issue edit *") || !document.contains("broad") {
+            violations.push(format!(
+                "{path} must explicitly document the accepted broad `gh issue edit *` permission"
+            ));
+        }
+        if !document.contains("defense in depth") || !document.contains("not a sandbox") {
+            violations.push(format!(
+                "{path} must describe OpenCode permissions as defense in depth, not a sandbox"
+            ));
+        }
+
+        let has_hard_boundary = document.split("\n\n").any(|paragraph| {
+            paragraph.contains("branch protection")
+                && paragraph.contains("ci")
+                && (paragraph.contains("independent review")
+                    || paragraph.contains("independent reviewer"))
+                && paragraph.contains("hard bound")
+        });
+        if !has_hard_boundary {
+            violations.push(format!(
+                "{path} must identify GitHub branch protection, CI, and independent review as the hard boundary"
+            ));
+        }
+
+        let accepts_wrong_issue_risk = document.split("\n\n").any(|paragraph| {
+            paragraph.contains("wrong issue")
+                && paragraph.contains("residual risk")
+                && paragraph.contains("accept")
+        });
+        if !accepts_wrong_issue_risk {
+            violations.push(format!(
+                "{path} must explicitly document acceptance of the residual wrong-issue mutation risk"
+            ));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "Publisher fast-path boundary and residual-risk violations:\n- {}",
         violations.join("\n- ")
     );
 }
@@ -643,7 +994,8 @@ fn harness_agent_skills_include_canonical_required_reading() {
         "docs/GLOSSARY.md",
         "docs/DEVELOPMENT_WORKFLOW.md",
         "docs/HUMAN_DECISION_LOOP.md",
-        "docs/PHASED_DELIVERY_PLAN.md",
+        "docs/DELIVERY_ROADMAP.md",
+        "docs/AGENT_SKILLS.md",
         "docs/IMPLEMENTATION_PLAN.md",
         "docs/adr/",
     ];
@@ -681,7 +1033,8 @@ fn every_concrete_elbmesh_skill_includes_canonical_required_reading() {
         "docs/GLOSSARY.md",
         "docs/DEVELOPMENT_WORKFLOW.md",
         "docs/HUMAN_DECISION_LOOP.md",
-        "docs/PHASED_DELIVERY_PLAN.md",
+        "docs/DELIVERY_ROADMAP.md",
+        "docs/AGENT_SKILLS.md",
         "docs/IMPLEMENTATION_PLAN.md",
         "docs/adr/",
     ];
@@ -719,75 +1072,86 @@ fn every_concrete_elbmesh_skill_includes_canonical_required_reading() {
 }
 
 #[test]
-fn canonical_queue_docs_keep_label_mutations_human_applied() {
+fn publisher_automates_issue_status_transitions_with_delivery_prerequisites() {
     let paths = [
-        "docs/HUMAN_DECISION_LOOP.md",
-        "docs/adr/0015-use-github-issues-as-operational-queue.md",
+        PR_PUBLISHER_AGENT,
+        ".opencode/skills/elbmesh-pr-publisher/SKILL.md",
     ];
     let mut violations = Vec::new();
 
     for path in paths {
         let document = project_file(path).to_ascii_lowercase();
-        let has_shell_free_handoff = document.split("\n\n").any(|paragraph| {
-            paragraph.contains("orchestrator")
-                && (paragraph.contains("issue-label transition")
-                    || paragraph.contains("label transition"))
-                && paragraph.contains("report")
-                && paragraph.contains("request")
-                && paragraph.contains("human")
-                && paragraph.contains("appl")
-                && paragraph.contains("label mutation")
-                && [
-                    "bash is denied",
-                    "bash denied",
-                    "no shell",
-                    "without shell",
-                    "shell-free",
-                ]
-                .iter()
-                .any(|term| paragraph.contains(term))
-        });
-        if !has_shell_free_handoff {
-            violations.push(format!(
-                "{path} must state that the shell-free Orchestrator reports and requests issue-label transitions while a human applies label mutations"
-            ));
-        }
-
-        let manages_desired_queue_state = document.split("\n\n").any(|paragraph| {
-            paragraph.contains("orchestrator")
-                && paragraph.contains("manag")
-                && paragraph.contains("desired queue state")
-        });
-        if !manages_desired_queue_state {
-            violations.push(format!(
-                "{path} must preserve the Orchestrator's responsibility to manage desired queue state"
-            ));
-        }
-
-        for line in document.lines() {
-            if grants_orchestrator_direct_label_mutation(line) {
+        for command in [
+            "gh issue edit <issue> --remove-label status:review --add-label status:implementation",
+            "gh issue edit <issue> --remove-label status:implementation --add-label status:review",
+        ] {
+            if !document.contains(command) {
                 violations.push(format!(
-                    "{path} grants direct label mutation authority to the Orchestrator: `{}`",
-                    line.trim()
+                    "{path} must state the exact paired status transition `{command}`"
                 ));
             }
+        }
+
+        if !document.split("\n\n").any(|paragraph| {
+            paragraph.contains("exactly one")
+                && paragraph.contains("status:implementation")
+                && paragraph.contains("status:review")
+        }) {
+            violations.push(format!(
+                "{path} must state that exactly one of status:implementation and status:review is active"
+            ));
+        }
+
+        let sets_implementation_after_red = document.split("\n\n").any(|paragraph| {
+            paragraph.contains("red")
+                && paragraph.contains("status:implementation")
+                && ["set", "keep", "transition", "move"]
+                    .iter()
+                    .any(|term| paragraph.contains(term))
+        });
+        if !sets_implementation_after_red {
+            violations.push(format!(
+                "{path} must automatically set or keep `status:implementation` after accepted red publication"
+            ));
+        }
+
+        let sets_review_after_readiness_gates = document.split("\n\n").any(|paragraph| {
+            paragraph.contains("reviewer")
+                && paragraph.contains("ci")
+                && paragraph.contains("ready")
+                && paragraph.contains("status:review")
+                && ["no blocker", "no-blocker", "no blocking"]
+                    .iter()
+                    .any(|term| paragraph.contains(term))
+        });
+        if !sets_review_after_readiness_gates {
+            violations.push(format!(
+                "{path} must set `status:review` only with no-blocker Reviewer evidence and required CI while marking the pull request ready"
+            ));
+        }
+
+        if !document.contains("only a human") || !document.contains("merge") {
+            violations.push(format!(
+                "{path} must retain human-only merge authority while documenting status transitions"
+            ));
         }
     }
 
     assert!(
         violations.is_empty(),
-        "canonical issue-label authority violations:\n- {}",
+        "Publisher issue-status automation violations:\n- {}",
         violations.join("\n- ")
     );
 }
 
 #[test]
-fn harness_documentation_keeps_merge_authority_human_and_tracks_issue_transitions() {
+fn harness_documentation_keeps_human_merge_and_tracks_automated_issue_statuses() {
     let path = "docs/AGENT_DELIVERY_HARNESS.md";
     let documentation = project_file(path).to_ascii_lowercase();
+    let paragraphs: Vec<_> = documentation.split("\n\n").collect();
 
     assert!(
-        documentation.split("\n\n").any(|paragraph| {
+        paragraphs.iter().any(|paragraph| {
             ["human", "merge", "authorit"]
                 .iter()
                 .all(|term| paragraph.contains(term))
@@ -795,19 +1159,50 @@ fn harness_documentation_keeps_merge_authority_human_and_tracks_issue_transition
         "{path} must state that merge authority remains human"
     );
 
-    let labels = [
-        "status:tests-needed",
-        "status:tests-ready",
-        "status:implementation",
-        "status:review",
-        "status:merged",
-    ];
+    let observed_statuses: BTreeSet<_> = documentation
+        .split(|character: char| {
+            !(character.is_ascii_alphanumeric() || character == ':' || character == '-')
+        })
+        .filter(|token| token.starts_with("status:") && token.len() > "status:".len())
+        .collect();
+    assert_eq!(
+        observed_statuses,
+        BTreeSet::from(["status:implementation", "status:review"]),
+        "{path} must use only the two active issue statuses"
+    );
+
     assert!(
-        documentation.split("\n\n").any(|paragraph| {
-            (paragraph.contains("transition") || paragraph.contains("->"))
-                && contains_in_order(paragraph, &labels)
+        paragraphs.iter().any(|paragraph| {
+            paragraph.contains("publisher")
+                && paragraph.contains("red")
+                && paragraph.contains("status:implementation")
+                && ["set", "keep", "transition", "move"]
+                    .iter()
+                    .any(|term| paragraph.contains(term))
         }),
-        "{path} must document the normal issue-label transition from tests-needed through human-approved merge"
+        "{path} must assign the post-red `status:implementation` transition to the Publisher"
+    );
+    assert!(
+        paragraphs.iter().any(|paragraph| {
+            paragraph.contains("publisher")
+                && paragraph.contains("reviewer")
+                && paragraph.contains("ci")
+                && paragraph.contains("ready")
+                && paragraph.contains("status:review")
+                && ["no blocker", "no-blocker", "no blocking"]
+                    .iter()
+                    .any(|term| paragraph.contains(term))
+        }),
+        "{path} must assign `status:review` to the Publisher only after no-blocker Reviewer evidence and required CI"
+    );
+    assert!(
+        paragraphs.iter().any(|paragraph| {
+            paragraph.contains("github")
+                && paragraph.contains("merged")
+                && paragraph.contains("closed")
+                && paragraph.contains("state")
+        }),
+        "{path} must use merged/closed GitHub state instead of a merged status label"
     );
 }
 
@@ -848,40 +1243,37 @@ fn harness_documents_automatic_pull_request_creation_and_human_only_merge() {
 }
 
 #[test]
-fn harness_documentation_makes_label_transitions_human_applied() {
+fn harness_documentation_uses_dependency_order_without_an_active_phase_gate() {
     let path = "docs/AGENT_DELIVERY_HARNESS.md";
     let documentation = project_file(path).to_ascii_lowercase();
-    let labels = [
-        "status:tests-needed",
-        "status:tests-ready",
-        "status:implementation",
-        "status:review",
-        "status:merged",
+    let forbidden_phase_contracts = [
+        "## phase contract",
+        "active phase",
+        "planned phase",
+        "phase-scoped",
+        "red phase",
+        "green phase",
+        "review phase",
     ];
-    let transition_paragraph = documentation
-        .split("\n\n")
-        .find(|paragraph| contains_in_order(paragraph, &labels))
-        .unwrap_or_else(|| panic!("{path} must preserve the normal issue-label transition"));
-    let shell_free_handoff = transition_paragraph.contains("orchestrator")
-        && transition_paragraph.contains("report")
-        && transition_paragraph.contains("request")
-        && transition_paragraph.contains("human")
-        && ["human applies", "human performs", "human makes"]
-            .iter()
-            .any(|term| transition_paragraph.contains(term))
-        && [
-            "bash is denied",
-            "bash denied",
-            "no shell",
-            "without shell",
-            "shell-free",
-        ]
+    let retained: Vec<_> = forbidden_phase_contracts
         .iter()
-        .any(|term| transition_paragraph.contains(term));
+        .copied()
+        .filter(|term| documentation.contains(term))
+        .collect();
 
     assert!(
-        shell_free_handoff,
-        "{path} must state that the shell-free Orchestrator reports readiness and requests each label transition while the human applies it"
+        retained.is_empty(),
+        "{path} must not retain active phase gates: {retained:?}"
+    );
+    assert!(
+        documentation.split("\n\n").any(|paragraph| {
+            paragraph.contains("dependency")
+                && paragraph.contains("github issue")
+                && ["order", "sequence"]
+                    .iter()
+                    .any(|term| paragraph.contains(term))
+        }),
+        "{path} must describe dependency-ordered GitHub Issue delivery"
     );
 }
 
@@ -1200,7 +1592,7 @@ fn orchestrator_cannot_implement_or_merge() {
 }
 
 #[test]
-fn orchestrator_denies_all_bash_and_reports_transitions_to_the_human() {
+fn orchestrator_denies_all_bash_and_delegates_status_transitions_to_the_publisher() {
     let (frontmatter, body) = agent_file(ORCHESTRATOR_AGENT);
     let mut violations = Vec::new();
 
@@ -1218,7 +1610,7 @@ fn orchestrator_denies_all_bash_and_reports_transitions_to_the_human() {
 
     for command in [
         "git status",
-        "gh issue edit 147 --remove-label status:tests-needed --add-label status:tests-ready",
+        "gh issue edit 147 --remove-label status:implementation --add-label status:review",
         "git\tmerge implementation",
         "git -c merge.ff=only merge implementation",
         "gh\tpr merge 147 --auto",
@@ -1234,22 +1626,25 @@ fn orchestrator_denies_all_bash_and_reports_transitions_to_the_human() {
     }
 
     let body = body.to_ascii_lowercase();
-    let reports_transitions = body.split("\n\n").any(|paragraph| {
-        paragraph.contains("label")
-            && paragraph.contains("transition")
-            && paragraph.contains("report")
-            && paragraph.contains("human")
-            && ["bash", "shell", "command"]
-                .iter()
-                .any(|term| paragraph.contains(term))
-            && ["do not", "must not", "cannot", "never", "rather than"]
-                .iter()
-                .any(|term| paragraph.contains(term))
-    });
-    if !reports_transitions {
+    let delegates_transitions = body.contains("publisher")
+        && body.contains("status:implementation")
+        && body.contains("status:review")
+        && ["delegate", "owns", "sets", "changes"]
+            .iter()
+            .any(|term| body.contains(term));
+    if !delegates_transitions {
         violations.push(
-            "guidance must make coordination and label transitions reports for the human rather than shell mutations"
+            "guidance must delegate automatic `status:implementation` and `status:review` transitions to the Publisher"
                 .to_owned(),
+        );
+    }
+
+    if body
+        .split("\n\n")
+        .any(paragraph_requires_human_label_transition)
+    {
+        violations.push(
+            "guidance must not request routine human-applied issue-label transitions".to_owned(),
         );
     }
 
@@ -1574,45 +1969,23 @@ fn contains_in_order(text: &str, markers: &[&str]) -> bool {
     true
 }
 
-fn grants_orchestrator_direct_label_mutation(line: &str) -> bool {
-    let words: Vec<_> = line
-        .split(|character: char| !character.is_ascii_alphabetic())
-        .filter(|word| !word.is_empty())
-        .collect();
-    let mutation_verbs = [
-        "add", "adds", "adding", "apply", "applies", "applying", "change", "changes", "changing",
-        "edit", "edits", "editing", "manage", "manages", "managing", "mutate", "mutates",
-        "mutating", "remove", "removes", "removing", "set", "sets", "setting", "update", "updates",
-        "updating",
-    ];
-    let negations = ["cannot", "never", "no", "not", "rather", "without"];
+fn paragraph_requires_human_label_transition(paragraph: &str) -> bool {
+    let describes_human_gate = paragraph.contains("human")
+        && paragraph.contains("label")
+        && (paragraph.contains("transition") || paragraph.contains("mutation"))
+        && (paragraph.contains("request") || paragraph.contains("appl"));
+    let rejects_human_gate = [
+        "does not ask",
+        "must not ask",
+        "no human-applied",
+        "without human-applied",
+        "not require human",
+        "publisher, not",
+    ]
+    .iter()
+    .any(|term| paragraph.contains(term));
 
-    if words
-        .first()
-        .is_some_and(|word| mutation_verbs.contains(word))
-        && words
-            .iter()
-            .take(4)
-            .any(|word| ["label", "labels"].contains(word))
-    {
-        return true;
-    }
-
-    let Some(orchestrator) = words.iter().position(|word| *word == "orchestrator") else {
-        return false;
-    };
-
-    words
-        .iter()
-        .enumerate()
-        .skip(orchestrator + 1)
-        .filter(|(_, word)| ["label", "labels"].contains(word))
-        .any(|(label, _)| {
-            let authority = &words[orchestrator + 1..label];
-            authority.iter().any(|word| mutation_verbs.contains(word))
-                && !authority.contains(&"human")
-                && !authority.iter().any(|word| negations.contains(word))
-        })
+    describes_human_gate && !rejects_human_gate
 }
 
 #[derive(Debug)]
