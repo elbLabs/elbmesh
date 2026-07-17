@@ -2038,9 +2038,8 @@ fn workflow_job_containing(workflow: &str, marker: &str) -> Option<String> {
     let mut blocks = Vec::new();
 
     for line in jobs.lines() {
-        let starts_job = line.starts_with("  ")
-            && !line.starts_with("    ")
-            && line.trim_end().ends_with(':');
+        let starts_job =
+            line.starts_with("  ") && !line.starts_with("    ") && line.trim_end().ends_with(':');
 
         if starts_job && !current.is_empty() {
             blocks.push(std::mem::take(&mut current));
@@ -2060,9 +2059,9 @@ fn workflow_job_containing(workflow: &str, marker: &str) -> Option<String> {
 }
 
 fn workflow_job_runs_exact_command(job: &str, command: &str) -> bool {
-    job.lines().map(str::trim).any(|line| {
-        line == command || line.strip_prefix("run: ").is_some_and(|run| run == command)
-    })
+    job.lines()
+        .map(str::trim)
+        .any(|line| line == command || line.strip_prefix("run: ").is_some_and(|run| run == command))
 }
 
 fn agent_file(path: &str) -> (String, String) {
