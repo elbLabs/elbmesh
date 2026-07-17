@@ -4,10 +4,11 @@ Closes #
 
 -
 
-## Phase And Task
+## Dependency, Capability, And Task
 
-- Phase:
 - Task issue:
+- Depends on / blocks:
+- Capability or milestone:
 
 ## Tests
 

@@ -1,23 +1,10 @@
 # Agent Skills
 
-Elbmesh should be agentically usable. Agents should not infer the architecture from source files alone. They should use explicit skills, docs, task cards, tests, and architecture checks.
-
-This file is the canonical skill catalog. Concrete project-local opencode skills live under `.opencode/skills/` and must stay aligned with this catalog until generation/checking exists.
+Elbmesh skills are first-class repository contracts. This catalog owns skill names and purposes; each concrete `.opencode/skills/<name>/SKILL.md` owns its detailed inputs, permissions, outputs, verification, and preserved architecture rules.
 
 ## Skill Contract
 
-Every skill should include:
-
-```text
-Purpose
-When to use it
-Inputs required
-Files to read first
-Files it may edit
-Required outputs
-Required verification
-Architecture rules it must preserve
-```
+Every concrete skill states its trigger, required reading, permitted edit surface, required outputs, exact verification, and Resource/Action/Event/Reaction/View boundaries.
 
 Required reading for all Elbmesh skills:
 
@@ -26,428 +13,66 @@ docs/GOAL.md
 docs/GLOSSARY.md
 docs/DEVELOPMENT_WORKFLOW.md
 docs/HUMAN_DECISION_LOOP.md
-docs/PHASED_DELIVERY_PLAN.md
+docs/DELIVERY_ROADMAP.md
+docs/AGENT_SKILLS.md
 docs/IMPLEMENTATION_PLAN.md
 docs/adr/
 ```
 
-When generated capability docs exist, agents must also read:
+Read the expanded issue, harness, manifest, capabilities, and generated artifacts when relevant.
 
-```text
-RESOURCE_CAPABILITIES.md
-resource-capabilities.json
-architecture.manifest.json
-```
-
-## Core Skill Set
-
-### elbmesh-orchestrator
-
-Purpose: own phases, GitHub Issue task cards, automatic PR/MR publication handoffs, dependencies, and multi-agent sequencing.
-
-Use when:
-
-```text
-Starting or continuing implementation work.
-Selecting the next phase-scoped MR.
-Creating GitHub Issues from the phased plan.
-Spawning implementation agents.
-Coordinating parallel work.
-Resolving scope, dependency, or quality-gate conflicts.
-Creating Human Decision Requests when progress needs human judgment.
-```
-
-Outputs:
-
-```text
-Active phase
-Task card
-GitHub Issue
-PR/MR queue entry
-Agent assignment
-Dependency notes
-Quality gates
-Merge readiness state
-Draft and ready pull request state
-Human decision requests
-```
-
-Must preserve:
-
-```text
-No implementation outside a planned phase.
-No implementation without a GitHub Issue.
-No PR/MR without tests or a test plan.
-No parallel work on conflicting modules or traits.
-No unplanned refactors.
-No silent architecture decisions when human input is required.
-No agent merge; merge authority remains human-only.
-```
-
-### elbmesh-driver
-
-Purpose: define the next implementation slice and coordinate the test-first loop.
-
-Use when:
-
-```text
-Starting a new feature or architecture slice.
-Breaking a large goal into tasks.
-Resolving conflict between tests, docs, and implementation.
-```
-
-Outputs:
-
-```text
-Task card
-Acceptance criteria
-Architecture context
-Test plan
-Documentation update plan
-```
-
-Must preserve:
-
-```text
-Smallest useful slice.
-Tests before implementation.
-No hidden architecture changes.
-One active implementation direction.
-```
-
-### elbmesh-test-writer
-
-Purpose: write failing tests before implementation.
-
-Use when:
-
-```text
-A task card has acceptance criteria.
-New Resource/Action/Event behavior is planned.
-New adapter behavior is planned.
-An architecture rule needs enforcement.
-```
-
-Outputs:
-
-```text
-Scenario tests
-Contract tests
-Integration tests where appropriate
-Architecture-rule tests where possible
-```
-
-Preferred test forms:
-
-```text
-Given Events -> When Action -> Then Events
-Given Events -> When Action -> Then typed error
-Given operation journal state -> When retry -> Then no duplicate external call
-Given Event -> When Reaction runs -> Then Action is invoked once
-```
-
-Must not:
-
-```text
-Implement production behavior just to make tests pass.
-Assert only string errors when typed errors are available.
-Hide missing architecture decisions inside test fixtures.
-```
-
-### elbmesh-pr-publisher
-
-Purpose: publish accepted role handoffs as an auditable draft-to-ready pull request without modifying files or merging.
-
-Use when:
-
-```text
-Accepted red proof needs a branch, test-only commit, push, and linked draft pull request.
-Accepted green proof needs a separate implementation/docs commit and push.
-A no-blocker review and passing CI allow the pull request to become ready.
-Complete red, green, and readiness evidence must be appended to the issue and pull request without rewriting prior comments.
-```
-
-Outputs:
-
-```text
-Issue branch and pushed revisions
-Separate red test and green implementation/docs commits
-Linked draft pull request
-Append-only cumulative red, green, and readiness evidence in the pull request and issue
-Ready pull request after no-blocker review and required CI
-Pull request URL and residual risks
-```
-
-Must preserve:
-
-```text
-No repository file modifications.
-Only exact role-reported paths are staged after status/diff verification.
-Red and green provenance remains distinct and immutable.
-No shell separators, redirection, broad staging, or unreported paths.
-OpenCode permissions are defense in depth, not a sandbox.
-No merge operation or base-branch push; only a human may review and merge.
-```
-
-### elbmesh-implementer
-
-Purpose: implement the smallest production change that satisfies failing tests.
-
-Use when:
-
-```text
-Tests and fixtures exist and are accepted by the Orchestrator.
-The target slice is clear.
-The work belongs to the active phase and task card.
-```
-
-Outputs:
-
-```text
-Production code
-Updated docs when behavior or architecture changed
-Verification results
-```
-
-Accepted tests and fixtures are immutable to Implementers. Implementer outputs must exclude supporting test fixtures.
-
-If an accepted test or fixture conflicts with the task card or architecture, the Implementer reports the conflict to the Orchestrator for human confirmation. Only after human confirmation may a fresh Test Writer revise accepted tests or fixtures; the Implementer must not revise them.
-
-Must preserve:
-
-```text
-Explicit trait impls for behavior.
-No domain behavior hidden behind macros.
-No external calls outside declared External Operations.
-Replay/apply stays deterministic.
-Resource event streams contain only Resource Events.
-Accepted tests and fixtures stay immutable to Implementers.
-No unplanned refactors or speculative abstractions.
-```
-
-### elbmesh-reviewer
-
-Purpose: perform the single active final PR review for correctness, architecture drift, missing tests, evidence validity, and merge readiness. A human retains all merge authority.
-
-Use when:
-
-```text
-Green publication is complete and a pull request needs its final readiness review.
-An ADR or architecture rule may be affected.
-Infrastructure behavior changes.
-```
-
-Outputs:
-
-```text
-Findings ordered by severity
-Missing tests
-Architecture-rule violations
-Documentation drift
-Residual risks
-Exact inspection and quality command results
-Blocker status
-Final PR merge-readiness report
-```
-
-Must check:
-
-```text
-Resource/Action/Event boundaries.
-Typed errors and receipts.
-Expected version handling.
-Journal/Event separation.
-External operation idempotency.
-View rebuildability.
-Docs/index updates.
-Current branch range, exact changed paths, PR metadata/body, checks, and immutable role evidence.
-```
-
-### elbmesh-mr-reviewer
-
-Purpose: provide optional compatibility/manual deep review of phase-scoped MRs outside the canonical role sequence.
-
-The compatibility/manual `elbmesh-mr-reviewer` skill is not an additional required stage and does not own or report merge readiness. Only `elbmesh-reviewer` owns the final PR merge-readiness report in the canonical flow; a human performs the merge and retains all merge authority.
-
-Use when:
-
-```text
-A human or active Reviewer explicitly requests supplemental deep review.
-Compatibility with an older manual MR-review workflow is needed.
-```
-
-Outputs:
-
-```text
-Findings ordered by severity
-Gate observations
-Supplemental deep-review report
-Required follow-up tasks
-Residual risks
-```
-
-Must check:
-
-```text
-MR matches task card and phase.
-MR links or closes its GitHub Issue.
-Tests exist for changed behavior.
-All verification commands passed or limitation is documented.
-Errors are named and typed where required.
-No unplanned behavior or refactor is included.
-Docs and skills are updated when needed.
-```
-
-### elbmesh-doc-maintainer
-
-Purpose: keep docs, ADRs, plans, and generated docs aligned.
-
-Use when:
-
-```text
-A decision is made.
-Vocabulary changes.
-Build order changes.
-Agent workflow changes.
-Generated docs are introduced or updated.
-```
-
-Outputs:
-
-```text
-New or updated ADR
-Updated glossary
-Updated implementation plan
-Updated README/index
-Updated open questions
-```
-
-Rules:
-
-```text
-Docs are source for architecture decisions.
-Generated docs are not edited manually once generation exists.
-Markdown and machine-readable docs must share manifest hash and generator version.
-```
+## Catalog
 
 ### elbmesh-architecture-checker
 
-Purpose: verify implementation against the architecture rules.
+Checks accepted changes for architecture drift and reports findings without editing.
 
-Use when:
+### elbmesh-doc-maintainer
 
-```text
-Before marking a task complete.
-Before generated capability docs are trusted.
-Before an agent claims an architectural change is safe.
-```
+Keeps active docs, ADR indexes, templates, agent contracts, and generated-doc rules aligned.
 
-Checks:
+### elbmesh-driver
 
-```text
-Every Action targets exactly one Resource.
-Every Event belongs to exactly one Resource.
-Every Action version has exactly one registered handler.
-Every Event version has explicit Apply logic.
-External HTTP calls appear only through declared External Operations.
-Replay/apply code does not call external systems.
-Reactions invoke Actions rather than mutating Resource state directly.
-Views only derive from Events.
-Schemas and generated docs are in sync with the manifest.
-```
-
-This skill should eventually become the `elbmesh check-architecture` CLI command.
+Shapes the smallest dependency-linked task card with acceptance criteria, non-goals, first tests, and gates.
 
 ### elbmesh-flow-explainer
 
-Purpose: explain how an Action or Event flows through the system.
+Explains an Action/Event path through Policies, Events, Reactions, External Operations, Views, Queries, and journals.
 
-Use when:
+### elbmesh-implementer
 
-```text
-A human or agent needs to understand consequences.
-A review needs to inspect downstream behavior.
-A new Action/Event/Reaction is added.
-```
-
-Outputs should answer:
-
-```text
-Which Resource does the Action target?
-Which Policies apply?
-Which Events may be recorded?
-Which Reactions subscribe?
-Which downstream Actions may run?
-Which External Operations are used?
-Which Views are updated?
-Which Queries expose the result?
-```
-
-This skill should eventually become the `elbmesh explain-flow` CLI command.
+Makes accepted failing tests pass with the smallest non-test change; accepted tests and fixtures remain immutable.
 
 ### elbmesh-manifest-editor
 
-Purpose: safely update the architecture manifest and generated contract surfaces.
+Changes manifest/schema sources and regenerates affected bindings and capability artifacts.
 
-Use when:
+### elbmesh-mr-reviewer
 
-```text
-Adding or changing Resources, Components, Actions, Events, Reactions, Views, Queries, Policies, or External Operations.
-```
+Provides optional compatibility/manual deep review outside the canonical delivery sequence; it is not an additional required stage and does not report merge readiness.
 
-Outputs:
+### elbmesh-operations
 
-```text
-Manifest update
-Schema update
-Generated binding update or stub plan
-Capability docs update
-Architecture check results
-```
+Creates exact task-card issues and isolated worktrees through the narrow setup command allowlist.
 
-Must preserve:
+### elbmesh-orchestrator
 
-```text
-Schema IDs and versions.
-One Action target Resource.
-One Event owner Resource.
-Declared External Operations.
-Generated docs stay in sync.
-```
+Coordinates dependency-ordered setup and fresh role handoffs while remaining shell-free and non-editing.
 
-## Skill Packaging
+### elbmesh-pr-publisher
 
-Project-local opencode skill files:
+Publishes accepted role reports, commits, pull-request state, append-only evidence, and issue statuses without authoring files or merging.
 
-```text
-.opencode/skills/elbmesh-driver/SKILL.md
-.opencode/skills/elbmesh-orchestrator/SKILL.md
-.opencode/skills/elbmesh-test-writer/SKILL.md
-.opencode/skills/elbmesh-pr-publisher/SKILL.md
-.opencode/skills/elbmesh-implementer/SKILL.md
-.opencode/skills/elbmesh-reviewer/SKILL.md
-.opencode/skills/elbmesh-mr-reviewer/SKILL.md
-.opencode/skills/elbmesh-doc-maintainer/SKILL.md
-.opencode/skills/elbmesh-architecture-checker/SKILL.md
-.opencode/skills/elbmesh-flow-explainer/SKILL.md
-.opencode/skills/elbmesh-manifest-editor/SKILL.md
-```
+### elbmesh-reviewer
 
-Do not hand-maintain generated skill files once generation exists.
+Performs the final read-only PR review and reports merge readiness or blockers; a human performs the merge.
 
-Until generation exists, update this file and the matching `.opencode/skills/*/SKILL.md` file together.
+### elbmesh-test-writer
 
-## Definition Of Agentically Usable
+Writes focused failing tests and fixtures before implementation, then returns exact red proof.
 
-The repo is agentically usable when an agent can:
+## Synchronization
 
-```text
-Find the goal and architecture rules quickly.
-Pick the right skill for a task.
-Locate the active phase and MR scope.
-Read a task card and write failing tests first.
-Implement explicit behavior without violating boundaries.
-Run tests and architecture checks.
-Update docs or explain why no docs changed.
-Explain the resulting Action/Event/Reaction/View flow.
-```
+Concrete skills live under `.opencode/skills/`. The catalog headings and concrete skill directories must match. Until generation exists, change both in the same issue.
+
+Project skills and agents are loaded at startup; see [AGENT_DELIVERY_HARNESS.md](AGENT_DELIVERY_HARNESS.md) for the OpenCode reload boundary.

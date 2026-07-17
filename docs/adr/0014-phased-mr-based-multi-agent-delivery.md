@@ -1,6 +1,6 @@
 # ADR 0014: Use Phased MR-Based Multi-Agent Delivery
 
-Status: Accepted
+Status: Superseded by ADR 0017
 
 Date: 2026-07-04
 

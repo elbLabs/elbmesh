@@ -1,14 +1,16 @@
 ---
 name: Implementation Task
-about: Phase-scoped Elbmesh implementation work
-title: "[Phase X] "
-labels: ["status:planned"]
+about: Dependency-linked Elbmesh capability implementation work
+title: "[Capability] "
+labels: ["status:implementation"]
 assignees: ""
 ---
 
-## Phase
+## Dependencies And Capability Context
 
-Phase:
+- Depends on:
+- Blocks:
+- Capability or milestone:
 
 ## Goal
 
@@ -18,7 +20,7 @@ What framework behavior or capability should exist?
 
 Relevant docs and ADRs:
 
-- `docs/PHASED_DELIVERY_PLAN.md`
+- `docs/DELIVERY_ROADMAP.md`
 - `docs/DEVELOPMENT_WORKFLOW.md`
 - `docs/GLOSSARY.md`
 
@@ -62,7 +64,7 @@ Affected crates/modules:
 - [ ] ADR needed
 - [ ] Glossary update needed
 - [ ] Development workflow update needed
-- [ ] Phased delivery plan update needed
+- [ ] Delivery roadmap or issue dependency update needed
 - [ ] Capability docs update needed
 - [ ] No docs needed because:
 
@@ -74,9 +76,3 @@ Affected crates/modules:
 - [ ] External calls happen only through declared External Operations
 - [ ] Resource Events and execution journals remain separate
 - [ ] Views derive from Events and are rebuildable
-
-## Dependencies
-
-Depends on:
-
-Blocks:
