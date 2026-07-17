@@ -63,6 +63,10 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all
 ```
 
+`cargo test --all` is the infrastructure-independent local gate. Pull requests also run dedicated `Live NATS` and `Live Restate` jobs. Each live job provisions its named service, requires the corresponding URL, rejects an empty live-test selection, and runs the complete live contract binary without a test-name filter. A required `Rust CI` aggregate fails unless Rust Quality and both live jobs succeed, so a live adapter failure blocks publication readiness and merge.
+
+Feature-gated live tests remain optional for local development. When their URL is absent, run them with `-- --nocapture` to expose the explicit `skipping ... integration test` message; that result means the live contract was not executed and is not live proof. Required CI mode never treats that optional path as proof: a missing URL or zero selected live tests fails before the unfiltered contract binary runs.
+
 Tests precede implementation; accepted tests remain immutable; red and green commits stay separate; public/runtime errors are named; unrelated refactors and speculative abstractions stay out.
 
 Architecture changes must preserve the rules in [GOAL.md](GOAL.md) and vocabulary in [GLOSSARY.md](GLOSSARY.md). Changed decisions add or supersede an ADR; changed vocabulary updates the glossary; changed capability dependencies update the roadmap and issue links; generated artifacts change only through their generator.
