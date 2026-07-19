@@ -604,10 +604,16 @@ fn pr_publisher_is_a_non_editing_delivery_subagent_with_auditable_handoffs() {
         "{PR_PUBLISHER_AGENT} must link the pull request to its issue"
     );
     assert!(
-        body.contains("evidence")
-            && (body.contains("pr body") || body.contains("pull request body"))
-            && body.contains("comment"),
-        "{PR_PUBLISHER_AGENT} must carry role evidence into the pull request body and comments"
+        body.contains("issue") && body.contains("evidence") && body.contains("comment"),
+        "{PR_PUBLISHER_AGENT} must append immutable role evidence to the issue"
+    );
+    assert!(
+        (body.contains("pr body") || body.contains("pull request body"))
+            && body.contains("current")
+            && ["update", "refresh", "replace"]
+                .iter()
+                .any(|term| body.contains(term)),
+        "{PR_PUBLISHER_AGENT} must keep the pull request body updated as the current review summary"
     );
     assert!(
         body.split("\n\n").any(|paragraph| {
@@ -620,20 +626,19 @@ fn pr_publisher_is_a_non_editing_delivery_subagent_with_auditable_handoffs() {
 }
 
 #[test]
-fn publisher_green_and_readiness_evidence_is_append_only_on_issue_and_pull_request() {
+fn publisher_evidence_is_issue_only_stage_deltas_and_pr_body_stays_current() {
     let paths = [
         PR_PUBLISHER_AGENT,
         ".opencode/skills/elbmesh-pr-publisher/SKILL.md",
     ];
-    let required_evidence_fields: [(&str, &[&str]); 10] = [
+    let required_evidence_fields: [(&str, &[&str]); 8] = [
         (
             "role task IDs",
             &["role task id", "role task/session id", "task/session id"],
         ),
         ("role session IDs", &["role session id", "task/session id"]),
         ("exact changed paths", &["exact changed path"]),
-        ("red commit SHA", &["red commit sha"]),
-        ("green commit SHA", &["green commit sha"]),
+        ("stage commit SHA", &["stage commit sha", "commit sha"]),
         ("exact commands", &["exact command"]),
         (
             "command results",
@@ -644,7 +649,6 @@ fn publisher_green_and_readiness_evidence_is_append_only_on_issue_and_pull_reque
                 "commands and results",
             ],
         ),
-        ("review task ID", &["review task id", "reviewer task id"]),
         ("blocker status", &["blocker status"]),
         ("PR URL", &["pr url", "pull request url"]),
     ];
@@ -652,19 +656,38 @@ fn publisher_green_and_readiness_evidence_is_append_only_on_issue_and_pull_reque
 
     for path in paths {
         let document = project_file(path).to_ascii_lowercase();
-        let has_append_only_green_and_readiness_evidence =
-            document.split("\n\n").any(|paragraph| {
-                paragraph.contains("green")
-                    && paragraph.contains("readiness")
-                    && (paragraph.contains("append-only")
-                        || (paragraph.contains("append") && paragraph.contains("without rewrit")))
-                    && paragraph.contains("issue")
-                    && (paragraph.contains("pull request") || paragraph.contains("pr"))
-                    && paragraph.contains("comment")
-            });
-        if !has_append_only_green_and_readiness_evidence {
+        let has_issue_only_stage_delta = document.split("\n\n").any(|paragraph| {
+            paragraph.contains("append-only")
+                && paragraph.contains("issue")
+                && paragraph.contains("comment")
+                && (paragraph.contains("stage delta") || paragraph.contains("stage-specific"))
+                && ["not cumulative", "never cumulative", "do not repeat"]
+                    .iter()
+                    .any(|term| paragraph.contains(term))
+        });
+        if !has_issue_only_stage_delta {
             violations.push(format!(
-                "{path} must append green and readiness evidence as new comments on both the GitHub issue and pull request without rewriting prior evidence"
+                "{path} must append non-cumulative, stage-specific evidence only to the GitHub issue"
+            ));
+        }
+
+        let has_current_pr_body = document.split("\n\n").any(|paragraph| {
+            (paragraph.contains("pull request body") || paragraph.contains("pr body"))
+                && paragraph.contains("current")
+                && paragraph.contains("concise")
+                && ["update", "refresh", "replace"]
+                    .iter()
+                    .any(|term| paragraph.contains(term))
+        });
+        if !has_current_pr_body {
+            violations.push(format!(
+                "{path} must update one concise pull request body as the current review summary"
+            ));
+        }
+
+        if !document.contains("do not post routine evidence comments on the pull request") {
+            violations.push(format!(
+                "{path} must prohibit routine evidence comments on the pull request"
             ));
         }
 
@@ -673,9 +696,7 @@ fn publisher_green_and_readiness_evidence_is_append_only_on_issue_and_pull_reque
                 .iter()
                 .any(|alternative| document.contains(alternative))
             {
-                violations.push(format!(
-                    "{path} append-only publication evidence is missing {field}"
-                ));
+                violations.push(format!("{path} issue audit evidence is missing {field}"));
             }
         }
     }
@@ -685,6 +706,111 @@ fn publisher_green_and_readiness_evidence_is_append_only_on_issue_and_pull_reque
         "PR Publisher evidence contract violations:\n- {}",
         violations.join("\n- ")
     );
+}
+
+#[test]
+fn pull_request_template_is_a_concise_current_review_summary() {
+    let path = ".github/pull_request_template.md";
+    let template = project_file(path).to_ascii_lowercase();
+
+    for section in [
+        "## human review briefing",
+        "### 60-second summary",
+        "### flow",
+        "### review guide",
+        "### risks and approval",
+        "## current state",
+        "## scope",
+        "## verification",
+        "## architecture and docs",
+        "## commits",
+        "## audit trail",
+    ] {
+        assert!(
+            template.contains(section),
+            "{path} must include the current-review section `{section}`"
+        );
+    }
+
+    for field in [
+        "stage:",
+        "ci:",
+        "blockers:",
+        "approve when:",
+        "open questions:",
+        "issue:",
+    ] {
+        assert!(
+            template.contains(field),
+            "{path} must expose the current-review field `{field}`"
+        );
+    }
+}
+
+#[test]
+fn reviewer_hands_a_human_review_briefing_to_the_publisher() {
+    let reviewer_paths = [REVIEWER_AGENT, ".opencode/skills/elbmesh-reviewer/SKILL.md"];
+    let required_briefing_terms = [
+        "human review briefing",
+        "60-second summary",
+        "change map",
+        "mermaid",
+        "architecture impact",
+        "risk map",
+        "suggested review order",
+        "proof",
+        "approval criteria",
+        "open questions",
+        "non-goals",
+        "residual risks",
+        "700 words",
+        "evidence-backed",
+    ];
+
+    for path in reviewer_paths {
+        let document = project_file(path).to_ascii_lowercase();
+        for term in required_briefing_terms {
+            assert!(
+                document.contains(term),
+                "{path} Human Review Briefing contract is missing `{term}`"
+            );
+        }
+    }
+
+    for path in [
+        PR_PUBLISHER_AGENT,
+        ".opencode/skills/elbmesh-pr-publisher/SKILL.md",
+    ] {
+        let document = project_file(path).to_ascii_lowercase();
+        assert!(
+            document.split("\n\n").any(|paragraph| {
+                paragraph.contains("reviewer")
+                    && paragraph.contains("human review briefing")
+                    && paragraph.contains("verbatim")
+                    && paragraph.contains("top")
+                    && (paragraph.contains("pull request body")
+                        || paragraph.contains("pr body"))
+            }),
+            "{path} must publish the Reviewer-validated briefing verbatim at the top of the pull request body"
+        );
+    }
+
+    for path in [
+        ".opencode/agents/elbmesh-orchestrator.md",
+        ".opencode/skills/elbmesh-orchestrator/SKILL.md",
+    ] {
+        let document = project_file(path).to_ascii_lowercase();
+        assert!(
+            document.split("\n\n").any(|paragraph| {
+                paragraph.contains("reviewer")
+                    && paragraph.contains("human review briefing")
+                    && paragraph.contains("publisher")
+                    && (paragraph.contains("pull request body")
+                        || paragraph.contains("pr body"))
+            }),
+            "{path} must hand the Reviewer briefing to the Publisher for the current pull request body"
+        );
+    }
 }
 
 #[test]
@@ -718,8 +844,12 @@ fn pr_publisher_permissions_allow_publication_but_deny_direct_merge() {
             "gh pr create --draft --title \"Issue 147\" --body \"Closes #147\"",
         ),
         (
-            "publish evidence",
-            "gh pr comment 148 --body \"Green proof\"",
+            "publish issue evidence",
+            "gh issue comment 147 --body \"Green proof\"",
+        ),
+        (
+            "refresh the pull request body",
+            "gh pr edit 148 --body \"Current review summary\"",
         ),
         ("mark the pull request ready", "gh pr ready 148"),
     ] {
@@ -741,6 +871,7 @@ fn pr_publisher_permissions_allow_publication_but_deny_direct_merge() {
         "git merge main",
         "git merge --continue",
         "gh pr edit 148 --base main",
+        "gh pr comment 148 --body \"Green proof\"",
         "gh pr merge 148",
         "gh pr merge 148 --auto",
     ] {

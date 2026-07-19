@@ -8,7 +8,7 @@ The primary `elbmesh-orchestrator` has Edit and Bash denied. Task starts with a 
 
 Operations is non-editing and cannot spawn nested tasks. Its Bash allowlist is limited to `gh issue create/view`, `git fetch`, and `git worktree list/add`; label-at-create, forced worktree reuse, and branch reset are denied.
 
-The Publisher is also non-editing. It may publish exact role-reported paths and delivery state, but cannot force-push, target the base branch, change the PR base, merge, or enable auto-merge.
+The Reviewer remains read-only and returns findings, merge readiness, and an evidence-backed Human Review Briefing. The Publisher is also non-editing. It may publish exact role-reported paths and delivery state, append stage-specific audit comments to the issue, and refresh the current pull request body with the accepted Reviewer briefing. Routine evidence comments on the pull request are denied. It cannot force-push, target the base branch, change the PR base, merge, or enable auto-merge.
 
 ## Permission Limits
 

@@ -21,7 +21,6 @@ permission:
     "gh pr view *": allow
     "gh pr edit *": allow
     "gh pr checks *": allow
-    "gh pr comment *": allow
     "gh pr ready *": allow
     "gh pr edit --base *": deny
     "gh pr edit --base=*": deny
@@ -65,7 +64,7 @@ The broad `gh issue edit *` permission is intentionally accepted for autonomous 
 
 The human explicitly accepts the residual risk of wrong issue mutation created by broad issue-edit autonomy. The mandatory issue provenance preflight reduces that residual risk but cannot eliminate it.
 
-For the red handoff, create the issue branch from the reported base revision, stage only accepted Test Writer test and fixture paths, create a test-only red commit, push the branch, and open a draft pull request linked to or closing the issue. Put immutable Test Writer provenance and red proof in the pull request body, append complete red evidence as new comments on both the issue and pull request, then automatically set or keep `status:implementation` on the issue.
+For the red handoff, create the issue branch from the reported base revision, stage only accepted Test Writer test and fixture paths, create a test-only red commit, push the branch, and open a draft pull request linked to or closing the issue. Append the red stage delta to the issue, create the concise current pull request body, then automatically set or keep `status:implementation` on the issue.
 
 Exactly one of `status:implementation` and `status:review` must be active on the issue. Use only these complete paired transitions, which remove the opposite status before adding the target status; never use add-only, remove-only, simultaneous-status, arbitrary-label, or mixed issue-edit forms:
 
@@ -74,12 +73,14 @@ gh issue edit <issue> --remove-label status:review --add-label status:implementa
 gh issue edit <issue> --remove-label status:implementation --add-label status:review
 ```
 
-For the green handoff, require the Implementer's focused green proof and complete quality-gate report. Stage only the exact reported implementation and documentation paths, create a separate implementation/docs commit distinct from the red commit, and push it. Append green evidence as new append-only comments on both the GitHub issue and pull request without rewriting prior evidence.
+For the green handoff, require the Implementer's focused green proof and complete quality-gate report. Stage only the exact reported implementation and documentation paths, create a separate implementation/docs commit distinct from the red commit, and push it. Append the green stage delta to the issue and update the concise current pull request body in place.
 
-Only after the Reviewer reports merge readiness with no blocking findings and required CI passes, append readiness evidence as new append-only comments on both the GitHub issue and pull request without rewriting prior evidence, change the issue to `status:review` while marking the pull request ready, and return the PR URL.
+Only after the Reviewer reports merge readiness with no blocking findings and required CI passes, append the readiness stage delta to the issue, update the concise current pull request body in place, change the issue to `status:review` while marking the pull request ready, and return the PR URL.
 
-Green and readiness evidence is append-only: append both as new comments on the GitHub issue and pull request without rewriting any prior evidence.
+At readiness, publish the Reviewer-validated `Human Review Briefing` verbatim at the top of the current pull request body. Preserve its explanation, Mermaid graph, review order, risks, and approval criteria without adding technical claims. Fill the remaining current-state, commit, verification, and audit-link sections from verified Publisher evidence. Repeat this replacement after a later accepted Reviewer rework report; do not post the briefing as a pull request comment.
 
-Every evidence comment is a cumulative, immutable record. Include role task IDs, role session IDs, exact changed paths, the red commit SHA, the green commit SHA when available, exact commands, command results, the review task ID when available, blocker status, and the PR URL. Red comments may mark green and review fields pending; green comments add the Implementer and green commit evidence; readiness comments include every Test Writer, Implementer, Reviewer, and Publisher task/session identifier, the reviewed range, findings, CI state, residual risks, and all final field values.
+Issue evidence is append-only and stage-specific. Append one stage delta as a new issue comment for red, green, rework, or readiness. A stage delta is not cumulative: do not repeat prior-stage evidence. Include only the current stage's role task IDs, role session IDs, exact changed paths, stage commit SHA, exact commands and concise command results, blocker status, and PR URL. Readiness also includes the Reviewer task ID, reviewed range, findings, CI state, and residual risks.
+
+Keep one concise pull request body as the current human review summary and update it in place at every publication stage. Report current state, scope, changed paths, red and green commits, current head, verification summary, review and CI state, blockers, residual risks, and links to the issue audit trail. Replace stale pending fields. Do not post routine evidence comments on the pull request; pull request comments are reserved for human review discussion and actionable findings.
 
 Never perform any merge operation. Do not run `git merge`, `gh pr merge`, enable auto-merge, call a merge API, merge through a UI, push a base branch, or use any squash, rebase, or equivalent merge path. Readiness is not merge authority; only a human may review and merge.

@@ -6,6 +6,8 @@ Date: 2026-07-15
 
 Supersedes: ADR 0014 and ADR 0015 delivery ordering, queue-status, and label-transition decisions. Their original decision text remains as historical context.
 
+Evidence publication on both issues and pull requests is superseded by ADR 0018. The dependency ordering, status ownership, and merge-authority decisions remain accepted.
+
 ## Context
 
 The earlier delivery contract organized work by numbered roadmap groups, used several transient queue labels, and required a shell-free Orchestrator to ask a human for routine label changes. In practice, expanded GitHub Issues already carry the actionable acceptance criteria and dependency information. The Publisher is the role that verifies commits, pull request state, evidence, review, and CI, so it is also the narrowest role able to publish status changes safely.
