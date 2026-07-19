@@ -68,7 +68,7 @@ The proof includes typed Resources/Actions/Events, cross-Resource Reactions, one
 
 - ActionJournal replay and duplicate Action semantics.
 - Partial commit recovery when terminal journaling fails.
-- Projection checkpoint and durable subscription semantics.
+- Durable projection subscription and acknowledgement adapters beyond the checkpoint port.
 - Manifest authoring and generated-file ownership in consuming repositories.
 - Schema upcasting beyond direct v1 handlers.
 - Policy representation for DMN/FGA integrations.
