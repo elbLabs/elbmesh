@@ -104,6 +104,7 @@ async fn source_aware_partial_multi_handler_failure_retries_without_reapplying_s
             assert_eq!(failures[0].projection_type, "offer_audit");
             assert_eq!(failures[0].failure_code, "projection.view_store.nats_put");
         }
+        unexpected => panic!("unexpected projection dispatch error: {unexpected:?}"),
     }
 
     dispatcher
@@ -420,6 +421,7 @@ async fn dispatcher_returns_named_failures_with_details() {
             assert_eq!(failures[0].failure_details["message_type"], "offer_created");
             assert_eq!(failures[0].failure_details["schema_version"], 1);
         }
+        unexpected => panic!("unexpected projection dispatch error: {unexpected:?}"),
     }
 }
 
@@ -447,6 +449,7 @@ async fn dispatcher_reports_mixed_success_and_failure_and_keeps_successful_view(
                 "projection.source_event_deserialization"
             );
         }
+        unexpected => panic!("unexpected projection dispatch error: {unexpected:?}"),
     }
 
     let view = dispatcher
