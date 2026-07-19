@@ -66,32 +66,58 @@ Resource messages also carry `Elbmesh-Aggregate-Sequence`. This is the one-based
 
 ### Atomic Resource append
 
-A multi-Event Resource append uses the NATS 2.14 atomic batch protocol and one stable batch identity. It uses the Action ID when that value is a valid NATS batch ID; otherwise the adapter derives a deterministic value no longer than the 64-character server limit:
+A multi-Event Resource append uses the NATS 2.14 atomic batch protocol and one stable batch identity. It uses the Action ID directly only when the complete value is ASCII `^[A-Za-z0-9_-]{1,64}$`; otherwise uses the deterministic fallback defined below.
+
+Message and fallback batch identities use unambiguous canonical framing. Each framed field is its decimal UTF-8 byte length, one colon, and its exact bytes, with no separator before the next field. The adapter hashes the concatenated framing and encodes the result as 64 lowercase SHA-256 hex characters:
+
+- `Nats-Msg-Id` frames, in order, `elbmesh-msg-v1`, stream name, exact subject, then the canonical message ID.
+- A fallback `Nats-Batch-Id` frames, in order, `elbmesh-batch-v1`, stream name, exact subject, then every ordered `Nats-Msg-Id` in the append.
+
+For example, the canonical message identities `event-α` and `event-β` on `ELBMESH_RESOURCES` subject `elbmesh.resources.5.order.7.order-1` produce:
+
+```text
+14:elbmesh-msg-v117:ELBMESH_RESOURCES35:elbmesh.resources.5.order.7.order-18:event-α
+9b23668478b2152c35c1da45b967f630ed4e4e562162ca3efe39f456eab0a73d
+
+14:elbmesh-msg-v117:ELBMESH_RESOURCES35:elbmesh.resources.5.order.7.order-18:event-β
+1137b50684abc748eac9374c5a8dfefd6868138906072a0f6b092de0c9839074
+```
+
+Their fallback batch framing and identity are:
+
+```text
+16:elbmesh-batch-v117:ELBMESH_RESOURCES35:elbmesh.resources.5.order.7.order-164:9b23668478b2152c35c1da45b967f630ed4e4e562162ca3efe39f456eab0a73d64:1137b50684abc748eac9374c5a8dfefd6868138906072a0f6b092de0c9839074
+b135d214269ae54bf814434327cfe7c7f399763e8fcc2a8569106d36ab1221ba
+```
+
+The payload identity is lowercase SHA-256 of the exact canonical serialized payload bytes. Stable application headers are validated separately and are not inputs to the payload digest. For example, the exact payload bytes `{"order_id":"order-1","status":"placed"}` have payload identity `ebe836c193ead8c836bdd4f910af2c447a6e9bffb8331728f97c613e7d2a0b1b`.
+
+The append protocol is:
 
 1. Reject an empty append locally and reject more than 1,000 messages before publishing.
 2. Give every message a unique, stable `Nats-Msg-Id`, the same `Nats-Batch-Id`, a one-based consecutive `Nats-Batch-Sequence`, and `Nats-Required-Api-Level: 4`.
 3. Publish the first message without `Nats-Batch-Commit`. Its successful handshake is a zero-byte acknowledgement; this means only that the server opened the batch, not that any Event committed.
-4. Publish every message within the server's 10 seconds batch timeout. Put `Nats-Batch-Commit: 1` only on the final message.
+4. Put `Nats-Batch-Commit: 1` only on the final message. The 10-second batch timeout is inactivity since the last server-accepted batch message. Each server-accepted batch message resets the inactivity timer; it is not a limit on total batch duration. The server abandons the batch after 10 seconds of such inactivity.
 5. Treat only the final JSON publish acknowledgement as commit. Its `batch` must equal `Nats-Batch-Id`, its `count` must equal the requested message count, and its `seq` is the final global JetStream stream sequence, not the Resource version.
 
 Until the commit acknowledgement, the server does not expose any message in the batch. A missing final message or timeout makes the server abandon the batch. The adapter reports no success from intermediate zero-byte acknowledgements.
 
-Duplicate message IDs within an atomic batch reject the whole batch with the stable server error `10201` (`batch publish contains duplicate message id`); no partial append is accepted. The adapter preserves message and batch identities across recovery.
+Duplicate message IDs within an atomic batch reject the whole batch with the stable server error `10201` (`atomic publish batch contains duplicate message id`); no partial append is accepted. The adapter preserves message and batch identities across recovery.
 
-If the server may have committed but the client lost acknowledgement, the adapter performs read-back reconciliation on the exact Resource subject before republishing. It compares the expected `Nats-Msg-Id`, `Elbmesh-Aggregate-Sequence`, and payload identity for every Event. A complete match is success, no match permits retry with the same identities after the abandoned batch is known to be gone, and a partial or mismatched result is a named storage/protocol error. Blind retry after a lost acknowledgement is forbidden because deduplication cannot by itself distinguish a committed batch from an abandoned one.
+If the server may have committed but the client lost acknowledgement, the adapter reads only the exact Resource subject, strictly after the known previous subject JetStream sequence, and reads at most the expected batch size before republishing. It compares the ordered `Nats-Msg-Id`, `Elbmesh-Aggregate-Sequence`, and payload digest against every expected Event. A complete match is success. Finding no messages after confirmed 10-second server inactivity permits retry with identical message and batch IDs. A partial result or any message ID, aggregate sequence, or payload digest mismatch is a named protocol error. Blind retry after a lost acknowledgement is forbidden because deduplication cannot by itself distinguish a committed batch from an abandoned one.
 
 Single-Event Resource appends use the same identity, header, expected-last-subject-sequence, and reconciliation rules; they do not need the batch handshake.
 
 ### Durable delivery and cursor ownership
 
-Reactions and projections consume Resource Events through explicit durable consumers. Durable names are deterministic:
+Reactions and projections consume Resource Events through explicit durable consumers. Durable names are deterministic and use this exact grammar:
 
 ```text
-ELBMESH_REACTION_<encoded-reaction-type>
-ELBMESH_PROJECTION_<encoded-projection-type>
+ELBMESH_REACTION_<decimal UTF8 length>_<uppercase-percent-encoded-type>
+ELBMESH_PROJECTION_<decimal UTF8 length>_<uppercase-percent-encoded-type>
 ```
 
-The durable-name token uses the same uppercase percent encoding and includes its UTF-8 byte length, joined without NATS subject separators. The adapter creates and owns the consumer, filter subject, explicit acknowledgement policy, redelivery settings, and delivery cursor. Application Reaction and Projection code cannot acknowledge messages or move a cursor directly.
+The decimal length is the original type's UTF-8 byte length. The encoded type uses the same uppercase percent encoding as subject tokens. For example, projection type `order.status` has durable name `ELBMESH_PROJECTION_12_order%2Estatus`. The adapter creates and owns the consumer, filter subject, explicit acknowledgement policy, redelivery settings, and delivery cursor. Application Reaction and Projection code cannot acknowledge messages or move a cursor directly.
 
 The JetStream consumer ack floor is the authoritative transport delivery cursor and advances only after the adapter has durably completed the Reaction or projection step. A projection checkpoint remains in KV and records the last applied global JetStream sequence for idempotency and read-back reconciliation; it is adapter-owned recovery state, not Resource truth and not a replacement for the consumer ack floor. Reaction execution records remain outside Resource streams.
 
