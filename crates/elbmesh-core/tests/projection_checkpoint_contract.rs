@@ -11,6 +11,7 @@ use elbmesh_core::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use tokio::sync::Notify;
 
 const CHECKPOINT_ID: &str = "offer-read-model";
 
@@ -252,6 +253,233 @@ async fn rebuild_pauses_delivery_and_idempotently_resets_views_metadata_and_chec
     );
 }
 
+#[tokio::test]
+async fn concurrent_dispatch_is_single_flight_through_view_write_and_checkpoint() {
+    let operations = Arc::new(Mutex::new(Vec::new()));
+    let first_handler_entered = Arc::new(Notify::new());
+    let release_first_handler = Arc::new(Notify::new());
+    let checkpoints = RecordingCheckpointStore::new(false, Arc::clone(&operations));
+    let projection = BlockingCrossStreamCountProjection {
+        operations: Arc::clone(&operations),
+        first_handler_entered: Arc::clone(&first_handler_entered),
+        release_first_handler: Arc::clone(&release_first_handler),
+    };
+    let dispatcher = Arc::new(
+        ProjectionDispatcher::new(ProjectionRuntime::new(InMemoryViewStore::new()))
+            .with_checkpoint(CHECKPOINT_ID, checkpoints.clone())
+            .with_handler(TypedProjectionHandler::new(projection)),
+    );
+    let mut first_source = offer_created_recorded_event("offer-first", "First offer");
+    first_source.metadata.message_id = "event-first".to_string();
+    let mut second_source = offer_created_recorded_event("offer-second", "Second offer");
+    second_source.metadata.message_id = "event-second".to_string();
+    let first_cursor = ProjectionCursor::new(vec![0xff]);
+    let second_cursor = ProjectionCursor::new(vec![0x00]);
+
+    let first_dispatcher = Arc::clone(&dispatcher);
+    let first_cursor_for_task = first_cursor.clone();
+    let first = tokio::spawn(async move {
+        first_dispatcher
+            .dispatch_with_cursor(&first_source, first_cursor_for_task)
+            .await
+    });
+    first_handler_entered.notified().await;
+
+    let second_dispatch_invoked = Arc::new(Notify::new());
+    let second_dispatcher = Arc::clone(&dispatcher);
+    let second_dispatch_invoked_for_task = Arc::clone(&second_dispatch_invoked);
+    let second_cursor_for_task = second_cursor.clone();
+    let second = tokio::spawn(async move {
+        second_dispatch_invoked_for_task.notify_one();
+        second_dispatcher
+            .dispatch_with_cursor(&second_source, second_cursor_for_task)
+            .await
+    });
+    second_dispatch_invoked.notified().await;
+    tokio::task::yield_now().await;
+
+    assert!(!first.is_finished());
+    assert!(!second.is_finished());
+    assert_eq!(
+        operations.lock().expect("operation log lock").as_slice(),
+        ["handler:offer-first"]
+    );
+    assert!(dispatcher
+        .view_store()
+        .load(&ViewKey::new("cross_stream_count", "all-offers"))
+        .await
+        .expect("load blocked cross-stream View")
+        .is_none());
+    assert_eq!(checkpoints.save_attempts(), 0);
+
+    release_first_handler.notify_one();
+    first
+        .await
+        .expect("first dispatch task should join")
+        .expect("first dispatch should complete");
+    second
+        .await
+        .expect("second dispatch task should join")
+        .expect("second dispatch should complete");
+
+    let view = dispatcher
+        .view_store()
+        .load(&ViewKey::new("cross_stream_count", "all-offers"))
+        .await
+        .expect("load cross-stream View")
+        .expect("cross-stream View should exist");
+    assert_eq!(view.payload["applications"], 2);
+    assert_eq!(checkpoints.save_attempts(), 2);
+    assert_eq!(
+        take_operations(&operations),
+        vec![
+            "handler:offer-first",
+            "checkpoint:offer-read-model",
+            "handler:offer-second",
+            "checkpoint:offer-read-model",
+        ]
+    );
+    let final_checkpoint = checkpoints
+        .checkpoint(CHECKPOINT_ID)
+        .expect("second adapter invocation should own the final checkpoint");
+    assert_eq!(final_checkpoint.source_message_id(), "event-second");
+    assert_eq!(
+        final_checkpoint.source_stream(),
+        &ResourceStream::new("offer", "offer-second")
+    );
+    assert_eq!(final_checkpoint.transport_cursor(), &second_cursor);
+    assert_ne!(first_cursor, second_cursor);
+}
+
+#[tokio::test]
+async fn view_reset_failure_keeps_rebuild_paused_until_retry_and_finish() {
+    let view_store = FailSecondProjectionResetViewStore::new();
+    let checkpoints = RecordingCheckpointStore::new(false, Arc::default());
+    let dispatcher = ProjectionDispatcher::new(ProjectionRuntime::new(view_store.clone()))
+        .with_checkpoint(CHECKPOINT_ID, checkpoints.clone())
+        .with_handler(TypedProjectionHandler::new(OfferApplicationCountProjection))
+        .with_handler(TypedProjectionHandler::new(OfferAuditProjection));
+    let source = offer_created_recorded_event("offer-1", "Initial offer");
+    let selection = two_view_rebuild_selection();
+
+    dispatcher
+        .dispatch_with_cursor(
+            &source,
+            ProjectionCursor::new(b"before-view-reset".to_vec()),
+        )
+        .await
+        .expect("initial projection should complete");
+    let reset_error = match dispatcher.begin_rebuild(selection.clone()).await {
+        Err(error) => error,
+        Ok(_) => panic!("injected View reset should fail"),
+    };
+    match reset_error {
+        ProjectionCheckpointError::ViewReset {
+            checkpoint_id,
+            reason,
+        } => {
+            assert_eq!(checkpoint_id, CHECKPOINT_ID);
+            assert!(reason.contains("injected second projection reset failure"));
+        }
+        other => panic!("expected named View reset failure, got {other:?}"),
+    }
+    assert_eq!(view_store.reset_attempts(), 2);
+    assert!(dispatcher
+        .view_store()
+        .load(&ViewKey::new("offer_application_count", "offer-1"))
+        .await
+        .expect("load first partially reset View")
+        .is_none());
+    assert!(dispatcher
+        .view_store()
+        .load(&ViewKey::new("offer_audit", "offer-1"))
+        .await
+        .expect("load View whose reset failed")
+        .is_some());
+    assert!(checkpoints.checkpoint(CHECKPOINT_ID).is_some());
+    assert_dispatch_rebuild_in_progress(&dispatcher, "after-view-reset-failure").await;
+
+    let rebuild = dispatcher
+        .begin_rebuild(selection)
+        .await
+        .expect("begin/reset should retry idempotently while delivery remains paused");
+    assert_eq!(view_store.reset_attempts(), 4);
+    assert_dispatch_rebuild_in_progress(&dispatcher, "before-view-reset-finish").await;
+    rebuild
+        .finish()
+        .await
+        .expect("successful finish should resume delivery");
+
+    dispatcher
+        .dispatch_with_cursor(
+            &next_offer_created_recorded_event("after-view-reset-finish"),
+            ProjectionCursor::new(b"after-view-reset-finish".to_vec()),
+        )
+        .await
+        .expect("delivery should resume only after successful finish");
+}
+
+#[tokio::test]
+async fn checkpoint_reset_failure_keeps_partial_rebuild_paused_until_retry_and_finish() {
+    let checkpoints = RecordingCheckpointStore::new(false, Arc::default());
+    let dispatcher = ProjectionDispatcher::new(ProjectionRuntime::new(InMemoryViewStore::new()))
+        .with_checkpoint(CHECKPOINT_ID, checkpoints.clone())
+        .with_handler(TypedProjectionHandler::new(OfferApplicationCountProjection));
+    let source = offer_created_recorded_event("offer-1", "Initial offer");
+    let selection = application_count_rebuild_selection();
+
+    dispatcher
+        .dispatch_with_cursor(
+            &source,
+            ProjectionCursor::new(b"before-checkpoint-reset".to_vec()),
+        )
+        .await
+        .expect("initial projection should complete");
+    checkpoints.fail_next_reset();
+    let reset_error = match dispatcher.begin_rebuild(selection.clone()).await {
+        Err(error) => error,
+        Ok(_) => panic!("injected checkpoint reset should fail after the View reset"),
+    };
+    match reset_error {
+        ProjectionCheckpointError::Reset {
+            checkpoint_id,
+            reason,
+        } => {
+            assert_eq!(checkpoint_id, CHECKPOINT_ID);
+            assert_eq!(reason, "injected checkpoint reset failure");
+        }
+        other => panic!("expected named checkpoint reset failure, got {other:?}"),
+    }
+    assert!(dispatcher
+        .view_store()
+        .load(&ViewKey::new("offer_application_count", "offer-1"))
+        .await
+        .expect("load partially reset View")
+        .is_none());
+    assert!(checkpoints.checkpoint(CHECKPOINT_ID).is_some());
+    assert_dispatch_rebuild_in_progress(&dispatcher, "after-checkpoint-reset-failure").await;
+
+    let rebuild = dispatcher
+        .begin_rebuild(selection)
+        .await
+        .expect("begin/reset should retry idempotently while delivery remains paused");
+    assert_eq!(checkpoints.reset_attempts(), 2);
+    assert!(checkpoints.checkpoint(CHECKPOINT_ID).is_none());
+    assert_dispatch_rebuild_in_progress(&dispatcher, "before-checkpoint-reset-finish").await;
+    rebuild
+        .finish()
+        .await
+        .expect("successful finish should resume delivery");
+
+    dispatcher
+        .dispatch_with_cursor(
+            &next_offer_created_recorded_event("after-checkpoint-reset-finish"),
+            ProjectionCursor::new(b"after-checkpoint-reset-finish".to_vec()),
+        )
+        .await
+        .expect("delivery should resume only after successful finish");
+}
+
 #[derive(Debug, Default, Clone)]
 struct Offer;
 
@@ -378,6 +606,49 @@ impl Projection for OfferAuditProjection {
     }
 }
 
+struct BlockingCrossStreamCountProjection {
+    operations: Arc<Mutex<Vec<String>>>,
+    first_handler_entered: Arc<Notify>,
+    release_first_handler: Arc<Notify>,
+}
+
+#[async_trait]
+impl Projection for BlockingCrossStreamCountProjection {
+    type Source = OfferCreatedV1;
+
+    const PROJECTION_TYPE: &'static str = "cross_stream_count";
+
+    async fn project<V>(&self, event: Self::Source, view_store: &V) -> Result<(), ViewStoreError>
+    where
+        V: ViewStore,
+    {
+        let key = ViewKey::new("cross_stream_count", "all-offers");
+        let applications = view_store
+            .load(&key)
+            .await?
+            .and_then(|document| document.payload["applications"].as_u64())
+            .unwrap_or_default()
+            + 1;
+        self.operations
+            .lock()
+            .expect("operation log lock")
+            .push(format!("handler:{}", event.offer_id));
+
+        if event.offer_id == "offer-first" {
+            self.first_handler_entered.notify_one();
+            self.release_first_handler.notified().await;
+        }
+
+        view_store
+            .put(ViewDocument::new(
+                key.view_type,
+                key.view_id,
+                json!({ "applications": applications }),
+            ))
+            .await
+    }
+}
+
 #[derive(Clone)]
 struct RecordingViewStore {
     inner: InMemoryViewStore,
@@ -426,6 +697,74 @@ impl ViewStore for RecordingViewStore {
 struct FailFirstAuditWriteViewStore {
     recording: RecordingViewStore,
     fail_first_audit_write: Arc<AtomicBool>,
+}
+
+#[derive(Clone)]
+struct FailSecondProjectionResetViewStore {
+    inner: InMemoryViewStore,
+    reset_attempts: Arc<AtomicUsize>,
+}
+
+impl FailSecondProjectionResetViewStore {
+    fn new() -> Self {
+        Self {
+            inner: InMemoryViewStore::new(),
+            reset_attempts: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    fn reset_attempts(&self) -> usize {
+        self.reset_attempts.load(Ordering::SeqCst)
+    }
+}
+
+#[async_trait]
+impl ViewStore for FailSecondProjectionResetViewStore {
+    async fn put(&self, document: ViewDocument) -> Result<(), ViewStoreError> {
+        self.inner.put(document).await
+    }
+
+    async fn load(&self, key: &ViewKey) -> Result<Option<ViewDocument>, ViewStoreError> {
+        self.inner.load(key).await
+    }
+
+    async fn list_by_index_prefix(
+        &self,
+        view_type: &str,
+        index_name: &str,
+        prefix: &str,
+    ) -> Result<Vec<ViewDocument>, ViewStoreError> {
+        self.inner
+            .list_by_index_prefix(view_type, index_name, prefix)
+            .await
+    }
+
+    async fn apply_projection(
+        &self,
+        projection_type: &str,
+        context: &ProjectionContext,
+        document: ViewDocument,
+    ) -> Result<bool, ViewStoreError> {
+        self.inner
+            .apply_projection(projection_type, context, document)
+            .await
+    }
+
+    async fn reset_projection(
+        &self,
+        projection_type: &str,
+        key: &ViewKey,
+    ) -> Result<(), ViewStoreError> {
+        let attempt = self.reset_attempts.fetch_add(1, Ordering::SeqCst) + 1;
+        if attempt == 2 {
+            return Err(ViewStoreError::NatsDelete {
+                view_type: key.view_type.clone(),
+                view_id: key.view_id.clone(),
+                reason: "injected second projection reset failure".to_string(),
+            });
+        }
+        self.inner.reset_projection(projection_type, key).await
+    }
 }
 
 impl FailFirstAuditWriteViewStore {
@@ -481,6 +820,7 @@ impl ViewStore for FailFirstAuditWriteViewStore {
 struct RecordingCheckpointStore {
     checkpoint: Arc<Mutex<Option<(String, ProjectionCheckpoint)>>>,
     fail_next_save: Arc<AtomicBool>,
+    fail_next_reset: Arc<AtomicBool>,
     save_attempts: Arc<AtomicUsize>,
     reset_attempts: Arc<AtomicUsize>,
     operations: Arc<Mutex<Vec<String>>>,
@@ -491,6 +831,7 @@ impl RecordingCheckpointStore {
         Self {
             checkpoint: Arc::new(Mutex::new(None)),
             fail_next_save: Arc::new(AtomicBool::new(fail_next_save)),
+            fail_next_reset: Arc::new(AtomicBool::new(false)),
             save_attempts: Arc::new(AtomicUsize::new(0)),
             reset_attempts: Arc::new(AtomicUsize::new(0)),
             operations,
@@ -512,6 +853,10 @@ impl RecordingCheckpointStore {
 
     fn reset_attempts(&self) -> usize {
         self.reset_attempts.load(Ordering::SeqCst)
+    }
+
+    fn fail_next_reset(&self) {
+        self.fail_next_reset.store(true, Ordering::SeqCst);
     }
 }
 
@@ -549,6 +894,12 @@ impl ProjectionCheckpointStore for RecordingCheckpointStore {
 
     async fn reset(&self, checkpoint_id: &str) -> Result<(), ProjectionCheckpointError> {
         self.reset_attempts.fetch_add(1, Ordering::SeqCst);
+        if self.fail_next_reset.swap(false, Ordering::SeqCst) {
+            return Err(ProjectionCheckpointError::Reset {
+                checkpoint_id: checkpoint_id.to_string(),
+                reason: "injected checkpoint reset failure".to_string(),
+            });
+        }
         let mut checkpoint = self.checkpoint.lock().expect("checkpoint lock");
         if checkpoint
             .as_ref()
@@ -573,6 +924,54 @@ fn assert_checkpoint_context(
 
 fn take_operations(operations: &Arc<Mutex<Vec<String>>>) -> Vec<String> {
     std::mem::take(&mut *operations.lock().expect("operation log lock"))
+}
+
+fn application_count_rebuild_selection() -> ProjectionRebuildSelection {
+    ProjectionRebuildSelection::new(vec![(
+        "offer_application_count".to_string(),
+        ViewKey::new("offer_application_count", "offer-1"),
+    )])
+}
+
+fn two_view_rebuild_selection() -> ProjectionRebuildSelection {
+    ProjectionRebuildSelection::new(vec![
+        (
+            "offer_application_count".to_string(),
+            ViewKey::new("offer_application_count", "offer-1"),
+        ),
+        (
+            "offer_audit".to_string(),
+            ViewKey::new("offer_audit", "offer-1"),
+        ),
+    ])
+}
+
+async fn assert_dispatch_rebuild_in_progress<V>(
+    dispatcher: &ProjectionDispatcher<V>,
+    message_id: &str,
+) where
+    V: ViewStore,
+{
+    match dispatcher
+        .dispatch_with_cursor(
+            &next_offer_created_recorded_event(message_id),
+            ProjectionCursor::new(message_id.as_bytes().to_vec()),
+        )
+        .await
+        .expect_err("partial rebuild must keep normal delivery paused")
+    {
+        ProjectionDispatchError::RebuildInProgress { checkpoint_id } => {
+            assert_eq!(checkpoint_id, CHECKPOINT_ID);
+        }
+        other => panic!("expected rebuild-in-progress error, got {other:?}"),
+    }
+}
+
+fn next_offer_created_recorded_event(message_id: &str) -> RecordedEvent {
+    let mut source = offer_created_recorded_event("offer-1", "Updated offer");
+    source.sequence = 2;
+    source.metadata.message_id = message_id.to_string();
+    source
 }
 
 fn offer_created_recorded_event(offer_id: &str, title: &str) -> RecordedEvent {
