@@ -202,8 +202,8 @@ fn storage_adr_defines_native_stream_subject_header_and_cursor_contracts() {
             "Nats-Expected-Last-Subject-Sequence",
             "UTF-8 byte length",
             "uppercase `%XX`",
-            "ELBMESH_REACTION_<encoded-reaction-type>",
-            "ELBMESH_PROJECTION_<encoded-projection-type>",
+            "ELBMESH_REACTION_<decimal UTF8 length>_<uppercase-percent-encoded-type>",
+            "ELBMESH_PROJECTION_<decimal UTF8 length>_<uppercase-percent-encoded-type>",
             "ack floor",
             "checkpoint",
         ],
@@ -233,6 +233,90 @@ fn storage_adr_defines_atomic_batch_handshake_limits_and_reconciliation() {
             "duplicate",
             "lost acknowledgement",
             "read-back reconciliation",
+        ],
+    );
+}
+
+#[test]
+fn storage_adr_pins_exact_batch_and_message_identity_derivation() {
+    let adr = workspace_file("docs/adr/0005-nats-streams-and-message-metadata.md");
+
+    assert_contains_all(
+        &adr,
+        &[
+            "ASCII `^[A-Za-z0-9_-]{1,64}$`",
+            "otherwise uses the deterministic fallback",
+            "Each framed field is its decimal UTF-8 byte length, one colon, and its exact bytes",
+            "`elbmesh-batch-v1`, stream name, exact subject, then every ordered `Nats-Msg-Id`",
+            "`elbmesh-msg-v1`, stream name, exact subject, then the canonical message ID",
+            "64 lowercase SHA-256 hex characters",
+            "14:elbmesh-msg-v117:ELBMESH_RESOURCES35:elbmesh.resources.5.order.7.order-18:event-α",
+            "9b23668478b2152c35c1da45b967f630ed4e4e562162ca3efe39f456eab0a73d",
+            "14:elbmesh-msg-v117:ELBMESH_RESOURCES35:elbmesh.resources.5.order.7.order-18:event-β",
+            "1137b50684abc748eac9374c5a8dfefd6868138906072a0f6b092de0c9839074",
+            "16:elbmesh-batch-v117:ELBMESH_RESOURCES35:elbmesh.resources.5.order.7.order-164:9b23668478b2152c35c1da45b967f630ed4e4e562162ca3efe39f456eab0a73d64:1137b50684abc748eac9374c5a8dfefd6868138906072a0f6b092de0c9839074",
+            "b135d214269ae54bf814434327cfe7c7f399763e8fcc2a8569106d36ab1221ba",
+        ],
+    );
+}
+
+#[test]
+fn storage_adr_pins_payload_identity_separately_from_stable_headers() {
+    let adr = workspace_file("docs/adr/0005-nats-streams-and-message-metadata.md");
+
+    assert_contains_all(
+        &adr,
+        &[
+            "payload identity is lowercase SHA-256 of the exact canonical serialized payload bytes",
+            "Stable application headers are validated separately and are not inputs to the payload digest",
+            r#"{"order_id":"order-1","status":"placed"}"#,
+            "ebe836c193ead8c836bdd4f910af2c447a6e9bffb8331728f97c613e7d2a0b1b",
+        ],
+    );
+}
+
+#[test]
+fn storage_adr_pins_bounded_lost_ack_reconciliation_outcomes() {
+    let adr = workspace_file("docs/adr/0005-nats-streams-and-message-metadata.md");
+
+    assert_contains_all(
+        &adr,
+        &[
+            "reads only the exact Resource subject",
+            "strictly after the known previous subject JetStream sequence",
+            "at most the expected batch size",
+            "compares the ordered `Nats-Msg-Id`, `Elbmesh-Aggregate-Sequence`, and payload digest",
+            "A complete match is success",
+            "no messages after confirmed 10-second server inactivity permits retry with identical message and batch IDs",
+            "A partial result or any message ID, aggregate sequence, or payload digest mismatch is a named protocol error",
+        ],
+    );
+}
+
+#[test]
+fn storage_adr_pins_batch_timeout_as_server_inactivity() {
+    let adr = workspace_file("docs/adr/0005-nats-streams-and-message-metadata.md");
+
+    assert_contains_all(
+        &adr,
+        &[
+            "The 10-second batch timeout is inactivity since the last server-accepted batch message",
+            "Each server-accepted batch message resets the inactivity timer",
+            "not a limit on total batch duration",
+        ],
+    );
+}
+
+#[test]
+fn storage_adr_pins_exact_durable_name_grammar() {
+    let adr = workspace_file("docs/adr/0005-nats-streams-and-message-metadata.md");
+
+    assert_contains_all(
+        &adr,
+        &[
+            "ELBMESH_REACTION_<decimal UTF8 length>_<uppercase-percent-encoded-type>",
+            "ELBMESH_PROJECTION_<decimal UTF8 length>_<uppercase-percent-encoded-type>",
+            "ELBMESH_PROJECTION_12_order%2Estatus",
         ],
     );
 }
