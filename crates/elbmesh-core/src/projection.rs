@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -490,9 +490,14 @@ pub struct ProjectionDispatcher<V> {
     runtime: ProjectionRuntime<V>,
     handlers: Vec<Box<dyn EventProjectionHandler<V>>>,
     checkpoint: Option<ProjectionCheckpointBinding>,
-    rebuild_in_progress: AtomicBool,
+    rebuild_state: AtomicU8,
     delivery_gate: Mutex<()>,
 }
+
+const REBUILD_IDLE: u8 = 0;
+const REBUILD_RESETTING: u8 = 1;
+const REBUILD_RESET_FAILED: u8 = 2;
+const REBUILD_READY: u8 = 3;
 
 impl<V> ProjectionDispatcher<V>
 where
@@ -503,7 +508,7 @@ where
             runtime,
             handlers: Vec::new(),
             checkpoint: None,
-            rebuild_in_progress: AtomicBool::new(false),
+            rebuild_state: AtomicU8::new(REBUILD_IDLE),
             delivery_gate: Mutex::new(()),
         }
     }
@@ -559,10 +564,17 @@ where
             .checkpoint
             .as_ref()
             .ok_or(ProjectionCheckpointError::NotConfigured)?;
-        if self
-            .rebuild_in_progress
-            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-            .is_err()
+        let rebuild_state = self.rebuild_state.load(Ordering::SeqCst);
+        if !matches!(rebuild_state, REBUILD_IDLE | REBUILD_RESET_FAILED)
+            || self
+                .rebuild_state
+                .compare_exchange(
+                    rebuild_state,
+                    REBUILD_RESETTING,
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
+                )
+                .is_err()
         {
             return Err(ProjectionCheckpointError::RebuildInProgress {
                 checkpoint_id: checkpoint.checkpoint_id.clone(),
@@ -585,9 +597,12 @@ where
         .await;
 
         if let Err(error) = reset_result {
-            self.rebuild_in_progress.store(false, Ordering::SeqCst);
+            self.rebuild_state
+                .store(REBUILD_RESET_FAILED, Ordering::SeqCst);
             return Err(error);
         }
+
+        self.rebuild_state.store(REBUILD_READY, Ordering::SeqCst);
 
         Ok(ProjectionRebuild { dispatcher: self })
     }
@@ -634,7 +649,7 @@ where
         &self,
         allow_during_rebuild: bool,
     ) -> Result<(), ProjectionDispatchError> {
-        if !allow_during_rebuild && self.rebuild_in_progress.load(Ordering::SeqCst) {
+        if !allow_during_rebuild && self.rebuild_state.load(Ordering::SeqCst) != REBUILD_IDLE {
             let checkpoint_id = self
                 .checkpoint
                 .as_ref()
@@ -670,8 +685,8 @@ where
 
     pub async fn finish(self) -> Result<(), ProjectionCheckpointError> {
         self.dispatcher
-            .rebuild_in_progress
-            .store(false, Ordering::SeqCst);
+            .rebuild_state
+            .store(REBUILD_IDLE, Ordering::SeqCst);
         Ok(())
     }
 }
