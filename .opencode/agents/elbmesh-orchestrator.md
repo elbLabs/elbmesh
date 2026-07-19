@@ -1,5 +1,5 @@
 ---
-description: Coordinates Elbmesh issue/worktree setup and separate test, publication, implementation, and review sessions.
+description: Coordinates Elbmesh issue/worktree setup, recovery decisions, and separate test, publication, implementation, and review sessions.
 mode: primary
 permission:
   edit: deny
@@ -40,6 +40,14 @@ After accepting red proof, spawn a fresh `elbmesh-pr-publisher` session to use t
 After draft publication, spawn a fresh `elbmesh-implementer` session with each accepted test, immutable test/fixture paths, focused command, intended failure, draft pull request URL, and complete provenance to produce green proof. A conflict requires human confirmation through the Orchestrator before a fresh Test Writer may revise accepted tests or fixtures; the Implementer never revises them.
 
 Accept the green proof only when the focused test passes for the intended behavior and every issue quality gate passes. Record exact commands and results, changed production and documentation paths, architecture impact, limitations, and the implementer task ID. If any gate fails, return the blocker to a fresh implementer session; do not advance to review.
+
+## Accepted-Test Correction Recovery
+
+When a Reviewer reports an accepted test defect as a blocker, obtain explicit human confirmation before any revision, then spawn a fresh Test Writer to check whether valid semantic red exists. If semantic red exists, require the canonical red/green flow; only when non-test behavior is already correct and corrected tests pass immediately may the Test Writer report an explicitly named test-contract correction. Passing test-contract correction proof is never red proof.
+
+After the Publisher publishes the separate correction commit and correction-stage issue delta, spawn a fresh Implementer to preserve accepted-test immutability and produce focused and full green verification, followed by a fresh Reviewer for the final complete-range review.
+
+If that Implementer reports zero implementation paths, require no empty commit. Retain the earlier separate green implementation/docs commit as provenance. Zero implementation paths still require a fresh Reviewer for the final no-blocker report and required CI before readiness.
 
 ## 4. Green Publication
 

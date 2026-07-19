@@ -1,11 +1,11 @@
 ---
 name: elbmesh-implementer
-description: Use when making accepted failing Elbmesh tests pass through production, configuration, agent, skill, or documentation changes while preserving architecture boundaries.
+description: Use when making accepted Elbmesh tests pass through non-test changes or verifying zero-path green after a published test-contract correction.
 ---
 
 # Elbmesh Implementer
 
-Use this skill to make accepted focused failing tests pass with the smallest correct production/configuration/documentation change.
+Use this skill to make accepted focused failing tests pass with the smallest correct production/configuration/documentation change or to verify that a published test-contract correction requires zero non-test paths.
 
 ## Read First
 
@@ -37,6 +37,8 @@ Run focused verification before all required gates.
 ```
 
 Accepted tests and fixtures are immutable to Implementers. Implementer outputs must exclude supporting test fixtures.
+
+After a published test-contract correction, accepted tests remain immutable to the fresh Implementer. When focused and full green verification proves the non-test behavior is already correct and no non-test change is needed, explicitly report zero implementation paths; do not manufacture a change. Zero-path verification still reports exact focused and full gate results, prior green implementation/docs provenance, limitations, blockers, and the need for a fresh final Reviewer and required CI.
 
 ## Accepted Test Conflicts
 

@@ -14,9 +14,9 @@ Independent issues may run concurrently only when dependencies are resolved and 
 | --- | --- | --- |
 | Orchestrator | Dependency selection, handoffs, provenance, blockers | Edit files, use Bash, publish, review, or merge |
 | Operations | Create an exact task-card issue; list/fetch/add an isolated worktree | Edit files, mutate existing issues/PRs, label, commit, push, merge, delete branches, remove worktrees, or spawn tasks |
-| Test Writer | Focused failing tests and red proof | Implement production behavior |
-| Publisher | Branch publication, commits, push, PR/evidence/status state | Author files, change PR base, force-push, or merge |
-| Implementer | Smallest code/config/docs change that satisfies accepted tests | Change accepted tests or fixtures |
+| Test Writer | Focused failing tests/red proof; human-authorized test-contract correction | Implement production behavior |
+| Publisher | Branch reconciliation/publication, commits, push, PR/evidence/status state | Author files, change PR base, force-push, or merge |
+| Implementer | Smallest code/config/docs change or zero-path green verification | Change accepted tests or fixtures |
 | Reviewer | Read-only final PR findings and merge-readiness report | Fix files, publish state, or merge |
 
 `elbmesh-reviewer` reports final pull request merge readiness or blockers. Merge authority remains human: a human performs final review and merge, and no agent merges or enables auto-merge.
@@ -40,6 +40,22 @@ Pull request creation and routine issue/worktree/status setup are automatic. The
 
 Accepted tests and fixtures are immutable to Implementers. If they conflict with the task card or architecture, the Implementer stops and reports the conflict to the Orchestrator for human confirmation. Only after confirmation may a fresh Test Writer revise them. Implementer output must exclude supporting test fixtures.
 
+## Reviewer-Driven Test-Contract Correction
+
+When a Reviewer reports an accepted test defect as a blocker, the Orchestrator obtains explicit human confirmation before any revision and then starts a fresh Test Writer to check whether valid semantic red exists. If semantic red exposes missing non-test behavior, use the canonical red/green flow. Only when non-test behavior is already correct and corrected tests pass immediately may the Test Writer revise authorized paths and report an explicitly named test-contract correction with old/new hashes, exact passing proof, and why semantic red is impossible. Passing test-contract correction proof is never red proof.
+
+The Publisher publishes that correction as one separate test-only commit containing only the authorized reported paths, appends one non-cumulative correction-stage issue delta, refreshes the current draft pull request body, and keeps `status:implementation`; it claims no red, green, readiness, or merge authority. A fresh Implementer then preserves the corrected accepted paths as immutable and runs focused and full green verification, followed by a fresh Reviewer of the final complete range.
+
+When the fresh Implementer reports zero implementation paths because no non-test change is needed, no empty commit is created. The earlier separate green implementation/docs commit remains the implementation provenance. Zero implementation paths still require a fresh Reviewer for the final no-blocker report, required CI, readiness publication, and human review and merge.
+
+If correction exposes missing non-test behavior, scope conflict, or architecture ambiguity, stop and return to the Human Decision Loop and canonical tests-first sequence rather than weakening the test.
+
+## Safe Published-Branch Fast-Forward
+
+The Publisher may reconcile an existing published branch only with exactly `git pull --ff-only`. Before using it, require the working tree and index to be clean; require the current branch to be the exact non-main issue branch and its configured upstream to be the exact same-named branch; verify exact issue provenance and that the pull request head matches that branch; and, using current fetch evidence, prove local HEAD is an ancestor of the fetched upstream. Stop before any Git or GitHub mutation if the worktree or index is dirty, the refs diverged, provenance mismatches, fetched ancestry is unverified or cannot be verified, or a fast-forward cannot be proved. After the pull, verify that the local, upstream, and pull request head commits are equal before any further mutation.
+
+Broad `git pull`, pull arguments or refspecs, merge, reset, rebase, checkout, switch, force, base publication, pull-request base changes, auto-merge, and merge remain prohibited. The recovery path never resolves divergence or selects another branch.
+
 ## Status And Evidence
 
 Only two active issue statuses exist:
@@ -51,7 +67,7 @@ status:review
 
 The Publisher keeps implementation status from red publication through rework. It moves the issue to review only when the Reviewer reports no blockers and required CI passes. GitHub merged/closed state replaces a completion label.
 
-The issue is the immutable audit trail. Red, green, rework, and readiness evidence is append-only there as one stage-specific delta per publication. Each delta records only that stage's role task/session IDs, exact changed paths, commit SHA, exact commands and concise results, blocker status, and PR URL. Readiness also records the review task, reviewed range, findings, CI state, and residual risks. A later delta links to earlier evidence instead of repeating it.
+The issue is the immutable audit trail. Red, green, correction, rework, and readiness evidence is append-only there as one stage-specific delta per publication. Each delta records only that stage's role task/session IDs, exact changed paths, commit SHA, exact commands and concise results, blocker status, and PR URL. A correction delta also records the human authorization, old/new hashes, passing proof, and why semantic red was impossible. Readiness also records the review task, reviewed range, findings, CI state, and residual risks. A later delta links to earlier evidence instead of repeating it.
 
 The pull request is the current human review surface. Its body is concise and updated in place at every publication stage with the current state, scope, changed paths, commits, verification summary, blockers, residual risks, and links to the issue audit trail. Routine delivery evidence comments are prohibited on the pull request; pull request comments remain available for human review discussion and actionable findings.
 

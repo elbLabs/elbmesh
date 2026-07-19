@@ -37,3 +37,9 @@ After the decision:
 4. Resume with fresh role sessions.
 
 Accepted tests and fixtures remain immutable to Implementers. Follow the conflict handoff in [DEVELOPMENT_WORKFLOW.md](DEVELOPMENT_WORKFLOW.md).
+
+## Accepted-Test Defect Decision
+
+When a Reviewer reports an accepted test defect as a blocker, no role changes it until the issue records explicit human confirmation and authorized paths. The Orchestrator then starts a fresh Test Writer to decide whether valid semantic red exists. Missing non-test behavior requires the canonical red/green flow; only already-correct non-test behavior whose corrected tests pass immediately may use an explicitly named test-contract correction. Passing test-contract correction proof is never red proof.
+
+The correction report includes the human confirmation, authorized test or fixture paths, old/new hashes, the exact focused passing proof, and why semantic red is impossible. If any non-test behavior is missing or the decision changes scope or architecture, stop and return to the canonical tests-first flow.

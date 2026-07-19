@@ -1,6 +1,6 @@
 ---
 name: elbmesh-orchestrator
-description: Use when coordinating Elbmesh task-card issue/worktree setup, dependency-ordered delivery, fresh role sessions, PR publication, evidence, and merge readiness.
+description: Use when coordinating Elbmesh task-card setup, dependency-ordered delivery, accepted-test recovery decisions, fresh role sessions, publication, evidence, and merge readiness.
 ---
 
 # Elbmesh Orchestrator
@@ -41,6 +41,14 @@ Human performs final review and merge.
 ```
 
 Rework repeats Implementer, Publisher, and Reviewer handoffs with fresh sessions, a new append-only issue delta, and a refreshed pull request body.
+
+## Accepted-Test Correction Recovery
+
+When a Reviewer reports an accepted test defect as a blocker, obtain explicit human confirmation before any revision, then spawn a fresh Test Writer to check whether valid semantic red exists. If semantic red exists, require the canonical red/green flow; only when non-test behavior is already correct and corrected tests pass immediately may the Test Writer report an explicitly named test-contract correction. Passing test-contract correction proof is never red proof.
+
+After the Publisher publishes the separate correction commit and correction-stage issue delta, spawn a fresh Implementer to preserve accepted-test immutability and produce focused and full green verification, followed by a fresh Reviewer for the final complete-range review.
+
+If that Implementer reports zero implementation paths, require no empty commit. Retain the earlier separate green implementation/docs commit as provenance. Zero implementation paths still require a fresh Reviewer for the final no-blocker report and required CI before readiness.
 
 ## Required Outputs
 
