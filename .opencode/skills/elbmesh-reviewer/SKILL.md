@@ -22,7 +22,7 @@ docs/IMPLEMENTATION_PLAN.md
 docs/adr/
 ```
 
-Also read the expanded issue/dependencies, complete pull request range, immutable role reports, publication comments, and current checks.
+Also read the expanded issue/dependencies, complete pull request range, immutable role reports, stage-specific issue audit comments, the current pull request body, and current checks.
 
 ## Permitted Edit Surface
 
@@ -34,7 +34,9 @@ Report findings first by severity. Check acceptance criteria, missing tests, unp
 
 ## Required Outputs
 
-Return role task/session ID, issue/branch/revision range, findings with references, exact command results, residual risks, blocker state, and final pull request merge-readiness report. A no-blocker report is not merge authority.
+Return role task/session ID, issue/branch/revision range, findings with references, exact command results, a complete `Human Review Briefing`, blocker state, and final pull request merge-readiness report. A no-blocker report is not merge authority.
+
+The Human Review Briefing is no more than 700 words and contains a 60-second summary, change map, one evidence-backed Mermaid flow graph, architecture impact, risk map, suggested review order with file or symbol references, proof from focused tests and quality gates, approval criteria, open questions, non-goals, and residual risks. Ground every graph edge and technical claim in the diff, manifest/capability documents, tests, or role evidence; use a delivery or decision graph for non-runtime changes. Do not infer unsupported behavior.
 
 ## Verification
 

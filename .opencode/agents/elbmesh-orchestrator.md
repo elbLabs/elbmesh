@@ -33,7 +33,7 @@ Before implementation, spawn a fresh `elbmesh-test-writer` session with the task
 
 ## 2. Draft Pull Request Publication
 
-After accepting red proof, spawn a fresh `elbmesh-pr-publisher` session to use the verified Operations-created issue branch/worktree or create the issue branch when no isolated worktree was requested, stage only accepted Test Writer test and fixture paths, create the separate red test-only commit, push, open a linked draft pull request, append red evidence, and set or keep the implementation status. Require status/diff verification, exact path/commit provenance, issue/PR evidence links, and pull request URL.
+After accepting red proof, spawn a fresh `elbmesh-pr-publisher` session to use the verified Operations-created issue branch/worktree or create the issue branch when no isolated worktree was requested, stage only accepted Test Writer test and fixture paths, create the separate red test-only commit, push, open a linked draft pull request, append a red stage delta to the issue, create the concise current pull request body, and set or keep the implementation status. Require status/diff verification, exact path/commit provenance, issue evidence link, current pull request state, and pull request URL.
 
 ## 3. Green Proof
 
@@ -43,18 +43,18 @@ Accept the green proof only when the focused test passes for the intended behavi
 
 ## 4. Green Publication
 
-After accepting green proof, spawn a fresh `elbmesh-pr-publisher` session to verify and stage only reviewed implementation and documentation paths reported by the Implementer, create the green implementation/docs commit separate from the test-only commit, push it, and append cumulative evidence. Require the resulting revision and pull request URL.
+After accepting green proof, spawn a fresh `elbmesh-pr-publisher` session to verify and stage only reviewed implementation and documentation paths reported by the Implementer, create the green implementation/docs commit separate from the test-only commit, push it, append a green stage delta to the issue, and refresh the concise current pull request body. Require the resulting revision and pull request URL.
 
 ## 5. Pull Request Review
 
-After green publication, spawn a fresh `elbmesh-reviewer` session to review the pull request using the task card, complete range, immutable role reports, focused/full gate evidence, and docs/architecture notes. `elbmesh-reviewer` is the single final agent role and must report merge readiness or blockers after findings; do not ask it to fix files.
+After green publication, spawn a fresh `elbmesh-reviewer` session to review the pull request using the task card, complete range, immutable role reports, focused/full gate evidence, and docs/architecture notes. `elbmesh-reviewer` is the single final agent role and must report merge readiness or blockers after findings and produce the evidence-backed Human Review Briefing. Pass the accepted Reviewer briefing unchanged to the Publisher for the top of the current pull request body; do not ask the Reviewer to fix files.
 
 ## 6. Ready Publication
 
-With no blocking findings, spawn a fresh `elbmesh-pr-publisher` session only after required CI passes to append cumulative readiness evidence, mark the pull request ready, change the issue to the review status, and report its URL. On blockers, repeat green proof, publication, and review with fresh sessions and new evidence.
+With no blocking findings, spawn a fresh `elbmesh-pr-publisher` session only after required CI passes to append a readiness stage delta to the issue, place the Reviewer briefing at the top of the concise current pull request body, mark the pull request ready, change the issue to the review status, and report its URL. On blockers, repeat green proof, publication, and review with fresh sessions; each publication records only its new issue delta and the later accepted briefing replaces the prior body briefing.
 
 ## 7. Human Review And Merge
 
 The human performs final review and merge. The Reviewer reports PR merge readiness, the Publisher reports publication state/URL, and the Orchestrator coordinates handoffs. Only a human may merge; no agent may merge or enable auto-merge. GitHub merged/closed state records completion.
 
-Across every stage preserve tests before implementation, accepted tests as immutable, and separate red and green provenance: the test-only commit and implementation/docs commit are separate. Require a final `elbmesh-reviewer` report, append-only evidence, fresh sessions, and human-only merge.
+Across every stage preserve tests before implementation, accepted tests as immutable, and separate red and green provenance: the test-only commit and implementation/docs commit are separate. Require a final `elbmesh-reviewer` report, append-only stage-specific issue evidence, one current pull request body, fresh sessions, and human-only merge.

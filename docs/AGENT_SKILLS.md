@@ -61,11 +61,11 @@ Coordinates dependency-ordered setup and fresh role handoffs while remaining she
 
 ### elbmesh-pr-publisher
 
-Publishes accepted role reports, commits, pull-request state, append-only evidence, and issue statuses without authoring files or merging.
+Publishes accepted role reports, commits, pull-request state, append-only issue audit deltas, the Reviewer-validated Human Review Briefing in a current concise pull-request body, and issue statuses without authoring files or merging.
 
 ### elbmesh-reviewer
 
-Performs the final read-only PR review and reports merge readiness or blockers; a human performs the merge.
+Performs the final read-only PR review, reports merge readiness or blockers, and produces an evidence-backed Human Review Briefing; a human performs the merge.
 
 ### elbmesh-test-writer
 
