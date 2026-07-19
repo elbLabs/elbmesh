@@ -8,8 +8,8 @@ permissions:
   contents: read
 
 jobs:
-  rust-ci:
-    name: Rust CI
+  rust-quality:
+    name: Rust Quality
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -24,3 +24,109 @@ jobs:
         run: cargo clippy --all-targets --all-features -- -D warnings
       - name: Run tests
         run: cargo test --all
+
+  live-nats:
+    name: Live NATS
+    runs-on: ubuntu-latest
+    env:
+      ELBMESH_NATS_URL: nats://127.0.0.1:4222
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Start NATS
+        run: docker compose up -d nats
+      - name: Wait for NATS
+        run: |
+          for _ in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8222/healthz >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker compose logs nats
+          exit 1
+      - name: Require a live NATS target
+        run: |
+          if [ -z "${ELBMESH_NATS_URL:-}" ]; then
+            echo "ELBMESH_NATS_URL is required for the Live NATS job" >&2
+            exit 1
+          fi
+          live_test_count="$(
+            cargo test -p elbmesh-core --features nats-tests --test event_store_contract -- --list |
+              grep -c '^nats_event_store_.*: test$' || true
+          )"
+          if [ "$live_test_count" -eq 0 ]; then
+            echo "the Live NATS job selected zero live tests" >&2
+            exit 1
+          fi
+          echo "the Live NATS job selected $live_test_count live tests"
+      - name: Run live NATS contracts
+        run: cargo test -p elbmesh-core --features nats-tests --test event_store_contract
+
+  live-restate:
+    name: Live Restate
+    runs-on: ubuntu-latest
+    env:
+      ELBMESH_RESTATE_URL: http://127.0.0.1:8080
+      ELBMESH_RESTATE_ADMIN_URL: http://127.0.0.1:9070
+      ELBMESH_RESTATE_SERVICE_ADVERTISE_HOST: host.docker.internal
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Start Restate
+        run: docker compose up -d restate
+      - name: Wait for Restate
+        run: |
+          for _ in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:9070/deployments >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker compose logs restate
+          exit 1
+      - name: Require a live Restate target
+        run: |
+          if [ -z "${ELBMESH_RESTATE_URL:-}" ]; then
+            echo "ELBMESH_RESTATE_URL is required for the Live Restate job" >&2
+            exit 1
+          fi
+          live_test_count="$(
+            cargo test -p elbmesh-core --features restate-tests --test operation_journal -- --list |
+              grep -c '^restate_live_.*: test$' || true
+          )"
+          if [ "$live_test_count" -eq 0 ]; then
+            echo "the Live Restate job selected zero live tests" >&2
+            exit 1
+          fi
+          echo "the Live Restate job selected $live_test_count live tests"
+      - name: Run live Restate contracts
+        run: cargo test -p elbmesh-core --features restate-tests --test operation_journal
+
+  rust-ci:
+    name: Rust CI
+    if: ${{ always() }}
+    needs:
+      - rust-quality
+      - live-nats
+      - live-restate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every Rust gate
+        env:
+          RUST_QUALITY_RESULT: ${{ needs.rust-quality.result }}
+          LIVE_NATS_RESULT: ${{ needs.live-nats.result }}
+          LIVE_RESTATE_RESULT: ${{ needs.live-restate.result }}
+        run: |
+          if [ "$RUST_QUALITY_RESULT" != "success" ] ||
+             [ "$LIVE_NATS_RESULT" != "success" ] ||
+             [ "$LIVE_RESTATE_RESULT" != "success" ]; then
+            echo "Rust Quality: $RUST_QUALITY_RESULT" >&2
+            echo "Live NATS: $LIVE_NATS_RESULT" >&2
+            echo "Live Restate: $LIVE_RESTATE_RESULT" >&2
+            exit 1
+          fi
