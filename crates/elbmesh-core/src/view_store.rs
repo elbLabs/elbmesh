@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
+use crate::{ProjectionContext, ResourceStream};
+
 #[cfg(feature = "nats-adapter")]
 use futures_util::StreamExt;
 
@@ -78,6 +80,9 @@ pub enum ViewStoreError {
         index_name: String,
     },
 
+    #[error("ViewStore does not support deleting View document '{view_type}/{view_id}'")]
+    DeleteUnsupported { view_type: String, view_id: String },
+
     #[error("failed to connect NATS ViewStore: {reason}")]
     NatsConnect { reason: String },
 
@@ -102,6 +107,13 @@ pub enum ViewStoreError {
 
     #[error("failed to put view document '{view_type}/{view_id}' in NATS: {reason}")]
     NatsPut {
+        view_type: String,
+        view_id: String,
+        reason: String,
+    },
+
+    #[error("failed to delete view document '{view_type}/{view_id}' from NATS: {reason}")]
+    NatsDelete {
         view_type: String,
         view_id: String,
         reason: String,
@@ -135,11 +147,113 @@ pub trait ViewStore: Send + Sync + 'static {
         index_name: &str,
         prefix: &str,
     ) -> Result<Vec<ViewDocument>, ViewStoreError>;
+
+    async fn delete(&self, key: &ViewKey) -> Result<(), ViewStoreError> {
+        Err(ViewStoreError::DeleteUnsupported {
+            view_type: key.view_type.clone(),
+            view_id: key.view_id.clone(),
+        })
+    }
+
+    #[doc(hidden)]
+    async fn apply_projection(
+        &self,
+        _projection_type: &str,
+        _context: &ProjectionContext,
+        document: ViewDocument,
+    ) -> Result<bool, ViewStoreError> {
+        self.put(document).await?;
+        Ok(true)
+    }
+
+    #[doc(hidden)]
+    async fn reset_projection(
+        &self,
+        _projection_type: &str,
+        key: &ViewKey,
+    ) -> Result<(), ViewStoreError> {
+        self.delete(key).await
+    }
 }
 
 #[derive(Clone, Default)]
 pub struct InMemoryViewStore {
-    documents: Arc<Mutex<HashMap<ViewKey, ViewDocument>>>,
+    state: Arc<Mutex<InMemoryViewStoreState>>,
+}
+
+#[derive(Default)]
+struct InMemoryViewStoreState {
+    documents: HashMap<ViewKey, ViewDocument>,
+    applications: HashMap<StoredProjectionApplicationKey, StoredProjectionApplicationPosition>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+struct StoredProjectionApplicationKey {
+    projection_type: String,
+    source_stream: ResourceStream,
+    target_view: ViewKey,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct StoredProjectionApplicationPosition {
+    source_message_id: String,
+    aggregate_sequence: u64,
+}
+
+#[cfg(feature = "nats-adapter")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct StoredViewDocument {
+    document: ViewDocument,
+    #[serde(default)]
+    applications: Vec<StoredViewProjectionApplication>,
+}
+
+#[cfg(feature = "nats-adapter")]
+impl StoredViewDocument {
+    fn new(document: ViewDocument) -> Self {
+        Self {
+            document,
+            applications: Vec::new(),
+        }
+    }
+
+    fn has_applied(&self, projection_type: &str, context: &ProjectionContext) -> bool {
+        self.applications.iter().any(|application| {
+            application.projection_type == projection_type
+                && application.source_stream == *context.source_stream()
+                && application.aggregate_sequence >= context.aggregate_sequence()
+        })
+    }
+
+    fn record_application(&mut self, projection_type: &str, context: &ProjectionContext) {
+        self.applications.retain(|application| {
+            application.projection_type != projection_type
+                || application.source_stream != *context.source_stream()
+        });
+        self.applications.push(StoredViewProjectionApplication {
+            projection_type: projection_type.to_string(),
+            source_stream: context.source_stream().clone(),
+            source_message_id: context.source_message_id().to_string(),
+            aggregate_sequence: context.aggregate_sequence(),
+        });
+    }
+}
+
+#[cfg(feature = "nats-adapter")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct StoredViewProjectionApplication {
+    projection_type: String,
+    source_stream: ResourceStream,
+    source_message_id: String,
+    aggregate_sequence: u64,
+}
+
+#[cfg(feature = "nats-adapter")]
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum StoredViewDocumentWire {
+    Current(StoredViewDocument),
+    Legacy(ViewDocument),
 }
 
 impl InMemoryViewStore {
@@ -153,22 +267,25 @@ impl ViewStore for InMemoryViewStore {
     async fn put(&self, document: ViewDocument) -> Result<(), ViewStoreError> {
         validate_unique_index_names(&document)?;
 
-        let mut documents = self
-            .documents
+        let mut state = self
+            .state
             .lock()
             .map_err(|_| ViewStoreError::StoragePoisoned)?;
 
-        documents.insert(document.key.clone(), document);
+        state
+            .applications
+            .retain(|key, _| key.target_view != document.key);
+        state.documents.insert(document.key.clone(), document);
         Ok(())
     }
 
     async fn load(&self, key: &ViewKey) -> Result<Option<ViewDocument>, ViewStoreError> {
-        let documents = self
-            .documents
+        let state = self
+            .state
             .lock()
             .map_err(|_| ViewStoreError::StoragePoisoned)?;
 
-        Ok(documents.get(key).cloned())
+        Ok(state.documents.get(key).cloned())
     }
 
     async fn list_by_index_prefix(
@@ -177,13 +294,13 @@ impl ViewStore for InMemoryViewStore {
         index_name: &str,
         prefix: &str,
     ) -> Result<Vec<ViewDocument>, ViewStoreError> {
-        let documents = self
-            .documents
+        let state = self
+            .state
             .lock()
             .map_err(|_| ViewStoreError::StoragePoisoned)?;
         let mut matches = Vec::new();
 
-        for document in documents.values() {
+        for document in state.documents.values() {
             if document.key.view_type != view_type {
                 continue;
             }
@@ -206,6 +323,62 @@ impl ViewStore for InMemoryViewStore {
             .into_iter()
             .map(|(_, _, document)| document)
             .collect())
+    }
+
+    async fn delete(&self, key: &ViewKey) -> Result<(), ViewStoreError> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| ViewStoreError::StoragePoisoned)?;
+        state.documents.remove(key);
+        state
+            .applications
+            .retain(|application, _| application.target_view != *key);
+        Ok(())
+    }
+
+    async fn apply_projection(
+        &self,
+        projection_type: &str,
+        context: &ProjectionContext,
+        document: ViewDocument,
+    ) -> Result<bool, ViewStoreError> {
+        validate_unique_index_names(&document)?;
+        let application_key = StoredProjectionApplicationKey {
+            projection_type: projection_type.to_string(),
+            source_stream: context.source_stream().clone(),
+            target_view: document.key.clone(),
+        };
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| ViewStoreError::StoragePoisoned)?;
+
+        if state
+            .applications
+            .get(&application_key)
+            .is_some_and(|position| position.aggregate_sequence >= context.aggregate_sequence())
+        {
+            return Ok(false);
+        }
+
+        state.documents.insert(document.key.clone(), document);
+        state.applications.insert(
+            application_key,
+            StoredProjectionApplicationPosition {
+                source_message_id: context.source_message_id().to_string(),
+                aggregate_sequence: context.aggregate_sequence(),
+            },
+        );
+        Ok(true)
+    }
+
+    async fn reset_projection(
+        &self,
+        _projection_type: &str,
+        key: &ViewKey,
+    ) -> Result<(), ViewStoreError> {
+        self.delete(key).await
     }
 }
 
@@ -313,13 +486,7 @@ impl ViewStore for NatsViewStore {
         validate_unique_index_names(&document)?;
 
         let key = nats_view_document_key(&document.key);
-        let value = serde_json::to_vec(&document).map_err(|source| {
-            ViewStoreError::DocumentSerialization {
-                view_type: document.key.view_type.clone(),
-                view_id: document.key.view_id.clone(),
-                reason: source.to_string(),
-            }
-        })?;
+        let value = serialize_stored_view_document(&StoredViewDocument::new(document.clone()))?;
 
         self.store
             .put(key.as_str(), value.into())
@@ -422,6 +589,114 @@ impl ViewStore for NatsViewStore {
             .map(|(_, _, document)| document)
             .collect())
     }
+
+    async fn delete(&self, key: &ViewKey) -> Result<(), ViewStoreError> {
+        self.store
+            .delete(nats_view_document_key(key))
+            .await
+            .map_err(|source| ViewStoreError::NatsDelete {
+                view_type: key.view_type.clone(),
+                view_id: key.view_id.clone(),
+                reason: source.to_string(),
+            })?;
+        Ok(())
+    }
+
+    async fn apply_projection(
+        &self,
+        projection_type: &str,
+        context: &ProjectionContext,
+        document: ViewDocument,
+    ) -> Result<bool, ViewStoreError> {
+        validate_unique_index_names(&document)?;
+        let nats_key = nats_view_document_key(&document.key);
+        loop {
+            let entry = self.store.entry(nats_key.clone()).await.map_err(|source| {
+                ViewStoreError::NatsLoad {
+                    view_type: document.key.view_type.clone(),
+                    view_id: document.key.view_id.clone(),
+                    reason: source.to_string(),
+                }
+            })?;
+            let (revision, mut stored) = match entry {
+                Some(entry) if entry.operation == async_nats::jetstream::kv::Operation::Put => (
+                    entry.revision,
+                    deserialize_stored_view_document(&nats_key, entry.revision, &entry.value)?,
+                ),
+                Some(entry) => (entry.revision, StoredViewDocument::new(document.clone())),
+                None => (0, StoredViewDocument::new(document.clone())),
+            };
+
+            if stored.has_applied(projection_type, context) {
+                return Ok(false);
+            }
+
+            stored.document = document.clone();
+            stored.record_application(projection_type, context);
+            let value = serialize_stored_view_document(&stored)?;
+            let write_result = if revision == 0 {
+                self.store
+                    .create(nats_key.as_str(), value.into())
+                    .await
+                    .map(|_| ())
+                    .map_err(NatsViewWriteError::from)
+            } else {
+                self.store
+                    .update(nats_key.as_str(), value.into(), revision)
+                    .await
+                    .map(|_| ())
+                    .map_err(NatsViewWriteError::from)
+            };
+
+            match write_result {
+                Ok(()) => return Ok(true),
+                Err(NatsViewWriteError::Conflict) => continue,
+                Err(NatsViewWriteError::Storage(reason)) => {
+                    return Err(ViewStoreError::NatsPut {
+                        view_type: document.key.view_type,
+                        view_id: document.key.view_id,
+                        reason,
+                    });
+                }
+            }
+        }
+    }
+
+    async fn reset_projection(
+        &self,
+        _projection_type: &str,
+        key: &ViewKey,
+    ) -> Result<(), ViewStoreError> {
+        self.delete(key).await
+    }
+}
+
+#[cfg(feature = "nats-adapter")]
+enum NatsViewWriteError {
+    Conflict,
+    Storage(String),
+}
+
+#[cfg(feature = "nats-adapter")]
+impl From<async_nats::jetstream::kv::CreateError> for NatsViewWriteError {
+    fn from(source: async_nats::jetstream::kv::CreateError) -> Self {
+        if source.kind() == async_nats::jetstream::kv::CreateErrorKind::AlreadyExists {
+            Self::Conflict
+        } else {
+            Self::Storage(source.to_string())
+        }
+    }
+}
+
+#[cfg(feature = "nats-adapter")]
+impl From<async_nats::jetstream::kv::UpdateError> for NatsViewWriteError {
+    fn from(source: async_nats::jetstream::kv::UpdateError) -> Self {
+        if source.kind() == async_nats::jetstream::kv::UpdateErrorKind::WrongLastRevision {
+            Self::Conflict
+        } else {
+            Self::Storage(source.to_string())
+        }
+    }
 }
 
 #[cfg(feature = "nats-adapter")]
@@ -430,9 +705,33 @@ fn deserialize_view_document(
     revision: u64,
     value: &[u8],
 ) -> Result<ViewDocument, ViewStoreError> {
-    serde_json::from_slice(value).map_err(|source| ViewStoreError::DocumentDeserialization {
-        key: key.to_string(),
-        revision,
+    Ok(deserialize_stored_view_document(key, revision, value)?.document)
+}
+
+#[cfg(feature = "nats-adapter")]
+fn deserialize_stored_view_document(
+    key: &str,
+    revision: u64,
+    value: &[u8],
+) -> Result<StoredViewDocument, ViewStoreError> {
+    let wire = serde_json::from_slice::<StoredViewDocumentWire>(value).map_err(|source| {
+        ViewStoreError::DocumentDeserialization {
+            key: key.to_string(),
+            revision,
+            reason: source.to_string(),
+        }
+    })?;
+    Ok(match wire {
+        StoredViewDocumentWire::Current(document) => document,
+        StoredViewDocumentWire::Legacy(document) => StoredViewDocument::new(document),
+    })
+}
+
+#[cfg(feature = "nats-adapter")]
+fn serialize_stored_view_document(stored: &StoredViewDocument) -> Result<Vec<u8>, ViewStoreError> {
+    serde_json::to_vec(stored).map_err(|source| ViewStoreError::DocumentSerialization {
+        view_type: stored.document.key.view_type.clone(),
+        view_id: stored.document.key.view_id.clone(),
         reason: source.to_string(),
     })
 }

@@ -1,8 +1,204 @@
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::Arc;
+
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use thiserror::Error;
+use tokio::sync::Mutex;
 
-use crate::{Event, RecordedEvent, Resource, StreamType, ViewStore, ViewStoreError};
+use crate::{
+    Event, RecordedEvent, Resource, ResourceStream, StreamType, ViewDocument, ViewKey, ViewStore,
+    ViewStoreError,
+};
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProjectionCursor {
+    bytes: Vec<u8>,
+}
+
+impl ProjectionCursor {
+    pub fn new(bytes: Vec<u8>) -> Self {
+        Self { bytes }
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectionContext {
+    source_message_id: String,
+    source_stream: ResourceStream,
+    aggregate_sequence: u64,
+    transport_cursor: ProjectionCursor,
+}
+
+impl ProjectionContext {
+    pub fn new(
+        source_message_id: impl Into<String>,
+        source_stream: ResourceStream,
+        aggregate_sequence: u64,
+        transport_cursor: ProjectionCursor,
+    ) -> Self {
+        Self {
+            source_message_id: source_message_id.into(),
+            source_stream,
+            aggregate_sequence,
+            transport_cursor,
+        }
+    }
+
+    fn from_source(source: &RecordedEvent, transport_cursor: ProjectionCursor) -> Self {
+        Self::new(
+            source.metadata.message_id.clone(),
+            source.stream.clone(),
+            source.sequence,
+            transport_cursor,
+        )
+    }
+
+    pub fn source_message_id(&self) -> &str {
+        &self.source_message_id
+    }
+
+    pub fn source_stream(&self) -> &ResourceStream {
+        &self.source_stream
+    }
+
+    pub fn aggregate_sequence(&self) -> u64 {
+        self.aggregate_sequence
+    }
+
+    pub fn transport_cursor(&self) -> &ProjectionCursor {
+        &self.transport_cursor
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProjectionCheckpoint {
+    source_message_id: String,
+    source_stream: ResourceStream,
+    aggregate_sequence: u64,
+    transport_cursor: ProjectionCursor,
+}
+
+impl ProjectionCheckpoint {
+    pub fn new(
+        source_message_id: impl Into<String>,
+        source_stream: ResourceStream,
+        aggregate_sequence: u64,
+        transport_cursor: ProjectionCursor,
+    ) -> Self {
+        Self {
+            source_message_id: source_message_id.into(),
+            source_stream,
+            aggregate_sequence,
+            transport_cursor,
+        }
+    }
+
+    fn from_context(context: &ProjectionContext) -> Self {
+        Self::new(
+            context.source_message_id.clone(),
+            context.source_stream.clone(),
+            context.aggregate_sequence,
+            context.transport_cursor.clone(),
+        )
+    }
+
+    pub fn source_message_id(&self) -> &str {
+        &self.source_message_id
+    }
+
+    pub fn source_stream(&self) -> &ResourceStream {
+        &self.source_stream
+    }
+
+    pub fn aggregate_sequence(&self) -> u64 {
+        self.aggregate_sequence
+    }
+
+    pub fn transport_cursor(&self) -> &ProjectionCursor {
+        &self.transport_cursor
+    }
+}
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum ProjectionCheckpointError {
+    #[error("failed to load projection checkpoint '{checkpoint_id}': {reason}")]
+    Load {
+        checkpoint_id: String,
+        reason: String,
+    },
+
+    #[error("failed to save projection checkpoint '{checkpoint_id}': {reason}")]
+    Save {
+        checkpoint_id: String,
+        reason: String,
+    },
+
+    #[error("failed to reset projection checkpoint '{checkpoint_id}': {reason}")]
+    Reset {
+        checkpoint_id: String,
+        reason: String,
+    },
+
+    #[error("failed to reset Views for projection checkpoint '{checkpoint_id}': {reason}")]
+    ViewReset {
+        checkpoint_id: String,
+        reason: String,
+    },
+
+    #[error("projection dispatcher has no checkpoint configured")]
+    NotConfigured,
+
+    #[error("a projection rebuild is already in progress for checkpoint '{checkpoint_id}'")]
+    RebuildInProgress { checkpoint_id: String },
+}
+
+#[async_trait]
+pub trait ProjectionCheckpointStore: Send + Sync + 'static {
+    async fn load(
+        &self,
+        checkpoint_id: &str,
+    ) -> Result<Option<ProjectionCheckpoint>, ProjectionCheckpointError>;
+
+    async fn save(
+        &self,
+        checkpoint_id: &str,
+        checkpoint: ProjectionCheckpoint,
+    ) -> Result<(), ProjectionCheckpointError>;
+
+    async fn reset(&self, checkpoint_id: &str) -> Result<(), ProjectionCheckpointError>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectionRebuildSelection {
+    targets: Vec<ProjectionRebuildTarget>,
+}
+
+impl ProjectionRebuildSelection {
+    pub fn new(targets: Vec<(String, ViewKey)>) -> Self {
+        Self {
+            targets: targets
+                .into_iter()
+                .map(|(projection_type, view_key)| ProjectionRebuildTarget {
+                    projection_type,
+                    view_key,
+                })
+                .collect(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ProjectionRebuildTarget {
+    projection_type: String,
+    view_key: ViewKey,
+}
 
 #[async_trait]
 pub trait Projection: Send + Sync + 'static {
@@ -13,6 +209,18 @@ pub trait Projection: Send + Sync + 'static {
     async fn project<V>(&self, event: Self::Source, view_store: &V) -> Result<(), ViewStoreError>
     where
         V: ViewStore;
+
+    async fn project_with_context<V>(
+        &self,
+        event: Self::Source,
+        _context: &ProjectionContext,
+        view_store: &V,
+    ) -> Result<(), ViewStoreError>
+    where
+        V: ViewStore,
+    {
+        self.project(event, view_store).await
+    }
 }
 
 #[derive(Debug, Error)]
@@ -63,10 +271,78 @@ pub enum ProjectionDispatchError {
         applied: usize,
         failures: Vec<ProjectionDispatchFailure>,
     },
+
+    #[error(transparent)]
+    Checkpoint(#[from] ProjectionCheckpointError),
+
+    #[error("projection rebuild is in progress for checkpoint '{checkpoint_id}'")]
+    RebuildInProgress { checkpoint_id: String },
 }
 
 pub struct ProjectionRuntime<V> {
-    view_store: V,
+    view_store: Arc<V>,
+    application_positions: Arc<Mutex<HashMap<ProjectionApplicationKey, u64>>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct ProjectionApplicationKey {
+    projection_type: String,
+    source_stream: ResourceStream,
+    target_view: ViewKey,
+}
+
+struct SourceAwareViewStore<V> {
+    view_store: Arc<V>,
+    application_positions: Arc<Mutex<HashMap<ProjectionApplicationKey, u64>>>,
+    projection_type: String,
+    context: ProjectionContext,
+}
+
+#[async_trait]
+impl<V> ViewStore for SourceAwareViewStore<V>
+where
+    V: ViewStore,
+{
+    async fn put(&self, document: ViewDocument) -> Result<(), ViewStoreError> {
+        let application_key = ProjectionApplicationKey {
+            projection_type: self.projection_type.clone(),
+            source_stream: self.context.source_stream.clone(),
+            target_view: document.key.clone(),
+        };
+        let mut positions = self.application_positions.lock().await;
+
+        if positions
+            .get(&application_key)
+            .is_some_and(|sequence| *sequence >= self.context.aggregate_sequence)
+        {
+            return Ok(());
+        }
+
+        if self
+            .view_store
+            .apply_projection(&self.projection_type, &self.context, document)
+            .await?
+        {
+            positions.insert(application_key, self.context.aggregate_sequence);
+        }
+
+        Ok(())
+    }
+
+    async fn load(&self, key: &ViewKey) -> Result<Option<ViewDocument>, ViewStoreError> {
+        self.view_store.load(key).await
+    }
+
+    async fn list_by_index_prefix(
+        &self,
+        view_type: &str,
+        index_name: &str,
+        prefix: &str,
+    ) -> Result<Vec<ViewDocument>, ViewStoreError> {
+        self.view_store
+            .list_by_index_prefix(view_type, index_name, prefix)
+            .await
+    }
 }
 
 impl<V> ProjectionRuntime<V>
@@ -74,16 +350,32 @@ where
     V: ViewStore,
 {
     pub fn new(view_store: V) -> Self {
-        Self { view_store }
+        Self {
+            view_store: Arc::new(view_store),
+            application_positions: Arc::new(Mutex::new(HashMap::new())),
+        }
     }
 
     pub fn view_store(&self) -> &V {
-        &self.view_store
+        self.view_store.as_ref()
     }
 
     pub async fn apply<P>(
         &self,
         source: &RecordedEvent,
+        projection: &P,
+    ) -> Result<bool, ProjectionExecutionError>
+    where
+        P: Projection,
+    {
+        let context = ProjectionContext::from_source(source, ProjectionCursor::default());
+        self.apply_with_context(source, &context, projection).await
+    }
+
+    async fn apply_with_context<P>(
+        &self,
+        source: &RecordedEvent,
+        context: &ProjectionContext,
         projection: &P,
     ) -> Result<bool, ProjectionExecutionError>
     where
@@ -120,8 +412,30 @@ where
             });
         }
 
-        projection.project(source_event, &self.view_store).await?;
+        let view_store = SourceAwareViewStore {
+            view_store: Arc::clone(&self.view_store),
+            application_positions: Arc::clone(&self.application_positions),
+            projection_type: P::PROJECTION_TYPE.to_string(),
+            context: context.clone(),
+        };
+        projection
+            .project_with_context(source_event, context, &view_store)
+            .await?;
         Ok(true)
+    }
+
+    async fn reset_projection(
+        &self,
+        projection_type: &str,
+        view_key: &ViewKey,
+    ) -> Result<(), ViewStoreError> {
+        self.view_store
+            .reset_projection(projection_type, view_key)
+            .await?;
+        self.application_positions.lock().await.retain(|key, _| {
+            key.projection_type != projection_type || key.target_view != *view_key
+        });
+        Ok(())
     }
 }
 
@@ -134,6 +448,7 @@ where
         &self,
         runtime: &ProjectionRuntime<V>,
         source: &RecordedEvent,
+        context: &ProjectionContext,
     ) -> Result<bool, ProjectionDispatchFailure>;
 }
 
@@ -157,18 +472,32 @@ where
         &self,
         runtime: &ProjectionRuntime<V>,
         source: &RecordedEvent,
+        context: &ProjectionContext,
     ) -> Result<bool, ProjectionDispatchFailure> {
         runtime
-            .apply(source, &self.projection)
+            .apply_with_context(source, context, &self.projection)
             .await
             .map_err(projection_dispatch_failure::<P>)
     }
 }
 
+struct ProjectionCheckpointBinding {
+    checkpoint_id: String,
+    store: Arc<dyn ProjectionCheckpointStore>,
+}
+
 pub struct ProjectionDispatcher<V> {
     runtime: ProjectionRuntime<V>,
     handlers: Vec<Box<dyn EventProjectionHandler<V>>>,
+    checkpoint: Option<ProjectionCheckpointBinding>,
+    rebuild_state: AtomicU8,
+    delivery_gate: Mutex<()>,
 }
+
+const REBUILD_IDLE: u8 = 0;
+const REBUILD_RESETTING: u8 = 1;
+const REBUILD_RESET_FAILED: u8 = 2;
+const REBUILD_READY: u8 = 3;
 
 impl<V> ProjectionDispatcher<V>
 where
@@ -178,6 +507,9 @@ where
         Self {
             runtime,
             handlers: Vec::new(),
+            checkpoint: None,
+            rebuild_state: AtomicU8::new(REBUILD_IDLE),
+            delivery_gate: Mutex::new(()),
         }
     }
 
@@ -193,26 +525,169 @@ where
         self
     }
 
+    pub fn with_checkpoint<C>(
+        mut self,
+        checkpoint_id: impl Into<String>,
+        checkpoint_store: C,
+    ) -> Self
+    where
+        C: ProjectionCheckpointStore,
+    {
+        self.checkpoint = Some(ProjectionCheckpointBinding {
+            checkpoint_id: checkpoint_id.into(),
+            store: Arc::new(checkpoint_store),
+        });
+        self
+    }
+
     pub async fn dispatch(
         &self,
         source: &RecordedEvent,
     ) -> Result<ProjectionDispatchReport, ProjectionDispatchError> {
+        self.dispatch_with_cursor(source, ProjectionCursor::default())
+            .await
+    }
+
+    pub async fn dispatch_with_cursor(
+        &self,
+        source: &RecordedEvent,
+        cursor: ProjectionCursor,
+    ) -> Result<ProjectionDispatchReport, ProjectionDispatchError> {
+        self.dispatch_internal(source, cursor, false).await
+    }
+
+    pub async fn begin_rebuild(
+        &self,
+        selection: ProjectionRebuildSelection,
+    ) -> Result<ProjectionRebuild<'_, V>, ProjectionCheckpointError> {
+        let checkpoint = self
+            .checkpoint
+            .as_ref()
+            .ok_or(ProjectionCheckpointError::NotConfigured)?;
+        let rebuild_state = self.rebuild_state.load(Ordering::SeqCst);
+        if !matches!(rebuild_state, REBUILD_IDLE | REBUILD_RESET_FAILED)
+            || self
+                .rebuild_state
+                .compare_exchange(
+                    rebuild_state,
+                    REBUILD_RESETTING,
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
+                )
+                .is_err()
+        {
+            return Err(ProjectionCheckpointError::RebuildInProgress {
+                checkpoint_id: checkpoint.checkpoint_id.clone(),
+            });
+        }
+
+        let reset_result = async {
+            let _delivery = self.delivery_gate.lock().await;
+            for target in selection.targets {
+                self.runtime
+                    .reset_projection(&target.projection_type, &target.view_key)
+                    .await
+                    .map_err(|source| ProjectionCheckpointError::ViewReset {
+                        checkpoint_id: checkpoint.checkpoint_id.clone(),
+                        reason: source.to_string(),
+                    })?;
+            }
+            checkpoint.store.reset(&checkpoint.checkpoint_id).await
+        }
+        .await;
+
+        if let Err(error) = reset_result {
+            self.rebuild_state
+                .store(REBUILD_RESET_FAILED, Ordering::SeqCst);
+            return Err(error);
+        }
+
+        self.rebuild_state.store(REBUILD_READY, Ordering::SeqCst);
+
+        Ok(ProjectionRebuild { dispatcher: self })
+    }
+
+    async fn dispatch_internal(
+        &self,
+        source: &RecordedEvent,
+        cursor: ProjectionCursor,
+        allow_during_rebuild: bool,
+    ) -> Result<ProjectionDispatchReport, ProjectionDispatchError> {
+        self.ensure_delivery_allowed(allow_during_rebuild)?;
+        let _delivery = self.delivery_gate.lock().await;
+        self.ensure_delivery_allowed(allow_during_rebuild)?;
+        let context = ProjectionContext::from_source(source, cursor);
         let mut applied = 0;
         let mut failures = Vec::new();
 
         for handler in &self.handlers {
-            match handler.handle(&self.runtime, source).await {
+            match handler.handle(&self.runtime, source, &context).await {
                 Ok(true) => applied += 1,
                 Ok(false) => {}
                 Err(failure) => failures.push(failure),
             }
         }
 
-        if failures.is_empty() {
-            Ok(ProjectionDispatchReport { applied })
-        } else {
-            Err(ProjectionDispatchError::HandlerFailures { applied, failures })
+        if !failures.is_empty() {
+            return Err(ProjectionDispatchError::HandlerFailures { applied, failures });
         }
+
+        if let Some(checkpoint) = &self.checkpoint {
+            checkpoint
+                .store
+                .save(
+                    &checkpoint.checkpoint_id,
+                    ProjectionCheckpoint::from_context(&context),
+                )
+                .await?;
+        }
+
+        Ok(ProjectionDispatchReport { applied })
+    }
+
+    fn ensure_delivery_allowed(
+        &self,
+        allow_during_rebuild: bool,
+    ) -> Result<(), ProjectionDispatchError> {
+        if !allow_during_rebuild && self.rebuild_state.load(Ordering::SeqCst) != REBUILD_IDLE {
+            let checkpoint_id = self
+                .checkpoint
+                .as_ref()
+                .map(|checkpoint| checkpoint.checkpoint_id.clone())
+                .unwrap_or_default();
+            return Err(ProjectionDispatchError::RebuildInProgress { checkpoint_id });
+        }
+
+        Ok(())
+    }
+}
+
+pub struct ProjectionRebuild<'a, V>
+where
+    V: ViewStore,
+{
+    dispatcher: &'a ProjectionDispatcher<V>,
+}
+
+impl<V> ProjectionRebuild<'_, V>
+where
+    V: ViewStore,
+{
+    pub async fn replay(
+        &self,
+        source: &RecordedEvent,
+        cursor: ProjectionCursor,
+    ) -> Result<ProjectionDispatchReport, ProjectionDispatchError> {
+        self.dispatcher
+            .dispatch_internal(source, cursor, true)
+            .await
+    }
+
+    pub async fn finish(self) -> Result<(), ProjectionCheckpointError> {
+        self.dispatcher
+            .rebuild_state
+            .store(REBUILD_IDLE, Ordering::SeqCst);
+        Ok(())
     }
 }
 
@@ -244,6 +719,9 @@ fn projection_execution_failure_code(error: &ProjectionExecutionError) -> &'stat
         ProjectionExecutionError::ViewStore(ViewStoreError::DuplicateIndexName { .. }) => {
             "projection.view_store.duplicate_index_name"
         }
+        ProjectionExecutionError::ViewStore(ViewStoreError::DeleteUnsupported { .. }) => {
+            "projection.view_store.delete_unsupported"
+        }
         ProjectionExecutionError::ViewStore(ViewStoreError::NatsConnect { .. }) => {
             "projection.view_store.nats_connect"
         }
@@ -258,6 +736,9 @@ fn projection_execution_failure_code(error: &ProjectionExecutionError) -> &'stat
         }
         ProjectionExecutionError::ViewStore(ViewStoreError::NatsPut { .. }) => {
             "projection.view_store.nats_put"
+        }
+        ProjectionExecutionError::ViewStore(ViewStoreError::NatsDelete { .. }) => {
+            "projection.view_store.nats_delete"
         }
         ProjectionExecutionError::ViewStore(ViewStoreError::NatsLoad { .. }) => {
             "projection.view_store.nats_load"
@@ -318,6 +799,15 @@ fn projection_execution_failure_details(error: &ProjectionExecutionError) -> Val
             "view_id": view_id,
             "index_name": index_name,
         }),
+        ProjectionExecutionError::ViewStore(ViewStoreError::DeleteUnsupported {
+            view_type,
+            view_id,
+        }) => json!({
+            "error_type": "ViewStoreError",
+            "error_variant": "DeleteUnsupported",
+            "view_type": view_type,
+            "view_id": view_id,
+        }),
         ProjectionExecutionError::ViewStore(ViewStoreError::NatsConnect { reason }) => json!({
             "error_type": "ViewStoreError",
             "error_variant": "NatsConnect",
@@ -360,6 +850,17 @@ fn projection_execution_failure_details(error: &ProjectionExecutionError) -> Val
         }) => json!({
             "error_type": "ViewStoreError",
             "error_variant": "NatsPut",
+            "view_type": view_type,
+            "view_id": view_id,
+            "reason": reason,
+        }),
+        ProjectionExecutionError::ViewStore(ViewStoreError::NatsDelete {
+            view_type,
+            view_id,
+            reason,
+        }) => json!({
+            "error_type": "ViewStoreError",
+            "error_variant": "NatsDelete",
             "view_type": view_type,
             "view_id": view_id,
             "reason": reason,

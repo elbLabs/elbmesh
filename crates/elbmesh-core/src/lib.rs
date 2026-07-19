@@ -62,8 +62,10 @@ pub use operation_journal::{
     RestateOperationJournalObjectClient, RestateOperationJournalObjectImpl,
 };
 pub use projection::{
-    Projection, ProjectionDispatchError, ProjectionDispatchFailure, ProjectionDispatchReport,
-    ProjectionDispatcher, ProjectionExecutionError, ProjectionRuntime, TypedProjectionHandler,
+    Projection, ProjectionCheckpoint, ProjectionCheckpointError, ProjectionCheckpointStore,
+    ProjectionContext, ProjectionCursor, ProjectionDispatchError, ProjectionDispatchFailure,
+    ProjectionDispatchReport, ProjectionDispatcher, ProjectionExecutionError, ProjectionRebuild,
+    ProjectionRebuildSelection, ProjectionRuntime, TypedProjectionHandler,
 };
 pub use reaction::{
     Reaction, ReactionDispatchError, ReactionDispatchFailure, ReactionDispatcher,
