@@ -2,12 +2,16 @@
 
 NATS support is feature-gated; default tests require no broker.
 
+The Compose service pins the exact `nats:2.14.3-alpine` image and starts it with JetStream enabled. The native stream protocol is defined by [ADR 0005](adr/0005-nats-streams-and-message-metadata.md); changing the server version or protocol fields requires updating that decision and its contracts together.
+
 ## Features
 
 | Feature | Purpose |
 | --- | --- |
 | `nats-adapter` | Compile NATS adapter code |
 | `nats-tests` | Enable NATS integration tests and include `nats-adapter` |
+
+The optional `async-nats` dependency disables default features. Its explicit features include JetStream/KV support and cumulative `server_2_10`, `server_2_11`, `server_2_12`, and `server_2_14` contracts so atomic publish configuration and NATS 2.14 batch acknowledgements remain compile-checked.
 
 Without `ELBMESH_NATS_URL`, gated tests are optional and do not connect. Use `-- --nocapture` so their explicit `ELBMESH_NATS_URL is not set; skipping NATS integration test` output makes clear that the live contract was not executed. An optional skip is not live proof.
 
@@ -18,6 +22,7 @@ Default and harness-only checks:
 ```bash
 cargo test --all
 cargo test -p elbmesh-core --features nats-tests --test nats_harness
+cargo test -p elbmesh-core --features nats-tests --test nats_native_stream_protocol
 ```
 
 Optional local unavailable check:
@@ -32,6 +37,8 @@ Live local contracts:
 
 ```bash
 docker compose up -d nats
+ELBMESH_NATS_URL=nats://127.0.0.1:4222 cargo test -p elbmesh-core --features nats-tests --test nats_harness
+ELBMESH_NATS_URL=nats://127.0.0.1:4222 cargo test -p elbmesh-core --features nats-tests --test nats_native_stream_protocol
 ELBMESH_NATS_URL=nats://127.0.0.1:4222 cargo test -p elbmesh-core --features nats-tests --test event_store_contract
 ELBMESH_NATS_URL=nats://127.0.0.1:4222 cargo test -p elbmesh-core --features nats-tests --test action_journal
 ELBMESH_NATS_URL=nats://127.0.0.1:4222 cargo test -p elbmesh-core --features nats-tests --test operation_journal
@@ -40,7 +47,7 @@ ELBMESH_NATS_URL=nats://127.0.0.1:4222 cargo test -p elbmesh-core --features nat
 docker compose down
 ```
 
-A configured but unreachable URL is a failure; an unset URL is a deliberate skip.
+A configured but unreachable URL is a failure; an unset URL is a deliberate skip. The live harness verifies both the exact server version and the JetStream capability reported by the connected server. The native protocol binary compile-checks stream fields, NATS/application headers, and acknowledgement decoding; it does not replace the live EventStore and journal adapter contracts.
 
 ## Required CI Mode
 
@@ -54,9 +61,11 @@ No failure is allowed to continue. The required `Rust CI` aggregate also fails u
 
 ## Storage Boundaries
 
-Resource Events, ActionJournal, OperationJournal, ReactionJournal, and ViewStore documents use separate KV buckets. Journals and Views never become Resource replay input.
+The accepted target boundary is native JetStream messages in separate Resource Event, ActionJournal, OperationJournal, and ReactionJournal streams. View documents, View indexes, and projection checkpoints remain KV. Only Resource Events become Resource replay input.
 
-## Key Formats
+This protocol-foundation slice does not replace the existing KV-backed EventStore or journal adapters. Their live contracts remain in place until the follow-on native adapter issues; ADR 0005 governs the subjects, headers, atomic append, sequence, deduplication, durable consumer, and reconciliation behavior those replacements must implement.
+
+## Current KV Key Formats
 
 | Store | Key |
 | --- | --- |
