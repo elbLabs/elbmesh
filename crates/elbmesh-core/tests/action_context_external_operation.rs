@@ -6,12 +6,13 @@ use std::{
 use async_trait::async_trait;
 use elbmesh_core::{
     apply_recorded_event, Action, ActionContext, ActionDecision, ActionError, ActionExecutor,
-    ActionFailure, ActionMetadata, ActionStatus, AppendResult, Apply,
+    ActionFailure, ActionFailureClassification, ActionJournal, ActionJournalRecord,
+    ActionJournalStream, ActionMetadata, ActionStatus, AppendResult, Apply,
     CreateLexOfficeInvoiceRequest, Event, EventStore, EventStoreError, ExecutionError,
-    ExpectedVersion, ExternalOperation, Handle, HandlerError, InMemoryEventStore,
-    InMemoryOperationJournal, MockLexOfficeCreateInvoice, NewEvent, OperationJournal,
-    OperationJournalRecord, OperationJournalStream, RecordedEvent, Resource, ResourceError,
-    ResourceStream, StreamType,
+    ExpectedVersion, ExternalOperation, Handle, HandlerError, InMemoryActionJournal,
+    InMemoryEventStore, InMemoryOperationJournal, MockLexOfficeCreateInvoice, NewEvent,
+    OperationJournal, OperationJournalRecord, OperationJournalStream, RecordedEvent, Resource,
+    ResourceError, ResourceStream, StreamType,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -96,6 +97,94 @@ async fn action_context_maps_external_operation_failure_to_structured_action_err
         }
         other => panic!("expected external operation ActionError, got {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn action_failed_preserves_external_operation_details_and_resource_event_separation() {
+    let event_store = InMemoryEventStore::new();
+    let action_journal = InMemoryActionJournal::new();
+    let executor =
+        ActionExecutor::new(event_store.clone()).with_action_journal(action_journal.clone());
+    let metadata = action_metadata("action-failing-external-operation");
+
+    let err = executor
+        .execute::<Invoice, _>(
+            CreateInvoiceWithFailingLexOfficeV1 {
+                invoice_id: "invoice-failing-external-operation".to_string(),
+                order_confirmation_id: "order-confirmation-failing-external-operation".to_string(),
+                customer_id: "customer-failing-external-operation".to_string(),
+                amount_cents: 12_345,
+            },
+            metadata.clone(),
+        )
+        .await
+        .expect_err("provider failure should fail action execution");
+
+    match err {
+        ExecutionError::Handler(HandlerError::Runtime(ActionError::ExternalOperation {
+            operation_type,
+            failure_code,
+            failure_details,
+        })) => {
+            assert_eq!(operation_type, "lexoffice_create_invoice");
+            assert_eq!(
+                failure_code,
+                "lexoffice.create_invoice.provider_unavailable"
+            );
+            assert_eq!(
+                failure_details,
+                json!({
+                    "error_type": "LexOfficeCreateInvoiceError",
+                    "error_variant": "ProviderUnavailable",
+                })
+            );
+        }
+        other => panic!("expected typed external operation execution error, got {other:?}"),
+    }
+
+    let records = action_journal
+        .load(&ActionJournalStream::for_action(&metadata.action_id))
+        .await
+        .expect("load ActionJournal records");
+    assert_eq!(records.len(), 2);
+    match &records[1] {
+        ActionJournalRecord::ActionFailed {
+            failure_classification,
+            failure_details,
+            ..
+        } => {
+            assert_eq!(
+                failure_classification,
+                &ActionFailureClassification::HandlerRuntime
+            );
+            assert_eq!(
+                failure_details,
+                &json!({
+                    "failure_code": "action.external_operation",
+                    "failure_details": {
+                        "error_type": "ActionError",
+                        "error_variant": "ExternalOperation",
+                        "operation_type": "lexoffice_create_invoice",
+                        "failure_code": "lexoffice.create_invoice.provider_unavailable",
+                        "failure_details": {
+                            "error_type": "LexOfficeCreateInvoiceError",
+                            "error_variant": "ProviderUnavailable",
+                        },
+                    },
+                })
+            );
+        }
+        other => panic!("expected ActionFailed record, got {other:?}"),
+    }
+
+    let resource_stream =
+        ResourceStream::new(Invoice::RESOURCE_TYPE, "invoice-failing-external-operation");
+    let events = event_store
+        .load(&resource_stream)
+        .await
+        .expect("load Resource Events");
+    assert!(events.is_empty());
+    assert!(event_store.all_events().is_empty());
 }
 
 #[tokio::test]
@@ -475,6 +564,26 @@ struct CreateInvoiceThroughLexOfficeV1 {
     amount_cents: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CreateInvoiceWithFailingLexOfficeV1 {
+    invoice_id: String,
+    order_confirmation_id: String,
+    customer_id: String,
+    amount_cents: u64,
+}
+
+impl Action for CreateInvoiceWithFailingLexOfficeV1 {
+    type Resource = Invoice;
+
+    const ACTION_TYPE: &'static str = "create_invoice_with_failing_lexoffice";
+    const SCHEMA_ID: &'static str = "action.create_invoice_with_failing_lexoffice.v1";
+    const SCHEMA_VERSION: u32 = 1;
+
+    fn resource_id(&self) -> <Self::Resource as Resource>::Id {
+        self.invoice_id.clone()
+    }
+}
+
 impl Action for CreateInvoiceThroughLexOfficeV1 {
     type Resource = Invoice;
 
@@ -612,6 +721,37 @@ impl Handle<CreateInvoiceThroughLexOfficeV1> for Invoice {
 
         Ok(ActionDecision::with_message(
             "invoice created through lexoffice",
+        ))
+    }
+}
+
+#[async_trait]
+impl Handle<CreateInvoiceWithFailingLexOfficeV1> for Invoice {
+    type Error = InvoiceError;
+
+    async fn handle(
+        &mut self,
+        action: CreateInvoiceWithFailingLexOfficeV1,
+        ctx: &mut ActionContext<Self>,
+    ) -> Result<ActionDecision, HandlerError<Self::Error>> {
+        let operation = MockLexOfficeCreateInvoice::new();
+        operation
+            .fail_next_create()
+            .expect("configure provider failure fixture");
+
+        ctx.execute_external_operation(
+            &operation,
+            CreateLexOfficeInvoiceRequest {
+                invoice_id: action.invoice_id,
+                order_confirmation_id: action.order_confirmation_id,
+                customer_id: action.customer_id,
+                amount_cents: action.amount_cents,
+            },
+        )
+        .await?;
+
+        Ok(ActionDecision::with_message(
+            "provider unexpectedly accepted invoice",
         ))
     }
 }
