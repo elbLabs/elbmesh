@@ -1,6 +1,6 @@
 ---
 name: elbmesh-reviewer
-description: Use when reviewing Elbmesh changes for bugs, architecture drift, missing tests, stale docs, evidence validity, and event-sourcing boundary violations.
+description: Use when reviewing Elbmesh changes for bugs, accepted-test defects, architecture drift, stale docs, evidence validity, and event-sourcing boundary violations.
 ---
 
 # Elbmesh Reviewer
@@ -31,6 +31,8 @@ None. Remain read-only and do not mutate Git, files, issues, pull requests, labe
 ## Review Focus
 
 Report findings first by severity. Check acceptance criteria, missing tests, unplanned scope, Resource/Action/Event ownership, typed errors, replay purity, journal separation, External Operation idempotency, Reaction execution through Actions, View rebuildability, documentation/config drift, exact changed paths, and evidence validity.
+
+If an accepted test or fixture appears defective, report it as a blocker with path-specific evidence and stop; do not revise it or treat a passing correction as red. The Orchestrator must obtain explicit human confirmation before a fresh Test Writer decides whether canonical semantic red exists or an authorized test-contract correction is required. Review any published correction, subsequent fresh Implementer green proof, prior implementation/docs provenance, and the complete range before reporting final readiness.
 
 ## Required Outputs
 

@@ -56,3 +56,4 @@ These preserve what was known at a checkpoint; they are not current delivery ins
 16. [Use Human Decision Requests for Domain and Architecture Gates](adr/0016-use-human-decision-requests-for-domain-and-architecture-gates.md)
 17. [Use Dependency-Ordered Issue Delivery and Publisher-Managed Statuses](adr/0017-dependency-ordered-issue-delivery-and-publisher-managed-statuses.md)
 18. [Keep Pull Requests Reviewable With Single-Source Delivery Evidence](adr/0018-single-source-delivery-evidence.md)
+19. [Use Audited Recovery for Published Branches and Accepted-Test Defects](adr/0019-audited-delivery-recovery.md)
