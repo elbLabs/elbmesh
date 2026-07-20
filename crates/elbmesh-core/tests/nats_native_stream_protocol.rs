@@ -55,38 +55,65 @@ fn native_stream_configs_use_separate_file_backed_limits_streams() {
 
 #[test]
 fn resource_batch_headers_keep_transport_and_aggregate_sequences_distinct() {
-    let mut headers = HeaderMap::new();
-    headers.insert(NATS_MESSAGE_ID, "event-002");
-    headers.insert(NATS_BATCH_ID, "action-123");
-    headers.insert(NATS_BATCH_SEQUENCE, "2");
-    headers.insert(NATS_BATCH_COMMIT, NATS_BATCH_COMMIT_FINAL);
-    headers.insert(NATS_REQUIRED_API_LEVEL, "4");
-    headers.insert(NATS_EXPECTED_LAST_SUBJECT_SEQUENCE, "41");
-    headers.insert("Elbmesh-Aggregate-Sequence", "8");
-    headers.insert("Elbmesh-Message-Type", "offer_title_updated");
-    headers.insert("Elbmesh-Message-Version", "1");
-    headers.insert("Elbmesh-Resource-Type", "offer");
-    headers.insert("Elbmesh-Resource-Id", "offer-123");
-    headers.insert("Elbmesh-Stream-Type", "resource");
-    headers.insert("Elbmesh-Correlation-Id", "correlation-123");
-    headers.insert("Elbmesh-Causation-Id", "action-123");
-    headers.insert("Elbmesh-Action-Id", "action-123");
-    headers.insert("Elbmesh-Actor-Id", "actor-123");
-    headers.insert("Elbmesh-Occurred-At", "2026-07-19T12:00:00Z");
-    headers.insert("Elbmesh-Schema-Id", "event.offer_title_updated.v1");
-    headers.insert("Elbmesh-Schema-Version", "1");
-    headers.insert("Content-Type", "application/json");
+    let mut first_headers = HeaderMap::new();
+    first_headers.insert(NATS_MESSAGE_ID, "event-001");
+    first_headers.insert(NATS_BATCH_ID, "action-123");
+    first_headers.insert(NATS_BATCH_SEQUENCE, "1");
+    first_headers.insert(NATS_REQUIRED_API_LEVEL, "4");
+    first_headers.insert(NATS_EXPECTED_LAST_SUBJECT_SEQUENCE, "41");
+    first_headers.insert("Elbmesh-Aggregate-Sequence", "7");
 
-    assert_eq!(header(&headers, NATS_MESSAGE_ID.as_ref()), "event-002");
-    assert_eq!(header(&headers, NATS_BATCH_ID.as_ref()), "action-123");
-    assert_eq!(header(&headers, NATS_BATCH_SEQUENCE.as_ref()), "2");
-    assert_eq!(header(&headers, NATS_BATCH_COMMIT.as_ref()), "1");
+    let mut final_headers = HeaderMap::new();
+    final_headers.insert(NATS_MESSAGE_ID, "event-002");
+    final_headers.insert(NATS_BATCH_ID, "action-123");
+    final_headers.insert(NATS_BATCH_SEQUENCE, "2");
+    final_headers.insert(NATS_BATCH_COMMIT, NATS_BATCH_COMMIT_FINAL);
+    final_headers.insert(NATS_REQUIRED_API_LEVEL, "4");
+    final_headers.insert("Elbmesh-Aggregate-Sequence", "8");
+    final_headers.insert("Elbmesh-Message-Type", "offer_title_updated");
+    final_headers.insert("Elbmesh-Message-Version", "1");
+    final_headers.insert("Elbmesh-Resource-Type", "offer");
+    final_headers.insert("Elbmesh-Resource-Id", "offer-123");
+    final_headers.insert("Elbmesh-Stream-Type", "resource");
+    final_headers.insert("Elbmesh-Correlation-Id", "correlation-123");
+    final_headers.insert("Elbmesh-Causation-Id", "action-123");
+    final_headers.insert("Elbmesh-Action-Id", "action-123");
+    final_headers.insert("Elbmesh-Actor-Id", "actor-123");
+    final_headers.insert("Elbmesh-Occurred-At", "2026-07-19T12:00:00Z");
+    final_headers.insert("Elbmesh-Schema-Id", "event.offer_title_updated.v1");
+    final_headers.insert("Elbmesh-Schema-Version", "1");
+    final_headers.insert("Content-Type", "application/json");
+
     assert_eq!(
-        header(&headers, NATS_EXPECTED_LAST_SUBJECT_SEQUENCE.as_ref()),
+        header(&first_headers, NATS_MESSAGE_ID.as_ref()),
+        "event-001"
+    );
+    assert_eq!(header(&first_headers, NATS_BATCH_ID.as_ref()), "action-123");
+    assert_eq!(header(&first_headers, NATS_BATCH_SEQUENCE.as_ref()), "1");
+    assert_eq!(
+        header(&first_headers, NATS_EXPECTED_LAST_SUBJECT_SEQUENCE.as_ref()),
         "41"
     );
     assert_eq!(
-        header(&headers, "Elbmesh-Aggregate-Sequence")
+        header(&first_headers, "Elbmesh-Aggregate-Sequence")
+            .parse::<u64>()
+            .expect("parse aggregate-local sequence"),
+        7
+    );
+    assert!(first_headers.get(NATS_BATCH_COMMIT).is_none());
+
+    assert_eq!(
+        header(&final_headers, NATS_MESSAGE_ID.as_ref()),
+        "event-002"
+    );
+    assert_eq!(header(&final_headers, NATS_BATCH_ID.as_ref()), "action-123");
+    assert_eq!(header(&final_headers, NATS_BATCH_SEQUENCE.as_ref()), "2");
+    assert_eq!(header(&final_headers, NATS_BATCH_COMMIT.as_ref()), "1");
+    assert!(final_headers
+        .get(NATS_EXPECTED_LAST_SUBJECT_SEQUENCE)
+        .is_none());
+    assert_eq!(
+        header(&final_headers, "Elbmesh-Aggregate-Sequence")
             .parse::<u64>()
             .expect("parse aggregate-local sequence"),
         8
@@ -106,7 +133,7 @@ fn resource_batch_headers_keep_transport_and_aggregate_sequences_distinct() {
         ("Elbmesh-Schema-Version", "1"),
         ("Content-Type", "application/json"),
     ] {
-        assert_eq!(header(&headers, name), expected);
+        assert_eq!(header(&final_headers, name), expected);
     }
 }
 
@@ -152,7 +179,7 @@ fn duplicate_message_rejection_ack_parses_stable_server_error() {
             "error": {
                 "code": 400,
                 "err_code": 10201,
-                "description": "batch publish contains duplicate message id"
+                "description": "atomic publish batch contains duplicate message id"
             }
         }"#,
     )
@@ -162,7 +189,7 @@ fn duplicate_message_rejection_ack_parses_stable_server_error() {
     assert_eq!(ack["error"]["err_code"], 10201);
     assert_eq!(
         ack["error"]["description"],
-        "batch publish contains duplicate message id"
+        "atomic publish batch contains duplicate message id"
     );
 }
 
