@@ -37,13 +37,15 @@ After accepting red proof, spawn a fresh `elbmesh-pr-publisher` session to use t
 
 ## 3. Green Proof
 
-After draft publication, spawn a fresh `elbmesh-implementer` session with each accepted test, immutable test/fixture paths, focused command, intended failure, draft pull request URL, and complete provenance to produce green proof. A conflict requires human confirmation through the Orchestrator before a fresh Test Writer may revise accepted tests or fixtures; the Implementer never revises them.
+After draft publication, spawn a fresh `elbmesh-implementer` session with each accepted test, immutable test/fixture paths, focused command, intended failure, draft pull request URL, and complete provenance to produce green proof.
+
+An Implementer-discovered accepted-test or fixture conflict with the task card or architecture must stop with the Implementer reporting it to the Orchestrator. Only after explicit human confirmation may a fresh Test Writer revise an authorized path to produce canonical semantic red followed by green; this route must not use immediately passing test-contract correction.
 
 Accept the green proof only when the focused test passes for the intended behavior and every issue quality gate passes. Record exact commands and results, changed production and documentation paths, architecture impact, limitations, and the implementer task ID. If any gate fails, return the blocker to a fresh implementer session; do not advance to review.
 
 ## Accepted-Test Correction Recovery
 
-When a Reviewer reports an accepted test defect as a blocker, obtain explicit human confirmation before any revision, then spawn a fresh Test Writer to check whether valid semantic red exists. If semantic red exists, require the canonical red/green flow; only when non-test behavior is already correct and corrected tests pass immediately may the Test Writer report an explicitly named test-contract correction. Passing test-contract correction proof is never red proof.
+Immediately passing test-contract correction has one sole entry: a final Reviewer's path-specific accepted test blocker, followed by explicit human confirmation and a fresh Test Writer proving that non-test behavior is already correct and legitimate semantic red is impossible, so the corrected test would pass immediately. This final-Reviewer requirement does not make the Reviewer the sole entry to every accepted-test revision; Implementer-conflict revisions use the canonical semantic-red/green route above. Passing test-contract correction proof is never red proof.
 
 After the Publisher publishes the separate correction commit and correction-stage issue delta, spawn a fresh Implementer to preserve accepted-test immutability and produce focused and full green verification, followed by a fresh Reviewer for the final complete-range review.
 

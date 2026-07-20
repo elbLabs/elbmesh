@@ -18,7 +18,9 @@ All broad `git pull` forms, pull arguments or refspecs, merge, reset, rebase, ch
 
 ## Accepted-Test Correction Recovery
 
-When a Reviewer reports an accepted test defect as a blocker, the Orchestrator obtains explicit human confirmation before revision and starts a fresh Test Writer to check whether valid semantic red exists. Missing non-test behavior uses the canonical red/green flow. Only already-correct non-test behavior whose corrected tests pass immediately may produce an explicitly named test-contract correction with authorized paths, old/new hashes, passing proof, and why semantic red is impossible. Passing test-contract correction proof is never red proof.
+An Implementer-discovered accepted-test or fixture conflict with the task card or architecture must stop with the Implementer reporting it to the Orchestrator. Only after explicit human confirmation may a fresh Test Writer revise an authorized path to produce canonical semantic red followed by green; this route must not use immediately passing test-contract correction.
+
+Immediately passing test-contract correction has one sole entry: a final Reviewer's path-specific accepted test blocker, followed by explicit human confirmation and a fresh Test Writer proving that non-test behavior is already correct and legitimate semantic red is impossible, so the corrected test would pass immediately. This final-Reviewer requirement does not make the Reviewer the sole entry to every accepted-test revision; Implementer-conflict revisions use the canonical semantic-red/green route above. Passing test-contract correction proof is never red proof.
 
 The Publisher creates one separate test-only correction commit, appends one non-cumulative correction-stage issue delta, refreshes the current draft pull request body, and keeps `status:implementation` without claiming red, green, readiness, or merge authority. It then hands off to a fresh Implementer for immutable-path focused and full green verification and to a fresh Reviewer for final complete-range review.
 

@@ -42,7 +42,9 @@ After a published test-contract correction, accepted tests remain immutable to t
 
 ## Accepted Test Conflicts
 
-If an accepted test or fixture conflicts with the task card or architecture, stop and report the conflict to the Orchestrator for human confirmation. Only after human confirmation may a fresh Test Writer revise the accepted test or fixture; the Implementer must not revise it.
+An Implementer-discovered accepted-test or fixture conflict with the task card or architecture must stop with the Implementer reporting it to the Orchestrator. Only after explicit human confirmation may a fresh Test Writer revise an authorized path to produce canonical semantic red followed by green; this route must not use immediately passing test-contract correction.
+
+Immediately passing test-contract correction has one sole entry: a final Reviewer's path-specific accepted test blocker, followed by explicit human confirmation and a fresh Test Writer proving that non-test behavior is already correct and legitimate semantic red is impossible, so the corrected test would pass immediately. This final-Reviewer requirement does not make the Reviewer the sole entry to every accepted-test revision; Implementer-conflict revisions use the canonical semantic-red/green route above.
 
 ## Required Outputs
 

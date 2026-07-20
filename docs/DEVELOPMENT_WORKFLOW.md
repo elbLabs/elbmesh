@@ -38,11 +38,13 @@ Pull request creation and routine issue/worktree/status setup are automatic. The
 
 ## Immutable Tests
 
-Accepted tests and fixtures are immutable to Implementers. If they conflict with the task card or architecture, the Implementer stops and reports the conflict to the Orchestrator for human confirmation. Only after confirmation may a fresh Test Writer revise them. Implementer output must exclude supporting test fixtures.
+Accepted tests and fixtures are immutable to Implementers. Implementer output must exclude supporting test fixtures.
+
+An Implementer-discovered accepted-test or fixture conflict with the task card or architecture must stop with the Implementer reporting it to the Orchestrator. Only after explicit human confirmation may a fresh Test Writer revise an authorized path to produce canonical semantic red followed by green; this route must not use immediately passing test-contract correction.
 
 ## Reviewer-Driven Test-Contract Correction
 
-When a Reviewer reports an accepted test defect as a blocker, the Orchestrator obtains explicit human confirmation before any revision and then starts a fresh Test Writer to check whether valid semantic red exists. If semantic red exposes missing non-test behavior, use the canonical red/green flow. Only when non-test behavior is already correct and corrected tests pass immediately may the Test Writer revise authorized paths and report an explicitly named test-contract correction with old/new hashes, exact passing proof, and why semantic red is impossible. Passing test-contract correction proof is never red proof.
+Immediately passing test-contract correction has one sole entry: a final Reviewer's path-specific accepted test blocker, followed by explicit human confirmation and a fresh Test Writer proving that non-test behavior is already correct and legitimate semantic red is impossible, so the corrected test would pass immediately. This final-Reviewer requirement does not make the Reviewer the sole entry to every accepted-test revision; Implementer-conflict revisions use the canonical semantic-red/green route above. Passing test-contract correction proof is never red proof.
 
 The Publisher publishes that correction as one separate test-only commit containing only the authorized reported paths, appends one non-cumulative correction-stage issue delta, refreshes the current draft pull request body, and keeps `status:implementation`; it claims no red, green, readiness, or merge authority. A fresh Implementer then preserves the corrected accepted paths as immutable and runs focused and full green verification, followed by a fresh Reviewer of the final complete range.
 

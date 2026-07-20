@@ -42,7 +42,11 @@ For canonical red, return role task/session ID, issue/branch/base/head provenanc
 
 ## Human-Confirmed Test-Contract Correction
 
-The only accepted-test revision exception begins with a Reviewer blocker and explicit human confirmation naming the authorized test or fixture paths. In a fresh Test Writer session, first determine whether missing non-test behavior can produce valid semantic red. If it can, preserve the canonical failing-red flow. If non-test behavior is already correct and corrected tests pass immediately, revise only the authorized test paths and report an explicitly named test-contract correction with old/new hashes, the exact focused passing proof, and why semantic red is impossible. Passing test-contract correction proof is not red proof and must never be called red.
+An Implementer-discovered accepted-test or fixture conflict with the task card or architecture must stop with the Implementer reporting it to the Orchestrator. Only after explicit human confirmation may a fresh Test Writer revise an authorized path to produce canonical semantic red followed by green; this route must not use immediately passing test-contract correction.
+
+Immediately passing test-contract correction has one sole entry: a final Reviewer's path-specific accepted test blocker, followed by explicit human confirmation and a fresh Test Writer proving that non-test behavior is already correct and legitimate semantic red is impossible, so the corrected test would pass immediately. This final-Reviewer requirement does not make the Reviewer the sole entry to every accepted-test revision; Implementer-conflict revisions use the canonical semantic-red/green route above.
+
+On that sole-entry correction route, revise only the authorized test or fixture paths and report old/new hashes, the exact focused passing proof, and why semantic red is impossible. Passing test-contract correction proof is not red proof and must never be called red.
 
 ## Verification
 

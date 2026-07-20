@@ -22,9 +22,9 @@ After the pull, local HEAD, configured upstream, and pull-request head must be e
 
 ### Reviewer-Driven Test-Contract Correction
 
-An accepted test or fixture may be reconsidered only when a Reviewer reports a path-specific blocker and a human explicitly confirms the defect and authorized paths. The Orchestrator then starts a fresh Test Writer to determine whether valid semantic red exists.
+An Implementer-discovered accepted-test or fixture conflict with the task card or architecture must stop with the Implementer reporting it to the Orchestrator. Only after explicit human confirmation may a fresh Test Writer revise an authorized path to produce canonical semantic red followed by green; this route must not use immediately passing test-contract correction.
 
-If missing non-test behavior can produce semantic red, the canonical separate red/green flow remains mandatory. If non-test behavior is already correct and corrected tests pass immediately, the Test Writer may change only authorized test/fixture paths and must report an explicitly named **test-contract correction** with old/new hashes, exact focused passing proof, and why semantic red is impossible. Passing correction proof is never red proof.
+Immediately passing test-contract correction has one sole entry: a final Reviewer's path-specific accepted test blocker, followed by explicit human confirmation and a fresh Test Writer proving that non-test behavior is already correct and legitimate semantic red is impossible, so the corrected test would pass immediately. This final-Reviewer requirement does not make the Reviewer the sole entry to every accepted-test revision; Implementer-conflict revisions use the canonical semantic-red/green route above. The Test Writer may change only authorized test/fixture paths and must report old/new hashes, exact focused passing proof, and why semantic red is impossible. Passing correction proof is never red proof.
 
 The Publisher publishes one separate test-only correction commit, appends one non-cumulative correction-stage issue delta, refreshes the current draft pull-request body, and keeps `status:implementation`. Correction publication claims no red, green, readiness, or merge authority.
 
