@@ -121,7 +121,7 @@ impl ArchitectureManifest {
                 };
 
                 if event.resource_type != action.resource_type {
-                    return Err(ManifestValidationError::CrossResourceActionEmittedEvent {
+                    return Err(ManifestValidationError::ActionEventOwnershipMismatch {
                         action_type: action.action_type.clone(),
                         action_resource_type: action.resource_type.clone(),
                         event_type: event_type.clone(),
@@ -342,7 +342,7 @@ pub enum ManifestValidationError {
     },
 
     #[error("manifest action '{action_type}' targets resource '{action_resource_type}' but emits event '{event_type}' owned by resource '{event_resource_type}'")]
-    CrossResourceActionEmittedEvent {
+    ActionEventOwnershipMismatch {
         action_type: String,
         action_resource_type: String,
         event_type: String,
@@ -383,9 +383,7 @@ impl ManifestValidationError {
             }
             Self::UnknownEventResource { .. } => "manifest.event_unknown_resource",
             Self::UnknownActionEmittedEvent { .. } => "manifest.action_unknown_emitted_event",
-            Self::CrossResourceActionEmittedEvent { .. } => {
-                "manifest.action_cross_resource_emitted_event"
-            }
+            Self::ActionEventOwnershipMismatch { .. } => "manifest.action_event_ownership_mismatch",
             Self::UnknownReactionTriggerEvent { .. } => "manifest.reaction_unknown_trigger_event",
             Self::UnknownReactionTargetAction { .. } => "manifest.reaction_unknown_target_action",
             Self::ReactionGraphCycle { .. } => "manifest.reaction_graph_cycle",
