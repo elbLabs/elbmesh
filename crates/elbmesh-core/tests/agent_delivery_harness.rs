@@ -2336,6 +2336,116 @@ fn accepted_test_defects_require_human_confirmed_semantic_red_decision() {
 }
 
 #[test]
+fn implementer_conflict_revisions_stay_on_the_canonical_red_green_route() {
+    let paths = [
+        IMPLEMENTER_AGENT,
+        ".opencode/skills/elbmesh-implementer/SKILL.md",
+        ORCHESTRATOR_AGENT,
+        ".opencode/skills/elbmesh-orchestrator/SKILL.md",
+        TEST_WRITER_AGENT,
+        ".opencode/skills/elbmesh-test-writer/SKILL.md",
+        "docs/DEVELOPMENT_WORKFLOW.md",
+        "docs/HUMAN_DECISION_LOOP.md",
+        "docs/AGENT_DELIVERY_HARNESS.md",
+        "docs/adr/0019-audited-delivery-recovery.md",
+    ];
+    let mut violations = Vec::new();
+
+    for path in paths {
+        let document = project_file(path)
+            .to_ascii_lowercase()
+            .replace("test-writer", "test writer")
+            .replace("accepted-test", "accepted test");
+        let distinguishes_implementer_conflict_route = document.split("\n\n").any(|paragraph| {
+            paragraph.contains("implementer")
+                && paragraph.contains("accepted test")
+                && paragraph.contains("fixture")
+                && paragraph.contains("conflict")
+                && paragraph.contains("stop")
+                && paragraph.contains("orchestrator")
+                && paragraph.contains("human confirmation")
+                && paragraph.contains("fresh test writer")
+                && paragraph.contains("revis")
+                && paragraph.contains("canonical")
+                && paragraph.contains("semantic red")
+                && paragraph.contains("green")
+                && paragraph.contains("test-contract correction")
+                && paragraph.contains("pass")
+                && ["not", "never", "must not", "cannot", "does not"]
+                    .iter()
+                    .any(|term| paragraph.contains(term))
+        });
+        if !distinguishes_implementer_conflict_route {
+            violations.push(format!(
+                "{path} must keep Implementer-discovered accepted-test/fixture conflicts on stop -> Orchestrator -> human confirmation -> fresh Test Writer revision -> canonical semantic-red/green, and must exclude immediately passing test-contract correction"
+            ));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "Implementer conflict-route distinction violations:\n- {}",
+        violations.join("\n- ")
+    );
+}
+
+#[test]
+fn immediately_passing_correction_is_exclusive_to_the_final_reviewer_route() {
+    let paths = [
+        IMPLEMENTER_AGENT,
+        ".opencode/skills/elbmesh-implementer/SKILL.md",
+        ORCHESTRATOR_AGENT,
+        ".opencode/skills/elbmesh-orchestrator/SKILL.md",
+        TEST_WRITER_AGENT,
+        ".opencode/skills/elbmesh-test-writer/SKILL.md",
+        "docs/DEVELOPMENT_WORKFLOW.md",
+        "docs/HUMAN_DECISION_LOOP.md",
+        "docs/AGENT_DELIVERY_HARNESS.md",
+        "docs/adr/0019-audited-delivery-recovery.md",
+    ];
+    let mut violations = Vec::new();
+
+    for path in paths {
+        let document = project_file(path)
+            .to_ascii_lowercase()
+            .replace("test-writer", "test writer")
+            .replace("accepted-test", "accepted test")
+            .replace("path-specific", "path specific");
+        let reserves_passing_correction_for_final_reviewer =
+            document.split("\n\n").any(|paragraph| {
+                paragraph.contains("final reviewer")
+                    && paragraph.contains("path specific")
+                    && paragraph.contains("blocker")
+                    && paragraph.contains("explicit human confirmation")
+                    && paragraph.contains("fresh test writer")
+                    && paragraph.contains("non-test behavior")
+                    && paragraph.contains("already correct")
+                    && paragraph.contains("legitimate semantic red")
+                    && paragraph.contains("impossible")
+                    && (paragraph.contains("immediately pass")
+                        || paragraph.contains("pass immediately"))
+                    && paragraph.contains("test-contract correction")
+                    && paragraph.contains("sole entry")
+                    && paragraph.contains("every accepted test revision")
+                    && ["not", "never", "must not", "cannot", "does not"]
+                        .iter()
+                        .any(|term| paragraph.contains(term))
+            });
+        if !reserves_passing_correction_for_final_reviewer {
+            violations.push(format!(
+                "{path} must make a final Reviewer's path-specific blocker the sole entry to immediately passing test-contract correction, after human confirmation and fresh proof that non-test behavior is already correct and legitimate semantic red is impossible, without making Reviewer the sole entry to every accepted-test revision"
+            ));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "final-Reviewer passing-correction exclusivity violations:\n- {}",
+        violations.join("\n- ")
+    );
+}
+
+#[test]
 fn correction_publication_stays_draft_and_requires_fresh_green_verification() {
     let publisher_paths = [
         PR_PUBLISHER_AGENT,
