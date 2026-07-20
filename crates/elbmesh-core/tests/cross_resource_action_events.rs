@@ -5,25 +5,33 @@ use elbmesh_core::{
 
 #[test]
 fn manifest_validation_accepts_action_events_owned_by_the_target_resource() {
-    manifest_with_action_event_owner("offer")
+    manifest_with_offer_created_owner("offer")
         .validate()
         .expect("an Action may declare Events owned by its target Resource");
 }
 
 #[test]
 fn manifest_validation_rejects_cross_resource_action_event_with_stable_details() {
-    let error: ManifestValidationError = manifest_with_action_event_owner("invoice")
+    let error: ManifestValidationError = manifest_with_offer_created_owner("invoice")
         .validate()
         .expect_err("an Action must not declare an Event owned by another Resource");
 
-    assert_eq!(error.code(), "manifest.action_cross_resource_emitted_event");
+    let debug = format!("{error:?}");
+    let variant_name = debug
+        .split_once(" {")
+        .map_or(debug.as_str(), |(name, _)| name);
+
     assert_eq!(
-        error.to_string(),
-        "manifest action 'create_offer' targets resource 'offer' but emits event 'offer_created' owned by resource 'invoice'"
+        (variant_name, error.code(), error.to_string()),
+        (
+            "ActionEventOwnershipMismatch",
+            "manifest.action_event_ownership_mismatch",
+            "manifest action 'create_offer' targets resource 'offer' but emits event 'offer_created' owned by resource 'invoice'".to_string(),
+        )
     );
 }
 
-fn manifest_with_action_event_owner(event_resource_type: &str) -> ArchitectureManifest {
+fn manifest_with_offer_created_owner(event_resource_type: &str) -> ArchitectureManifest {
     ArchitectureManifest {
         manifest_schema_id: "manifest.elbmesh.v1".to_string(),
         manifest_schema_version: 1,
