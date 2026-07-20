@@ -66,6 +66,57 @@ fn github_pull_request_enforcement_has_rust_ci_workflow() {
 }
 
 #[test]
+fn github_pull_request_enforcement_has_required_live_adapter_jobs() {
+    let workflow = project_file(RUST_CI_WORKFLOW);
+
+    let nats_job = workflow_job_containing(&workflow, "--features nats-tests")
+        .expect("Rust CI must define a dedicated job that runs live NATS tests");
+    assert!(
+        nats_job.contains("docker compose up -d nats") || nats_job.contains("image: nats:"),
+        "the live NATS job must provision NATS"
+    );
+    assert!(
+        nats_job.contains("ELBMESH_NATS_URL"),
+        "the live NATS job must require ELBMESH_NATS_URL instead of allowing a skip"
+    );
+    assert!(
+        workflow_job_runs_exact_command(
+            &nats_job,
+            "cargo test -p elbmesh-core --features nats-tests --test event_store_contract",
+        ),
+        "the live NATS job must run the complete event_store_contract test binary without a filter that can match zero tests"
+    );
+    assert!(
+        !nats_job.contains("continue-on-error: true"),
+        "the live NATS job must block on failures"
+    );
+
+    let restate_job = workflow_job_containing(&workflow, "--features restate-tests")
+        .expect("Rust CI must define a dedicated job that runs live Restate tests");
+    assert!(
+        restate_job.contains("docker compose up -d restate")
+            || restate_job.contains("image: docker.io/restatedev/restate:")
+            || restate_job.contains("image: restatedev/restate:"),
+        "the live Restate job must provision Restate"
+    );
+    assert!(
+        restate_job.contains("ELBMESH_RESTATE_URL"),
+        "the live Restate job must require ELBMESH_RESTATE_URL instead of allowing a skip"
+    );
+    assert!(
+        workflow_job_runs_exact_command(
+            &restate_job,
+            "cargo test -p elbmesh-core --features restate-tests --test operation_journal",
+        ),
+        "the live Restate job must run the complete operation_journal test binary without a filter that can match zero tests"
+    );
+    assert!(
+        !restate_job.contains("continue-on-error: true"),
+        "the live Restate job must block on failures"
+    );
+}
+
+#[test]
 #[ignore = "live GitHub ruleset contract; run explicitly with authenticated gh"]
 fn github_pull_request_enforcement_has_main_branch_rules() {
     let output = Command::new("gh")
@@ -553,10 +604,16 @@ fn pr_publisher_is_a_non_editing_delivery_subagent_with_auditable_handoffs() {
         "{PR_PUBLISHER_AGENT} must link the pull request to its issue"
     );
     assert!(
-        body.contains("evidence")
-            && (body.contains("pr body") || body.contains("pull request body"))
-            && body.contains("comment"),
-        "{PR_PUBLISHER_AGENT} must carry role evidence into the pull request body and comments"
+        body.contains("issue") && body.contains("evidence") && body.contains("comment"),
+        "{PR_PUBLISHER_AGENT} must append immutable role evidence to the issue"
+    );
+    assert!(
+        (body.contains("pr body") || body.contains("pull request body"))
+            && body.contains("current")
+            && ["update", "refresh", "replace"]
+                .iter()
+                .any(|term| body.contains(term)),
+        "{PR_PUBLISHER_AGENT} must keep the pull request body updated as the current review summary"
     );
     assert!(
         body.split("\n\n").any(|paragraph| {
@@ -569,20 +626,19 @@ fn pr_publisher_is_a_non_editing_delivery_subagent_with_auditable_handoffs() {
 }
 
 #[test]
-fn publisher_green_and_readiness_evidence_is_append_only_on_issue_and_pull_request() {
+fn publisher_evidence_is_issue_only_stage_deltas_and_pr_body_stays_current() {
     let paths = [
         PR_PUBLISHER_AGENT,
         ".opencode/skills/elbmesh-pr-publisher/SKILL.md",
     ];
-    let required_evidence_fields: [(&str, &[&str]); 10] = [
+    let required_evidence_fields: [(&str, &[&str]); 8] = [
         (
             "role task IDs",
             &["role task id", "role task/session id", "task/session id"],
         ),
         ("role session IDs", &["role session id", "task/session id"]),
         ("exact changed paths", &["exact changed path"]),
-        ("red commit SHA", &["red commit sha"]),
-        ("green commit SHA", &["green commit sha"]),
+        ("stage commit SHA", &["stage commit sha", "commit sha"]),
         ("exact commands", &["exact command"]),
         (
             "command results",
@@ -593,7 +649,6 @@ fn publisher_green_and_readiness_evidence_is_append_only_on_issue_and_pull_reque
                 "commands and results",
             ],
         ),
-        ("review task ID", &["review task id", "reviewer task id"]),
         ("blocker status", &["blocker status"]),
         ("PR URL", &["pr url", "pull request url"]),
     ];
@@ -601,19 +656,38 @@ fn publisher_green_and_readiness_evidence_is_append_only_on_issue_and_pull_reque
 
     for path in paths {
         let document = project_file(path).to_ascii_lowercase();
-        let has_append_only_green_and_readiness_evidence =
-            document.split("\n\n").any(|paragraph| {
-                paragraph.contains("green")
-                    && paragraph.contains("readiness")
-                    && (paragraph.contains("append-only")
-                        || (paragraph.contains("append") && paragraph.contains("without rewrit")))
-                    && paragraph.contains("issue")
-                    && (paragraph.contains("pull request") || paragraph.contains("pr"))
-                    && paragraph.contains("comment")
-            });
-        if !has_append_only_green_and_readiness_evidence {
+        let has_issue_only_stage_delta = document.split("\n\n").any(|paragraph| {
+            paragraph.contains("append-only")
+                && paragraph.contains("issue")
+                && paragraph.contains("comment")
+                && (paragraph.contains("stage delta") || paragraph.contains("stage-specific"))
+                && ["not cumulative", "never cumulative", "do not repeat"]
+                    .iter()
+                    .any(|term| paragraph.contains(term))
+        });
+        if !has_issue_only_stage_delta {
             violations.push(format!(
-                "{path} must append green and readiness evidence as new comments on both the GitHub issue and pull request without rewriting prior evidence"
+                "{path} must append non-cumulative, stage-specific evidence only to the GitHub issue"
+            ));
+        }
+
+        let has_current_pr_body = document.split("\n\n").any(|paragraph| {
+            (paragraph.contains("pull request body") || paragraph.contains("pr body"))
+                && paragraph.contains("current")
+                && paragraph.contains("concise")
+                && ["update", "refresh", "replace"]
+                    .iter()
+                    .any(|term| paragraph.contains(term))
+        });
+        if !has_current_pr_body {
+            violations.push(format!(
+                "{path} must update one concise pull request body as the current review summary"
+            ));
+        }
+
+        if !document.contains("do not post routine evidence comments on the pull request") {
+            violations.push(format!(
+                "{path} must prohibit routine evidence comments on the pull request"
             ));
         }
 
@@ -622,9 +696,7 @@ fn publisher_green_and_readiness_evidence_is_append_only_on_issue_and_pull_reque
                 .iter()
                 .any(|alternative| document.contains(alternative))
             {
-                violations.push(format!(
-                    "{path} append-only publication evidence is missing {field}"
-                ));
+                violations.push(format!("{path} issue audit evidence is missing {field}"));
             }
         }
     }
@@ -634,6 +706,111 @@ fn publisher_green_and_readiness_evidence_is_append_only_on_issue_and_pull_reque
         "PR Publisher evidence contract violations:\n- {}",
         violations.join("\n- ")
     );
+}
+
+#[test]
+fn pull_request_template_is_a_concise_current_review_summary() {
+    let path = ".github/pull_request_template.md";
+    let template = project_file(path).to_ascii_lowercase();
+
+    for section in [
+        "## human review briefing",
+        "### 60-second summary",
+        "### flow",
+        "### review guide",
+        "### risks and approval",
+        "## current state",
+        "## scope",
+        "## verification",
+        "## architecture and docs",
+        "## commits",
+        "## audit trail",
+    ] {
+        assert!(
+            template.contains(section),
+            "{path} must include the current-review section `{section}`"
+        );
+    }
+
+    for field in [
+        "stage:",
+        "ci:",
+        "blockers:",
+        "approve when:",
+        "open questions:",
+        "issue:",
+    ] {
+        assert!(
+            template.contains(field),
+            "{path} must expose the current-review field `{field}`"
+        );
+    }
+}
+
+#[test]
+fn reviewer_hands_a_human_review_briefing_to_the_publisher() {
+    let reviewer_paths = [REVIEWER_AGENT, ".opencode/skills/elbmesh-reviewer/SKILL.md"];
+    let required_briefing_terms = [
+        "human review briefing",
+        "60-second summary",
+        "change map",
+        "mermaid",
+        "architecture impact",
+        "risk map",
+        "suggested review order",
+        "proof",
+        "approval criteria",
+        "open questions",
+        "non-goals",
+        "residual risks",
+        "700 words",
+        "evidence-backed",
+    ];
+
+    for path in reviewer_paths {
+        let document = project_file(path).to_ascii_lowercase();
+        for term in required_briefing_terms {
+            assert!(
+                document.contains(term),
+                "{path} Human Review Briefing contract is missing `{term}`"
+            );
+        }
+    }
+
+    for path in [
+        PR_PUBLISHER_AGENT,
+        ".opencode/skills/elbmesh-pr-publisher/SKILL.md",
+    ] {
+        let document = project_file(path).to_ascii_lowercase();
+        assert!(
+            document.split("\n\n").any(|paragraph| {
+                paragraph.contains("reviewer")
+                    && paragraph.contains("human review briefing")
+                    && paragraph.contains("verbatim")
+                    && paragraph.contains("top")
+                    && (paragraph.contains("pull request body")
+                        || paragraph.contains("pr body"))
+            }),
+            "{path} must publish the Reviewer-validated briefing verbatim at the top of the pull request body"
+        );
+    }
+
+    for path in [
+        ".opencode/agents/elbmesh-orchestrator.md",
+        ".opencode/skills/elbmesh-orchestrator/SKILL.md",
+    ] {
+        let document = project_file(path).to_ascii_lowercase();
+        assert!(
+            document.split("\n\n").any(|paragraph| {
+                paragraph.contains("reviewer")
+                    && paragraph.contains("human review briefing")
+                    && paragraph.contains("publisher")
+                    && (paragraph.contains("pull request body")
+                        || paragraph.contains("pr body"))
+            }),
+            "{path} must hand the Reviewer briefing to the Publisher for the current pull request body"
+        );
+    }
 }
 
 #[test]
@@ -667,8 +844,12 @@ fn pr_publisher_permissions_allow_publication_but_deny_direct_merge() {
             "gh pr create --draft --title \"Issue 147\" --body \"Closes #147\"",
         ),
         (
-            "publish evidence",
-            "gh pr comment 148 --body \"Green proof\"",
+            "publish issue evidence",
+            "gh issue comment 147 --body \"Green proof\"",
+        ),
+        (
+            "refresh the pull request body",
+            "gh pr edit 148 --body \"Current review summary\"",
         ),
         ("mark the pull request ready", "gh pr ready 148"),
     ] {
@@ -690,6 +871,7 @@ fn pr_publisher_permissions_allow_publication_but_deny_direct_merge() {
         "git merge main",
         "git merge --continue",
         "gh pr edit 148 --base main",
+        "gh pr comment 148 --body \"Green proof\"",
         "gh pr merge 148",
         "gh pr merge 148 --auto",
     ] {
@@ -1917,6 +2099,537 @@ fn canonical_workflow_sources_reserve_merge_authority_for_humans() {
 }
 
 #[test]
+fn publisher_permissions_allow_only_exact_safe_issue_branch_fast_forward() {
+    let (frontmatter, _) = agent_file(PR_PUBLISHER_AGENT);
+    let mut violations = Vec::new();
+
+    let safe_fast_forward = "git pull --ff-only";
+    let decision = effective_agent_permission(&frontmatter, "bash", safe_fast_forward);
+    if decision != "allow" {
+        violations.push(format!(
+            "the exact safe fast-forward resolves to {decision} instead of allow: {safe_fast_forward}"
+        ));
+    }
+
+    for command in [
+        "git pull",
+        "git pull origin delivery/issue-130",
+        "git pull --ff-only origin delivery/issue-130",
+        "git pull --rebase",
+        "git pull --force",
+        "git merge --ff-only origin/delivery/issue-130",
+        "git reset --keep origin/delivery/issue-130",
+        "git reset --hard origin/delivery/issue-130",
+        "git rebase origin/main",
+        "git checkout main",
+        "git switch main",
+        "git push --force origin HEAD",
+        "git push origin HEAD:main",
+        "gh pr edit 151 --base main",
+    ] {
+        let decision = effective_agent_permission(&frontmatter, "bash", command);
+        if decision != "deny" {
+            violations.push(format!(
+                "unsafe synchronization or base mutation resolves to {decision} instead of deny: {command}"
+            ));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "{PR_PUBLISHER_AGENT} must allow only exact `git pull --ff-only` synchronization while broad pull, merge, reset, rebase, checkout, force, and base mutations remain denied:\n- {}",
+        violations.join("\n- ")
+    );
+}
+
+#[test]
+fn publisher_safe_fast_forward_requires_strict_preflight_and_post_pull_equality() {
+    let paths = [
+        PR_PUBLISHER_AGENT,
+        ".opencode/skills/elbmesh-pr-publisher/SKILL.md",
+        "docs/DEVELOPMENT_WORKFLOW.md",
+        "docs/AGENT_DELIVERY_HARNESS.md",
+    ];
+    let mut violations = Vec::new();
+
+    for path in paths {
+        let document = project_file(path).to_ascii_lowercase();
+
+        if !document.contains("git pull --ff-only") {
+            violations.push(format!(
+                "{path} must name the only permitted fast-forward command `git pull --ff-only`"
+            ));
+        }
+
+        let requires_clean_worktree_and_index = document.split("\n\n").any(|paragraph| {
+            paragraph.contains("clean")
+                && paragraph.contains("working")
+                && paragraph.contains("index")
+        });
+        if !requires_clean_worktree_and_index {
+            violations.push(format!(
+                "{path} must require both the working tree and index to be clean before synchronization"
+            ));
+        }
+
+        let requires_exact_non_main_upstream = document.split("\n\n").any(|paragraph| {
+            paragraph.contains("non-main")
+                && paragraph.contains("upstream")
+                && paragraph.contains("branch")
+                && paragraph.contains("exact")
+                && (paragraph.contains("same-named") || paragraph.contains("same named"))
+        });
+        if !requires_exact_non_main_upstream {
+            violations.push(format!(
+                "{path} must restrict synchronization to the exact same-named configured upstream of a non-main issue branch"
+            ));
+        }
+
+        let requires_issue_and_pr_provenance = document.split("\n\n").any(|paragraph| {
+            paragraph.contains("issue")
+                && paragraph.contains("provenance")
+                && (paragraph.contains("pull request") || paragraph.contains("pr head"))
+                && paragraph.contains("head")
+                && ["exact", "match"]
+                    .iter()
+                    .any(|term| paragraph.contains(term))
+        });
+        if !requires_issue_and_pr_provenance {
+            violations.push(format!(
+                "{path} must verify exact issue provenance and pull-request head branch before synchronization"
+            ));
+        }
+
+        let requires_fetched_ancestry = document.split("\n\n").any(|paragraph| {
+            paragraph.contains("local head")
+                && paragraph.contains("ancestor")
+                && paragraph.contains("fetch")
+                && paragraph.contains("upstream")
+        });
+        if !requires_fetched_ancestry {
+            violations.push(format!(
+                "{path} must prove local HEAD is an ancestor of the fetched upstream before pulling"
+            ));
+        }
+
+        let stops_before_mutation = document.split("\n\n").any(|paragraph| {
+            paragraph.contains("stop")
+                && paragraph.contains("before")
+                && paragraph.contains("mutation")
+                && paragraph.contains("dirty")
+                && paragraph.contains("diverg")
+                && (paragraph.contains("unverified") || paragraph.contains("cannot verify"))
+        });
+        if !stops_before_mutation {
+            violations.push(format!(
+                "{path} must stop before Git or GitHub mutation when cleanliness, ancestry, fast-forward, or provenance cannot be proved"
+            ));
+        }
+
+        let verifies_post_pull_equality = document.split("\n\n").any(|paragraph| {
+            (paragraph.contains("post-pull") || paragraph.contains("after the pull"))
+                && paragraph.contains("local")
+                && paragraph.contains("upstream")
+                && (paragraph.contains("pull request head") || paragraph.contains("pr head"))
+                && ["equal", "identical"]
+                    .iter()
+                    .any(|term| paragraph.contains(term))
+        });
+        if !verifies_post_pull_equality {
+            violations.push(format!(
+                "{path} must verify post-pull local/upstream/pull-request-head commit equality"
+            ));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "safe Publisher fast-forward contract violations:\n- {}",
+        violations.join("\n- ")
+    );
+}
+
+#[test]
+fn accepted_test_defects_require_human_confirmed_semantic_red_decision() {
+    let flow_paths = [
+        ORCHESTRATOR_AGENT,
+        ".opencode/skills/elbmesh-orchestrator/SKILL.md",
+        "docs/DEVELOPMENT_WORKFLOW.md",
+        "docs/HUMAN_DECISION_LOOP.md",
+        "docs/AGENT_DELIVERY_HARNESS.md",
+    ];
+    let mut violations = Vec::new();
+
+    for path in flow_paths {
+        let document = project_file(path)
+            .to_ascii_lowercase()
+            .replace("test-writer", "test writer");
+        let has_recovery_decision = document.split("\n\n").any(|paragraph| {
+            paragraph.contains("reviewer")
+                && paragraph.contains("accepted test")
+                && (paragraph.contains("defect") || paragraph.contains("blocker"))
+                && paragraph.contains("human confirmation")
+                && paragraph.contains("fresh test writer")
+                && paragraph.contains("semantic red")
+                && paragraph.contains("test-contract correction")
+                && (paragraph.contains("canonical") || paragraph.contains("normal red"))
+        });
+        if !has_recovery_decision {
+            violations.push(format!(
+                "{path} must define Reviewer blocker -> human confirmation -> fresh Test Writer semantic-red check -> canonical red/green or test-contract correction"
+            ));
+        }
+
+        let never_calls_passing_proof_red = document.split("\n\n").any(|paragraph| {
+            paragraph.contains("pass")
+                && paragraph.contains("test-contract correction")
+                && paragraph.contains("red")
+                && ["not", "never", "must not", "cannot"]
+                    .iter()
+                    .any(|term| paragraph.contains(term))
+        });
+        if !never_calls_passing_proof_red {
+            violations.push(format!(
+                "{path} must state that passing test-contract correction proof is never red proof"
+            ));
+        }
+    }
+
+    for path in [
+        TEST_WRITER_AGENT,
+        ".opencode/skills/elbmesh-test-writer/SKILL.md",
+    ] {
+        let document = project_file(path).to_ascii_lowercase();
+        for marker in [
+            "human confirmation",
+            "semantic red",
+            "test-contract correction",
+            "authorized test",
+            "old/new hashes",
+            "passing proof",
+        ] {
+            if !document.contains(marker) {
+                violations.push(format!(
+                    "{path} test-correction report contract is missing `{marker}`"
+                ));
+            }
+        }
+        let distinguishes_correction_from_red = document.split("\n\n").any(|paragraph| {
+            paragraph.contains("test-contract correction")
+                && paragraph.contains("red")
+                && ["not", "never", "must not", "cannot"]
+                    .iter()
+                    .any(|term| paragraph.contains(term))
+        });
+        if !distinguishes_correction_from_red {
+            violations.push(format!(
+                "{path} must explicitly label immediately passing proof as test-contract correction, not red"
+            ));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "accepted-test correction decision violations:\n- {}",
+        violations.join("\n- ")
+    );
+}
+
+#[test]
+fn implementer_conflict_revisions_stay_on_the_canonical_red_green_route() {
+    let paths = [
+        IMPLEMENTER_AGENT,
+        ".opencode/skills/elbmesh-implementer/SKILL.md",
+        ORCHESTRATOR_AGENT,
+        ".opencode/skills/elbmesh-orchestrator/SKILL.md",
+        TEST_WRITER_AGENT,
+        ".opencode/skills/elbmesh-test-writer/SKILL.md",
+        "docs/DEVELOPMENT_WORKFLOW.md",
+        "docs/HUMAN_DECISION_LOOP.md",
+        "docs/AGENT_DELIVERY_HARNESS.md",
+        "docs/adr/0019-audited-delivery-recovery.md",
+    ];
+    let mut violations = Vec::new();
+
+    for path in paths {
+        let document = project_file(path)
+            .to_ascii_lowercase()
+            .replace("test-writer", "test writer")
+            .replace("accepted-test", "accepted test");
+        let distinguishes_implementer_conflict_route = document.split("\n\n").any(|paragraph| {
+            paragraph.contains("implementer")
+                && paragraph.contains("accepted test")
+                && paragraph.contains("fixture")
+                && paragraph.contains("conflict")
+                && paragraph.contains("stop")
+                && paragraph.contains("orchestrator")
+                && paragraph.contains("human confirmation")
+                && paragraph.contains("fresh test writer")
+                && paragraph.contains("revis")
+                && paragraph.contains("canonical")
+                && paragraph.contains("semantic red")
+                && paragraph.contains("green")
+                && paragraph.contains("test-contract correction")
+                && paragraph.contains("pass")
+                && ["not", "never", "must not", "cannot", "does not"]
+                    .iter()
+                    .any(|term| paragraph.contains(term))
+        });
+        if !distinguishes_implementer_conflict_route {
+            violations.push(format!(
+                "{path} must keep Implementer-discovered accepted-test/fixture conflicts on stop -> Orchestrator -> human confirmation -> fresh Test Writer revision -> canonical semantic-red/green, and must exclude immediately passing test-contract correction"
+            ));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "Implementer conflict-route distinction violations:\n- {}",
+        violations.join("\n- ")
+    );
+}
+
+#[test]
+fn immediately_passing_correction_is_exclusive_to_the_final_reviewer_route() {
+    let paths = [
+        IMPLEMENTER_AGENT,
+        ".opencode/skills/elbmesh-implementer/SKILL.md",
+        ORCHESTRATOR_AGENT,
+        ".opencode/skills/elbmesh-orchestrator/SKILL.md",
+        TEST_WRITER_AGENT,
+        ".opencode/skills/elbmesh-test-writer/SKILL.md",
+        "docs/DEVELOPMENT_WORKFLOW.md",
+        "docs/HUMAN_DECISION_LOOP.md",
+        "docs/AGENT_DELIVERY_HARNESS.md",
+        "docs/adr/0019-audited-delivery-recovery.md",
+    ];
+    let mut violations = Vec::new();
+
+    for path in paths {
+        let document = project_file(path)
+            .to_ascii_lowercase()
+            .replace("test-writer", "test writer")
+            .replace("accepted-test", "accepted test")
+            .replace("path-specific", "path specific");
+        let reserves_passing_correction_for_final_reviewer =
+            document.split("\n\n").any(|paragraph| {
+                paragraph.contains("final reviewer")
+                    && paragraph.contains("path specific")
+                    && paragraph.contains("blocker")
+                    && paragraph.contains("explicit human confirmation")
+                    && paragraph.contains("fresh test writer")
+                    && paragraph.contains("non-test behavior")
+                    && paragraph.contains("already correct")
+                    && paragraph.contains("legitimate semantic red")
+                    && paragraph.contains("impossible")
+                    && (paragraph.contains("immediately pass")
+                        || paragraph.contains("pass immediately"))
+                    && paragraph.contains("test-contract correction")
+                    && paragraph.contains("sole entry")
+                    && paragraph.contains("every accepted test revision")
+                    && ["not", "never", "must not", "cannot", "does not"]
+                        .iter()
+                        .any(|term| paragraph.contains(term))
+            });
+        if !reserves_passing_correction_for_final_reviewer {
+            violations.push(format!(
+                "{path} must make a final Reviewer's path-specific blocker the sole entry to immediately passing test-contract correction, after human confirmation and fresh proof that non-test behavior is already correct and legitimate semantic red is impossible, without making Reviewer the sole entry to every accepted-test revision"
+            ));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "final-Reviewer passing-correction exclusivity violations:\n- {}",
+        violations.join("\n- ")
+    );
+}
+
+#[test]
+fn correction_publication_stays_draft_and_requires_fresh_green_verification() {
+    let publisher_paths = [
+        PR_PUBLISHER_AGENT,
+        ".opencode/skills/elbmesh-pr-publisher/SKILL.md",
+    ];
+    let mut violations = Vec::new();
+
+    for path in publisher_paths {
+        let document = project_file(path).to_ascii_lowercase();
+        let publishes_separate_test_only_commit = document.split("\n\n").any(|paragraph| {
+            paragraph.contains("test-contract correction")
+                && paragraph.contains("separate")
+                && paragraph.contains("test-only")
+                && paragraph.contains("commit")
+                && paragraph.contains("only")
+                && (paragraph.contains("authorized") || paragraph.contains("reported"))
+        });
+        if !publishes_separate_test_only_commit {
+            violations.push(format!(
+                "{path} must publish one separate test-only correction commit containing only authorized reported paths"
+            ));
+        }
+
+        let appends_correction_delta = document.split("\n\n").any(|paragraph| {
+            paragraph.contains("correction")
+                && paragraph.contains("stage")
+                && paragraph.contains("issue")
+                && paragraph.contains("delta")
+                && paragraph.contains("append")
+        });
+        if !appends_correction_delta {
+            violations.push(format!(
+                "{path} must append one non-cumulative correction-stage issue delta"
+            ));
+        }
+
+        let preserves_draft_implementation_state = document.split("\n\n").any(|paragraph| {
+            paragraph.contains("correction")
+                && paragraph.contains("draft")
+                && paragraph.contains("status:implementation")
+                && (paragraph.contains("keep") || paragraph.contains("remain"))
+                && (paragraph.contains("refresh") || paragraph.contains("update"))
+                && (paragraph.contains("pull request body") || paragraph.contains("pr body"))
+        });
+        if !preserves_draft_implementation_state {
+            violations.push(format!(
+                "{path} must refresh the current draft PR body and keep status:implementation after correction publication"
+            ));
+        }
+
+        let rejects_false_stage_claims = document.split("\n\n").any(|paragraph| {
+            paragraph.contains("test-contract correction")
+                && paragraph.contains("red")
+                && paragraph.contains("green")
+                && paragraph.contains("readiness")
+                && paragraph.contains("merge")
+                && ["not", "never", "does not"]
+                    .iter()
+                    .any(|term| paragraph.contains(term))
+        });
+        if !rejects_false_stage_claims {
+            violations.push(format!(
+                "{path} must forbid correction publication from claiming red, green, readiness, or merge authority"
+            ));
+        }
+    }
+
+    for path in [
+        ORCHESTRATOR_AGENT,
+        ".opencode/skills/elbmesh-orchestrator/SKILL.md",
+        "docs/DEVELOPMENT_WORKFLOW.md",
+        "docs/AGENT_DELIVERY_HARNESS.md",
+    ] {
+        let document = project_file(path).to_ascii_lowercase();
+        let has_post_correction_sequence = document
+            .find("test-contract correction")
+            .map(|start| {
+                contains_in_order(
+                    &document[start..],
+                    &["publisher", "fresh implementer", "green", "fresh reviewer"],
+                )
+            })
+            .unwrap_or(false);
+        if !has_post_correction_sequence {
+            violations.push(format!(
+                "{path} must sequence correction publication before fresh Implementer green verification and a fresh final Reviewer"
+            ));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "test-contract correction publication violations:\n- {}",
+        violations.join("\n- ")
+    );
+}
+
+#[test]
+fn zero_rework_paths_create_no_empty_commit_and_keep_prior_green_provenance() {
+    let mut violations = Vec::new();
+
+    for path in [
+        IMPLEMENTER_AGENT,
+        ".opencode/skills/elbmesh-implementer/SKILL.md",
+    ] {
+        let document = project_file(path).to_ascii_lowercase();
+        let allows_zero_paths = document.split("\n\n").any(|paragraph| {
+            paragraph.contains("zero implementation paths")
+                && paragraph.contains("report")
+                && paragraph.contains("test-contract correction")
+                && (paragraph.contains("already correct")
+                    || paragraph.contains("no non-test change"))
+        });
+        if !allows_zero_paths {
+            violations.push(format!(
+                "{path} must allow and explicitly report zero implementation paths when corrected tests prove non-test behavior is already correct"
+            ));
+        }
+
+        if !document.contains("accepted tests") || !document.contains("immutable") {
+            violations.push(format!(
+                "{path} must retain accepted-test immutability during zero-path verification"
+            ));
+        }
+        if !document.contains("focused") || !document.contains("full") {
+            violations.push(format!(
+                "{path} must still require focused and full green verification for zero implementation paths"
+            ));
+        }
+    }
+
+    for path in [
+        PR_PUBLISHER_AGENT,
+        ".opencode/skills/elbmesh-pr-publisher/SKILL.md",
+        ORCHESTRATOR_AGENT,
+        ".opencode/skills/elbmesh-orchestrator/SKILL.md",
+        "docs/DEVELOPMENT_WORKFLOW.md",
+    ] {
+        let document = project_file(path).to_ascii_lowercase();
+        let forbids_empty_commit = document.split("\n\n").any(|paragraph| {
+            paragraph.contains("zero implementation paths")
+                && paragraph.contains("empty commit")
+                && ["no", "not", "never", "must not"]
+                    .iter()
+                    .any(|term| paragraph.contains(term))
+        });
+        if !forbids_empty_commit {
+            violations.push(format!(
+                "{path} must prohibit an empty implementation/rework commit when no implementation paths changed"
+            ));
+        }
+
+        let retains_prior_green = document.split("\n\n").any(|paragraph| {
+            paragraph.contains("earlier")
+                && paragraph.contains("separate")
+                && paragraph.contains("green")
+                && paragraph.contains("implementation/docs commit")
+                && paragraph.contains("provenance")
+        });
+        if !retains_prior_green {
+            violations.push(format!(
+                "{path} must retain the earlier separate green implementation/docs commit as provenance"
+            ));
+        }
+
+        if !document.split("\n\n").any(|paragraph| {
+            paragraph.contains("zero implementation paths")
+                && paragraph.contains("fresh reviewer")
+                && (paragraph.contains("final") || paragraph.contains("no blocker"))
+        }) {
+            violations.push(format!(
+                "{path} must require a fresh final Reviewer even when rework has zero implementation paths"
+            ));
+        }
+    }
+
+    assert!(
+        violations.is_empty(),
+        "zero-path rework provenance violations:\n- {}",
+        violations.join("\n- ")
+    );
+}
+
+#[test]
 fn harness_discloses_direct_user_subagent_invocation_boundary() {
     let path = "docs/AGENT_DELIVERY_HARNESS.md";
     let documentation = project_file(path).to_ascii_lowercase();
@@ -1979,6 +2692,38 @@ fn project_file(relative_path: &str) -> String {
     fs::read_to_string(&path).unwrap_or_else(|error| {
         panic!("required OpenCode delivery harness file `{relative_path}` is unavailable: {error}")
     })
+}
+
+fn workflow_job_containing(workflow: &str, marker: &str) -> Option<String> {
+    let jobs = workflow.split_once("\njobs:\n")?.1;
+    let mut current = String::new();
+    let mut blocks = Vec::new();
+
+    for line in jobs.lines() {
+        let starts_job =
+            line.starts_with("  ") && !line.starts_with("    ") && line.trim_end().ends_with(':');
+
+        if starts_job && !current.is_empty() {
+            blocks.push(std::mem::take(&mut current));
+        }
+
+        if starts_job || !current.is_empty() {
+            current.push_str(line);
+            current.push('\n');
+        }
+    }
+
+    if !current.is_empty() {
+        blocks.push(current);
+    }
+
+    blocks.into_iter().find(|block| block.contains(marker))
+}
+
+fn workflow_job_runs_exact_command(job: &str, command: &str) -> bool {
+    job.lines()
+        .map(str::trim)
+        .any(|line| line == command || line.strip_prefix("run: ").is_some_and(|run| run == command))
 }
 
 fn agent_file(path: &str) -> (String, String) {

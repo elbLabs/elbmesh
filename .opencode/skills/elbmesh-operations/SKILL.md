@@ -52,4 +52,4 @@ No build or repository gate applies to this non-editing role. Verify issue creat
 
 ## Architecture Rules Preserved
 
-Preserve Resource, Action, Event, Reaction, and View boundaries; complete dependency-linked task cards; one branch/worktree per independent issue; tests before implementation; immutable accepted tests; separate red and green commits; append-only evidence; Publisher-owned publication/status transitions; and human-only merge. Never commit, push, merge, delete branches, remove worktrees, mutate pull requests, mutate existing issues, or spawn nested tasks.
+Preserve Resource, Action, Event, Reaction, and View boundaries; complete dependency-linked task cards; one branch/worktree per independent issue; tests before implementation; immutable accepted tests; separate red and green commits; append-only stage-specific issue evidence; a current pull request body; Publisher-owned publication/status transitions; and human-only merge. Never commit, push, merge, delete branches, remove worktrees, mutate pull requests, mutate existing issues, or spawn nested tasks.

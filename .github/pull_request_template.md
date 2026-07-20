@@ -1,47 +1,67 @@
 Closes #
 
-## Summary
+## Human Review Briefing
+
+<!-- Reviewer-owned, evidence-backed, maximum 700 words. Publisher replaces it verbatim at readiness. -->
+
+### 60-Second Summary
 
 -
 
-## Dependency, Capability, And Task
+### Flow
 
-- Task issue:
-- Depends on / blocks:
-- Capability or milestone:
+```mermaid
+flowchart LR
+    Change --> Outcome
+```
 
-## Tests
+### Review Guide
 
-- [ ] Tests were written before implementation
-- [ ] `cargo fmt --check`
-- [ ] `cargo clippy --all-targets --all-features -- -D warnings`
-- [ ] `cargo test --all`
+- Change map:
+- Suggested review order:
+- Proof:
 
-## Architecture Impact
+### Risks And Approval
 
-- [ ] Action targets exactly one Resource
-- [ ] Event belongs to exactly one Resource stream
-- [ ] Replay/apply remains deterministic
-- [ ] External calls use declared External Operations
-- [ ] Resource Events and execution journals remain separate
-- [ ] Views derive from Events and are rebuildable
-- [ ] Not applicable; explain:
+- Architecture impact:
+- Risk map:
+- Approve when:
+- Open questions:
+- Non-goals:
+- Residual risks:
 
-## Rust Quality
+## Current State
 
-- [ ] Public/runtime errors are named errors
-- [ ] Domain Action errors implement `ActionFailure` where relevant
-- [ ] No raw string errors at framework boundaries unless wrapped in a named error
-- [ ] No `anyhow` in core framework public boundaries
-- [ ] No speculative abstraction
-- [ ] No unplanned refactor
+- Stage: red | green | ready
+- Review:
+- CI:
+- Blockers:
 
-## Docs
+## Scope
 
-- [ ] Docs updated
-- [ ] ADR updated or added
-- [ ] No docs needed; explain:
+- Changed paths:
 
-## Notes For Reviewer
+## Verification
 
--
+- Focused test:
+- `cargo fmt --check`:
+- `cargo clippy --all-targets --all-features -- -D warnings`:
+- `cargo test --all`:
+
+## Architecture And Docs
+
+- Architecture evidence:
+- Documentation or ADR impact:
+
+## Commits
+
+- Red:
+- Green:
+- Head:
+
+## Audit Trail
+
+- Issue:
+- Red evidence:
+- Green/rework evidence:
+- Readiness evidence:

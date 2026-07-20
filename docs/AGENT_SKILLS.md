@@ -41,7 +41,7 @@ Explains an Action/Event path through Policies, Events, Reactions, External Oper
 
 ### elbmesh-implementer
 
-Makes accepted failing tests pass with the smallest non-test change; accepted tests and fixtures remain immutable.
+Makes accepted failing tests pass with the smallest non-test change; accepted tests and fixtures remain immutable, including after a test-contract correction, and zero-path verification is reported without manufacturing a commit.
 
 ### elbmesh-manifest-editor
 
@@ -57,19 +57,19 @@ Creates exact task-card issues and isolated worktrees through the narrow setup c
 
 ### elbmesh-orchestrator
 
-Coordinates dependency-ordered setup and fresh role handoffs while remaining shell-free and non-editing.
+Coordinates dependency-ordered setup and fresh role handoffs while remaining shell-free and non-editing, including Reviewer blocker, human confirmation, and fresh Test Writer recovery decisions.
 
 ### elbmesh-pr-publisher
 
-Publishes accepted role reports, commits, pull-request state, append-only evidence, and issue statuses without authoring files or merging.
+Publishes accepted role reports, commits, pull-request state, append-only issue audit deltas, the Reviewer-validated Human Review Briefing in a current concise pull-request body, and issue statuses without authoring files or merging. It may use only exact safe same-branch fast-forward recovery and may publish an authorized test-contract correction as its own test-only commit.
 
 ### elbmesh-reviewer
 
-Performs the final read-only PR review and reports merge readiness or blockers; a human performs the merge.
+Performs the final read-only PR review, reports merge readiness or blockers (including accepted-test defects), and produces an evidence-backed Human Review Briefing; a human performs the merge.
 
 ### elbmesh-test-writer
 
-Writes focused failing tests and fixtures before implementation, then returns exact red proof.
+Writes focused failing tests and fixtures before implementation, then returns exact red proof. After explicit human confirmation of a Reviewer blocker, a fresh Test Writer may instead report an authorized passing test-contract correction, never red proof.
 
 ## Synchronization
 

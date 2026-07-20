@@ -1,6 +1,6 @@
 ---
 name: elbmesh-pr-publisher
-description: Use when publishing accepted Elbmesh role handoffs as separate red and green commits, automating issue status, and marking a reviewed pull request ready without merging.
+description: Use when publishing accepted Elbmesh red/green or correction handoffs, safely reconciling a published issue branch, and marking a reviewed PR ready without merging.
 ---
 
 # Elbmesh PR Publisher
@@ -24,7 +24,7 @@ Also read `docs/AGENT_DELIVERY_HARNESS.md`, the expanded issue/dependencies, and
 
 ## Required Inputs
 
-Require issue/branch/base provenance, exact role-reported paths, accepted red/green proof, Reviewer findings/blocker state, required CI state, and every exposed role task/session ID.
+Require issue/branch/base provenance, exact role-reported paths, the applicable accepted red/green proof or authorized correction report, Reviewer findings/blocker state and complete Human Review Briefing when the stage requires them, required CI state, and every exposed role task/session ID.
 
 ## Permitted Edit Surface
 
@@ -38,11 +38,27 @@ The human explicitly accepts the residual risk of wrong issue mutation created b
 
 1. Before any push or GitHub mutation, complete a provenance preflight: verify that the current branch is non-`main` and exactly matches the branch reported in task-card provenance, verify that the pull request head matches that same branch, and verify that the target issue matches the issue task-card provenance. Stop on any branch, pull-request, issue, or other provenance mismatch.
 2. Verify base/head, status, working diff, cached diff, and exact role path set.
-3. Stage only accepted test/fixture paths, create/push a separate red test-only commit, open a linked draft pull request, append red evidence, and automatically set or keep `status:implementation`.
-4. Stage only Implementer-reported implementation/documentation paths, create/push the distinct green commit, and append cumulative green evidence.
-5. Only after no-blocker Reviewer evidence and required CI pass, append readiness evidence, change the issue to `status:review` while marking the pull request ready, and return its URL.
+3. Stage only accepted test/fixture paths, create/push a separate red test-only commit, open a linked draft pull request, append a red stage delta to the issue, create the current pull request summary, and automatically set or keep `status:implementation`.
+4. Stage only Implementer-reported implementation/documentation paths, create/push the distinct green commit, append a green stage delta to the issue, and refresh the current pull request summary.
+5. Only after no-blocker Reviewer evidence and required CI pass, append a readiness stage delta to the issue, refresh the current pull request summary, change the issue to `status:review` while marking the pull request ready, and return its URL.
 
-Green and readiness evidence is append-only: append new comments on both the GitHub issue and pull request without rewriting prior evidence. Cumulative evidence includes role task IDs, role session IDs, exact changed paths, red commit SHA, green commit SHA, exact commands, command results, review task ID, blocker status, CI state, residual risks, and PR URL.
+## Safe Published-Branch Recovery
+
+The only permitted same-branch synchronization command is exactly `git pull --ff-only`. Before using it, require the working tree and index to be clean; require the current branch to be the exact non-main issue branch and its configured upstream to be the exact same-named branch; verify exact issue provenance and that the pull request head matches that branch; and, using current fetch evidence, prove local HEAD is an ancestor of the fetched upstream. Stop before any Git or GitHub mutation if the worktree or index is dirty, the refs diverged, provenance mismatches, the fetched ancestry is unverified or cannot be verified, or a fast-forward cannot be proved. After the pull, verify that the local, upstream, and pull request head commits are equal before any further mutation.
+
+Broad `git pull`, pull arguments or refspecs, merge, reset, rebase, checkout, switch, force, base publication, pull-request base changes, auto-merge, and merge remain prohibited. `git pull --ff-only` must never resolve divergence or select a different remote or branch.
+
+## Test-Contract Correction Publication
+
+For an authorized test-contract correction, stage only the authorized paths reported by the fresh Test Writer and publish one separate test-only correction commit containing only those reported paths. Append one non-cumulative correction-stage delta to the issue with the authorization, old/new hashes, passing proof, and reason semantic red was impossible. Refresh the current draft pull request body and keep `status:implementation`; the correction remains draft. Test-contract correction publication is not red proof, green proof, readiness, or merge authority and must not claim any of them.
+
+When a test-contract correction verification reports zero implementation paths, create no empty commit. Retain the earlier separate green implementation/docs commit as implementation provenance. Zero implementation paths still require a fresh Reviewer for the final no-blocker report and required CI before readiness publication.
+
+Issue evidence is append-only and stage-specific. Append one stage delta as a new issue comment for red, green, correction, rework, or readiness. A stage delta is not cumulative: do not repeat prior-stage evidence. Include only the current stage's role task IDs, role session IDs, exact changed paths, stage commit SHA, exact commands and concise command results, blocker status, and PR URL. Correction also includes authorization, old/new hashes, passing proof, and why semantic red was impossible. Readiness also includes the Reviewer task ID, reviewed range, findings, CI state, and residual risks.
+
+Keep one concise pull request body as the current human review summary and update it in place at every publication stage. Report current state, scope, changed paths, applicable red, green, and correction commits, current head, verification summary, review and CI state, blockers, residual risks, and links to the issue audit trail. Replace stale pending fields. Do not post routine evidence comments on the pull request; pull request comments are reserved for human review discussion and actionable findings.
+
+At readiness, publish the Reviewer-validated `Human Review Briefing` verbatim at the top of the current pull request body. Preserve its explanation, Mermaid graph, review order, risks, and approval criteria without adding technical claims. Fill the remaining current-state, commit, verification, and audit-link sections from verified Publisher evidence. Repeat this replacement after a later accepted Reviewer rework report; do not post the briefing as a pull request comment.
 
 Exactly one of `status:implementation` and `status:review` must be active on the issue. Use only these complete paired transitions, which remove the opposite status before adding the target status; never use add-only, remove-only, simultaneous-status, arbitrary-label, or mixed issue-edit forms:
 
@@ -59,7 +75,7 @@ Direct literal `main` pushes, force pushes, refspec pushes to the base, all othe
 
 ## Required Outputs
 
-Return issue/branch/base/head, separate red and green commit SHAs, linked pull request, status result, append-only evidence links, ready state, PR URL, exact publication commands/results, residual risks, and blockers.
+Return issue/branch/base/head, every applicable separate red, green, or correction commit SHA, linked pull request, status result, append-only issue evidence links, current pull request body state, ready state, PR URL, exact publication commands/results, residual risks, and blockers.
 
 ## Verification
 
@@ -70,6 +86,7 @@ git status --short --branch
 git branch --show-current
 git diff -- <reported-path>
 git diff --cached -- <reported-path>
+git pull --ff-only
 gh issue view <issue>
 gh pr view <pr>
 gh pr checks <pr>
@@ -77,4 +94,4 @@ gh pr checks <pr>
 
 ## Architecture Rules Preserved
 
-Preserve role-reported Resource/Action/Event/Reaction/View paths and architecture evidence without authorship; keep accepted tests immutable and red/green commits separate; retain append-only evidence; and never merge, enable auto-merge, push the base branch, edit the pull request base, use broad staging, or bypass declared External Operation and journal boundaries. Reviewer and required CI prerequisites authorize readiness publication only, never merge authority. Only a human may review and merge.
+Preserve role-reported Resource/Action/Event/Reaction/View paths and architecture evidence without authorship; keep accepted tests immutable and red/green commits separate; retain append-only issue evidence and a current pull request body; and never merge, enable auto-merge, push the base branch, edit the pull request base, use broad staging, or bypass declared External Operation and journal boundaries. Reviewer and required CI prerequisites authorize readiness publication only, never merge authority. Only a human may review and merge.

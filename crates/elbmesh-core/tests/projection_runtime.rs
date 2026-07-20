@@ -1,3 +1,6 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
 use async_trait::async_trait;
 
 use elbmesh_core::{
@@ -29,6 +32,132 @@ async fn matching_resource_event_projects_view_document() {
         .expect("offer summary should exist");
     assert_eq!(view.payload["offer_id"], "offer-1");
     assert_eq!(view.payload["title"], "Initial offer");
+}
+
+#[tokio::test]
+async fn source_aware_out_of_order_delivery_cannot_overwrite_newer_view_state() {
+    let dispatcher = ProjectionDispatcher::new(ProjectionRuntime::new(InMemoryViewStore::new()))
+        .with_handler(TypedProjectionHandler::new(OfferSummaryProjection));
+    let mut newer = offer_created_recorded_event("offer-1", "Newest offer");
+    newer.sequence = 2;
+    newer.metadata.message_id = "offer-created-event-2".to_string();
+    let older = offer_created_recorded_event("offer-1", "Stale offer");
+
+    dispatcher
+        .dispatch(&newer)
+        .await
+        .expect("newer source should project");
+    dispatcher
+        .dispatch(&older)
+        .await
+        .expect("older source should be safely ignored");
+
+    let view = dispatcher
+        .view_store()
+        .load(&ViewKey::new("offer_summary", "offer-1"))
+        .await
+        .expect("load offer summary")
+        .expect("newer offer summary should remain");
+    assert_eq!(view.payload["title"], "Newest offer");
+}
+
+#[tokio::test]
+async fn source_aware_duplicate_delivery_does_not_reapply_projection_after_view_write() {
+    let dispatcher = ProjectionDispatcher::new(ProjectionRuntime::new(InMemoryViewStore::new()))
+        .with_handler(TypedProjectionHandler::new(OfferApplicationCountProjection));
+    let source = offer_created_recorded_event("offer-1", "Initial offer");
+
+    dispatcher
+        .dispatch(&source)
+        .await
+        .expect("first delivery should project");
+    dispatcher
+        .dispatch(&source)
+        .await
+        .expect("duplicate delivery should be safely ignored");
+
+    let view = dispatcher
+        .view_store()
+        .load(&ViewKey::new("offer_application_count", "offer-1"))
+        .await
+        .expect("load application count")
+        .expect("application count should exist");
+    assert_eq!(view.payload["applications"], 1);
+}
+
+#[tokio::test]
+async fn source_aware_partial_multi_handler_failure_retries_without_reapplying_successful_view() {
+    let dispatcher =
+        ProjectionDispatcher::new(ProjectionRuntime::new(FailFirstAuditWriteViewStore::new()))
+            .with_handler(TypedProjectionHandler::new(OfferApplicationCountProjection))
+            .with_handler(TypedProjectionHandler::new(OfferAuditProjection));
+    let source = offer_created_recorded_event("offer-1", "Initial offer");
+
+    let first_error = dispatcher
+        .dispatch(&source)
+        .await
+        .expect_err("first audit View write should fail dispatch");
+    match first_error {
+        ProjectionDispatchError::HandlerFailures { applied, failures } => {
+            assert_eq!(applied, 1);
+            assert_eq!(failures.len(), 1);
+            assert_eq!(failures[0].projection_type, "offer_audit");
+            assert_eq!(failures[0].failure_code, "projection.view_store.nats_put");
+        }
+        unexpected => panic!("unexpected projection dispatch error: {unexpected:?}"),
+    }
+
+    dispatcher
+        .dispatch(&source)
+        .await
+        .expect("source should remain retryable after one required handler fails");
+
+    let count_view = dispatcher
+        .view_store()
+        .load(&ViewKey::new("offer_application_count", "offer-1"))
+        .await
+        .expect("load application count")
+        .expect("successful View should remain");
+    let audit_view = dispatcher
+        .view_store()
+        .load(&ViewKey::new("offer_audit", "offer-1"))
+        .await
+        .expect("load audit View")
+        .expect("failed handler should apply on retry");
+    assert_eq!(count_view.payload["applications"], 1);
+    assert_eq!(audit_view.payload["title"], "Initial offer");
+}
+
+#[tokio::test]
+async fn source_aware_application_identity_includes_projection_and_target_view_key() {
+    let dispatcher = ProjectionDispatcher::new(ProjectionRuntime::new(InMemoryViewStore::new()))
+        .with_handler(TypedProjectionHandler::new(OfferDualTargetProjection))
+        .with_handler(TypedProjectionHandler::new(
+            OfferSharedTargetAuditProjection,
+        ));
+    let source = offer_created_recorded_event("offer-1", "Initial offer");
+
+    dispatcher
+        .dispatch(&source)
+        .await
+        .expect("both projections and both target View keys should apply");
+
+    let shared_view = dispatcher
+        .view_store()
+        .load(&ViewKey::new("offer_shared", "offer-1"))
+        .await
+        .expect("load shared View")
+        .expect("shared View should exist");
+    let copy_view = dispatcher
+        .view_store()
+        .load(&ViewKey::new("offer_shared", "offer-1-copy"))
+        .await
+        .expect("load second target View")
+        .expect("second target View should exist");
+
+    assert_eq!(shared_view.payload["summary_applied"], true);
+    assert_eq!(shared_view.payload["audit_applied"], true);
+    assert_eq!(copy_view.payload["summary_applied"], true);
 }
 
 #[tokio::test]
@@ -198,7 +327,8 @@ async fn dispatcher_applies_projections_from_multiple_resource_types_to_same_vie
     let dispatcher = ProjectionDispatcher::new(ProjectionRuntime::new(InMemoryViewStore::new()))
         .with_handler(TypedProjectionHandler::new(OfferFlowStatusProjection))
         .with_handler(TypedProjectionHandler::new(SalesOrderFlowStatusProjection));
-    let offer_created = offer_created_recorded_event("offer-1", "Initial offer");
+    let mut offer_created = offer_created_recorded_event("offer-1", "Initial offer");
+    offer_created.sequence = 42;
     let sales_order_created = sales_order_created_recorded_event("sales-order-1", "offer-1");
 
     let offer_report = dispatcher
@@ -291,6 +421,7 @@ async fn dispatcher_returns_named_failures_with_details() {
             assert_eq!(failures[0].failure_details["message_type"], "offer_created");
             assert_eq!(failures[0].failure_details["schema_version"], 1);
         }
+        unexpected => panic!("unexpected projection dispatch error: {unexpected:?}"),
     }
 }
 
@@ -318,6 +449,7 @@ async fn dispatcher_reports_mixed_success_and_failure_and_keeps_successful_view(
                 "projection.source_event_deserialization"
             );
         }
+        unexpected => panic!("unexpected projection dispatch error: {unexpected:?}"),
     }
 
     let view = dispatcher
@@ -432,6 +564,171 @@ impl Projection for OfferSummaryProjection {
                     "title": event.title,
                 }),
             ))
+            .await
+    }
+}
+
+struct OfferApplicationCountProjection;
+
+#[async_trait]
+impl Projection for OfferApplicationCountProjection {
+    type Source = OfferCreatedV1;
+
+    const PROJECTION_TYPE: &'static str = "offer_application_count";
+
+    async fn project<V>(&self, event: Self::Source, view_store: &V) -> Result<(), ViewStoreError>
+    where
+        V: ViewStore,
+    {
+        let key = ViewKey::new("offer_application_count", event.offer_id.clone());
+        let applications = view_store
+            .load(&key)
+            .await?
+            .and_then(|document| document.payload["applications"].as_u64())
+            .unwrap_or_default()
+            + 1;
+
+        view_store
+            .put(ViewDocument::new(
+                key.view_type,
+                key.view_id,
+                json!({
+                    "offer_id": event.offer_id,
+                    "applications": applications,
+                }),
+            ))
+            .await
+    }
+}
+
+struct OfferAuditProjection;
+
+#[async_trait]
+impl Projection for OfferAuditProjection {
+    type Source = OfferCreatedV1;
+
+    const PROJECTION_TYPE: &'static str = "offer_audit";
+
+    async fn project<V>(&self, event: Self::Source, view_store: &V) -> Result<(), ViewStoreError>
+    where
+        V: ViewStore,
+    {
+        view_store
+            .put(ViewDocument::new(
+                "offer_audit",
+                event.offer_id.clone(),
+                json!({
+                    "offer_id": event.offer_id,
+                    "title": event.title,
+                }),
+            ))
+            .await
+    }
+}
+
+struct OfferDualTargetProjection;
+
+#[async_trait]
+impl Projection for OfferDualTargetProjection {
+    type Source = OfferCreatedV1;
+
+    const PROJECTION_TYPE: &'static str = "offer_dual_target";
+
+    async fn project<V>(&self, event: Self::Source, view_store: &V) -> Result<(), ViewStoreError>
+    where
+        V: ViewStore,
+    {
+        for view_id in [event.offer_id.clone(), format!("{}-copy", event.offer_id)] {
+            view_store
+                .put(ViewDocument::new(
+                    "offer_shared",
+                    view_id,
+                    json!({
+                        "offer_id": event.offer_id,
+                        "summary_applied": true,
+                        "audit_applied": false,
+                    }),
+                ))
+                .await?;
+        }
+
+        Ok(())
+    }
+}
+
+struct OfferSharedTargetAuditProjection;
+
+#[async_trait]
+impl Projection for OfferSharedTargetAuditProjection {
+    type Source = OfferCreatedV1;
+
+    const PROJECTION_TYPE: &'static str = "offer_shared_target_audit";
+
+    async fn project<V>(&self, event: Self::Source, view_store: &V) -> Result<(), ViewStoreError>
+    where
+        V: ViewStore,
+    {
+        let key = ViewKey::new("offer_shared", event.offer_id.clone());
+        let mut document = view_store.load(&key).await?.unwrap_or_else(|| {
+            ViewDocument::new(
+                key.view_type,
+                key.view_id,
+                json!({
+                    "offer_id": event.offer_id,
+                    "summary_applied": false,
+                    "audit_applied": false,
+                }),
+            )
+        });
+        document.payload["audit_applied"] = json!(true);
+
+        view_store.put(document).await
+    }
+}
+
+#[derive(Clone)]
+struct FailFirstAuditWriteViewStore {
+    inner: InMemoryViewStore,
+    fail_first_audit_write: Arc<AtomicBool>,
+}
+
+impl FailFirstAuditWriteViewStore {
+    fn new() -> Self {
+        Self {
+            inner: InMemoryViewStore::new(),
+            fail_first_audit_write: Arc::new(AtomicBool::new(true)),
+        }
+    }
+}
+
+#[async_trait]
+impl ViewStore for FailFirstAuditWriteViewStore {
+    async fn put(&self, document: ViewDocument) -> Result<(), ViewStoreError> {
+        if document.key.view_type == "offer_audit"
+            && self.fail_first_audit_write.swap(false, Ordering::SeqCst)
+        {
+            return Err(ViewStoreError::NatsPut {
+                view_type: document.key.view_type,
+                view_id: document.key.view_id,
+                reason: "injected first audit write failure".to_string(),
+            });
+        }
+
+        self.inner.put(document).await
+    }
+
+    async fn load(&self, key: &ViewKey) -> Result<Option<ViewDocument>, ViewStoreError> {
+        self.inner.load(key).await
+    }
+
+    async fn list_by_index_prefix(
+        &self,
+        view_type: &str,
+        index_name: &str,
+        prefix: &str,
+    ) -> Result<Vec<ViewDocument>, ViewStoreError> {
+        self.inner
+            .list_by_index_prefix(view_type, index_name, prefix)
             .await
     }
 }
